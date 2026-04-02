@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Environment variables
+.env
+
+# Data files
+data/raw/*
+data/processed/*
+data/manual/*
+data/*.db
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/manual/.gitkeep
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Mypy
+.mypy_cache/
+
+# Notebooks checkpoints
+.ipynb_checkpoints/
+
+# Serena
+.serena/
