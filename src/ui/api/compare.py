@@ -83,6 +83,8 @@ class LeagueStats(BaseModel):
     away_win_pct:              float = Field(30.0, description="% Victoria visitante liga")
     avg_yellow_cards_per_game: float = Field(4.0,  description="Promedio amarillas liga")
     avg_red_cards_per_game:    float = Field(0.2,  description="Promedio rojas liga")
+    home_advantage_factor:    float = Field(1.20, description="Multiplicador goles local (1.15–1.30)")
+    away_disadvantage_factor: float = Field(0.85, description="Factor penalización visitante")
 
 
 class FootballOdds(BaseModel):
@@ -336,12 +338,27 @@ def _poisson_pmf(lam: float, k: int) -> float:
     return (lam ** k * math.exp(-lam)) / math.factorial(k)
 
 
-def _value_indicator(sel: str, odds: float | None, modelp: float) -> ValueIndicator:
+def _fair_probabilities_from_odds(*odds_list: float | None) -> list[float]:
+    """
+    Remueve el overround de un mercado completo y devuelve probs justas (suman 100).
+    Funciona para 1X2, O/U, BTTS, etc.
+    """
+    raw = [(1.0 / o) for o in odds_list if o and o > 1.0]
+    total = sum(raw)
+    if total <= 0:
+        return [0.0] * len(odds_list)
+    # Normalizar a 100%
+    normalized = [(r / total) * 100.0 for r in raw]
+    return normalized
+
+# Y en _value_indicator, pasar el overround del mercado:
+def _value_indicator(sel, odds, modelp, market_overround=None):
     if odds is None:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1))
-    
-    implied = _implied_probability(odds)
-    edge    = modelp - implied
+    raw_implied = (1.0 / odds) * 100.0
+    # Quitar el margen antes de calcular edge
+    fair_implied = raw_implied / ((market_overround or 100.0) / 100.0)
+    edge = modelp - fair_implied
     is_value = edge > 2.0
     
     if   edge > 5.0:  rating = "🔥 STRONG VALUE"
@@ -352,7 +369,7 @@ def _value_indicator(sel: str, odds: float | None, modelp: float) -> ValueIndica
     return ValueIndicator(
         selection=sel,
         odds=odds,
-        implied_prob=round(implied, 1),
+        implied_prob=round(fair_implied, 1),
         model_prob=round(modelp, 1),
         edge=round(edge, 1),
         is_value=is_value,
@@ -408,24 +425,187 @@ def _compute_lambda_v2(
     avg_xg    = max(avg_team * 0.50, 0.10)
     alpha     = 0.40  # 40% de sensibilidad a desviaciones del xG
     xg_mult   = 1.0 + alpha * (xg_signal / avg_xg - 1.0)
-    xg_mult   = max(0.55, min(1.65, xg_mult))  # Rango ampliado ±45%
+    # Rango ampliado para capturar equipos dominantes: 0.45 a 2.20
+    xg_mult   = max(0.45, min(2.20, xg_mult))
     lam_adjusted = lam_base * xg_mult
 
     # ── 4. Shrinkage bayesiana ADAPTATIVA por tamaño de muestra ───
     # Fórmula: shrink_w = prior_n / (prior_n + matches_played)
-    # prior_n = "partidos ficticios" que representa la media de liga
-    # n=6  → shrink_w ≈ 0.25  (más incertidumbre, más regresión)
-    # n=12 → shrink_w ≈ 0.14  (más datos, menos regresión)
-    # n=30 → shrink_w ≈ 0.06  (mucha muestra, casi sin regresión)
-    prior_n  = 2
+    # prior_n adaptativo: menos regresión para equipos con buena data
+    # prior_n = 0.5 para muestras grandes (n>=15), más para muestras pequeñas
+    prior_n  = max(0.5, 2.0 - (attacker.matches_played / 10.0))
     n        = max(attacker.matches_played, 1)
     shrink_w = prior_n / (prior_n + n)
     lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team * shrink_w
 
     # ── 5. Home / Away ────────────────────────────────────────────
-    lam_final *= 1.10 if is_home else 0.93
+    # Ventaja de local más realista: +15% local, -10% visitante
+    lam_final *= league.home_advantage_factor if is_home else league.away_disadvantage_factor
 
     return max(lam_final, 0.10)
+
+
+def _compute_team_goals_lambda(
+    attacker: FootballTeamStats,
+    defender: FootballTeamStats,
+    league: LeagueStats,
+    is_home: bool,
+) -> float:
+    """
+    Calcula lambda de goles esperados para un equipo específico.
+    Incluye:
+    - Fuerza de ataque del equipo
+    - Debilidad defensiva del rival
+    - Ventaja de localía
+    - Shrinkage adaptativo
+    """
+    avg_team = league.avg_goals_per_game / 2.0
+
+    # Fuerza de ataque
+    att_str = attacker.goals_per_game / max(avg_team, 0.1)
+
+    # Debilidad defensiva del rival (goles que concede)
+    def_weakness = defender.goals_conceded_per_game / max(avg_team, 0.1)
+
+    # Lambda base
+    lam_base = att_str * def_weakness * avg_team
+
+    # xG multiplier
+    bc_converted = max(
+        attacker.big_chances_per_game - attacker.big_chances_missed_per_game, 0.0
+    )
+    shot_xg = attacker.shots_on_target_per_game * (attacker.goal_conversion_pct / 100.0)
+    xg_signal = bc_converted * 0.45 + shot_xg * 0.55
+
+    avg_xg = max(avg_team * 0.50, 0.10)
+    alpha = 0.40
+    xg_mult = 1.0 + alpha * (xg_signal / avg_xg - 1.0)
+    xg_mult = max(0.45, min(2.20, xg_mult))
+    lam_adjusted = lam_base * xg_mult
+
+    # Shrinkage adaptativo
+    prior_n = max(0.5, 2.0 - (attacker.matches_played / 10.0))
+    n = max(attacker.matches_played, 1)
+    shrink_w = prior_n / (prior_n + n)
+    lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team * shrink_w
+
+    # Ventaja de local
+    lam_final *= league.home_advantage_factor if is_home else league.away_disadvantage_factor
+
+    return max(lam_final, 0.10)
+
+
+def _compute_team_corners_lambda(
+    team: FootballTeamStats,
+    opponent: FootballTeamStats,
+    league: LeagueStats,
+    is_home: bool,
+) -> float:
+    """
+    Calcula corners esperados por equipo.
+    Considera:
+    - Generación de corners del equipo
+    - Posesión como proxy de oportunidad
+    - Ventaja de local
+    """
+    avg_team_corners = league.avg_corners_per_game / 2.0
+
+    # Ajuste por posesión (más posesión = más oportunidad de corners)
+    poss_factor = team.possession_pct / 50.0  # normalizado a 50%
+
+    # Lambda base
+    lam = team.corners_per_game * poss_factor
+
+    # Ventaja de local para corners (~10% más)
+    lam *= 1.10 if is_home else 0.95
+
+    # Shrinkage suave
+    prior_n = 1.0
+    n = max(team.matches_played, 1)
+    shrink_w = prior_n / (prior_n + n)
+    lam = lam * (1.0 - shrink_w) + avg_team_corners * shrink_w
+
+    return max(lam, 0.5)
+
+
+def _compute_team_cards_lambda(
+    team: FootballTeamStats,
+    opponent: FootballTeamStats,
+    league: LeagueStats,
+    is_home: bool,
+) -> float:
+    """
+    Calcula tarjetas esperadas por equipo.
+    Considera:
+    - Tarjetas propias (amarillas + rojas ponderadas)
+    - Faltas cometidas
+    - Estilo de juego del rival (induce faltas)
+    """
+    avg_team_cards = league.avg_cards_per_game / 2.0
+
+    # Tarjetas del equipo (rojas = 2 amarillas)
+    team_cards = team.yellow_cards_per_game + (team.red_cards_total / max(team.matches_played, 1)) * 2.0
+
+    # Factor de agresividad del rival (faltas que induce)
+    opp_fouls_factor = opponent.fouls_per_game / 12.0
+
+    # Lambda base
+    lam = team_cards * (1.0 + opp_fouls_factor * 0.15)
+
+    # Ventaja de local (visitantes suelen recibir más tarjetas)
+    lam *= 1.05 if is_home else 1.15
+
+    # Shrinkage suave
+    prior_n = 1.0
+    n = max(team.matches_played, 1)
+    shrink_w = prior_n / (prior_n + n)
+    lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
+
+    return max(lam, 0.3)
+
+
+def _compute_handicap_probabilities(
+    h_lam: float,
+    a_lam: float,
+    handicap_line: float,
+) -> tuple[float, float]:
+    """
+    Calcula probabilidades de cubrir handicap.
+    Retorna (p_home_covers, p_away_covers)
+
+    handicap_line: línea de handicap para el local
+    - Si handicap_line = -1.5, local necesita ganar por 2+ para cubrir
+    - Si handicap_line = +0.5, local puede ganar o empatar
+    """
+    matrix, _ = _dc_score_matrix(h_lam, a_lam)
+    max_goals = len(matrix) - 1
+
+    p_home_covers = 0.0
+    p_away_covers = 0.0
+
+    for i in range(max_goals + 1):
+        for j in range(max_goals + 1):
+            p = matrix[i][j]
+            margin = i - j
+
+            # Si línea es -1.5, home necesita margin > -1.5 (es decir, margin >= -1)
+            # Pero en apuestas: cubrir significa ganar por más de la línea
+            # handicap_line negativo = favorito local
+            if handicap_line < 0:
+                # Local es favorito, necesita ganar por más del valor absoluto
+                if margin > abs(handicap_line):
+                    p_home_covers += p
+                elif margin < handicap_line:
+                    p_away_covers += p
+            else:
+                # Visitante es favorito (línea positiva para local)
+                if margin > handicap_line:
+                    p_home_covers += p
+                elif margin < -handicap_line:
+                    p_away_covers += p
+
+    return p_home_covers * 100.0, p_away_covers * 100.0
+
 
 # ───────────────────────────────────────────────────────────────
 # Dixon-Coles helpers
@@ -452,17 +632,20 @@ def _default_dc_rho(h_lam: float, a_lam: float) -> float:
     Sin entrenamiento histórico, usamos una heurística conservadora
     centrada en valores típicos observados para DC (~ -0.13 en ejemplos publicados).
     Cuanto menor el total esperado de goles, más relevante suele ser la corrección.
+
+    Valores ajustados para favorecer victorias claras y reducir empates excesivos.
     """
     total = h_lam + a_lam
 
+    # Rho menos conservador para favorecer victorias claras
     if total <= 1.80:
-        return -0.13
-    elif total <= 2.40:
-        return -0.11
-    elif total <= 3.00:
         return -0.08
+    elif total <= 2.40:
+        return -0.06
+    elif total <= 3.00:
+        return -0.04
     else:
-        return -0.05
+        return -0.02
 
 
 def _dc_score_matrix(
@@ -628,8 +811,8 @@ def _compute_corners_lambda(h: FootballTeamStats, a: FootballTeamStats, league: 
     h_poss_share = h.possession_pct / max((h.possession_pct + a.possession_pct), 1.0)
     a_poss_share = a.possession_pct / max((h.possession_pct + a.possession_pct), 1.0)
     
-    h_exp_corners = h.corners_per_game * h_poss_share * 1.5
-    a_exp_corners = a.corners_per_game * a_poss_share * 1.5
+    h_exp_corners = h.corners_per_game * h_poss_share * 2.0
+    a_exp_corners = a.corners_per_game * a_poss_share * 2.0
     
     lam_corners = (h_exp_corners + a_exp_corners)
     
@@ -651,7 +834,12 @@ def _compute_cards_lambda(h: FootballTeamStats, a: FootballTeamStats, league: Le
     base_match_cards = h_cards + a_cards
     
     # Ajuste por agresividad
-    lam_cards = base_match_cards * ((h_foul_agg + a_foul_agg) / 2.0)
+    h_foul_factor = h.fouls_per_game / 12.0
+    a_foul_factor = a.fouls_per_game / 12.0
+    foul_adj = (h_foul_factor + a_foul_factor) / 2.0
+    # Cuando fouls=12 → foul_adj=1.0 → sin cambio; cuando fouls=6 → reduce 15%
+    lam_cards = base_match_cards * (0.7 + 0.3 * foul_adj * 2.0)
+    lam_cards = max(lam_cards, league.avg_cards_per_game * 0.6)
     
     # Fallback al promedio de liga
     if lam_cards < 1.0: lam_cards = league.avg_cards_per_game
@@ -974,7 +1162,6 @@ async def _safe_generate_tennis_analysis(p1: TennisPlayerStats, p2: TennisPlayer
 async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     h, a = req.home, req.away
 
-    # Asegurarnos de que matches_played no sea cero para evitar divisiones por cero
     h_matches = max(h.matches_played, 1)
     a_matches = max(a.matches_played, 1)
 
@@ -995,8 +1182,6 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         _stat_comparison("Corners por juego",         "corners_per_game",             h.corners_per_game,             a.corners_per_game),
         # Defensa
         _stat_comparison("Goles concedidos",          "goals_conceded_per_game",      h.goals_conceded_per_game,      a.goals_conceded_per_game, False),
-        
-        # NORMALIZACIÓN DE TOTALES A PROMEDIOS O PORCENTAJES
         _stat_comparison("% Vallas Invictas",         "clean_sheets_pct",             (h.clean_sheets / h_matches) * 100, (a.clean_sheets / a_matches) * 100),
         _stat_comparison("Errores a Gol/juego",       "errors_leading_to_goal_pg",    h.errors_leading_to_goal / h_matches, a.errors_leading_to_goal / a_matches, False),
         _stat_comparison("Recuperaciones/j",          "balls_recovered_per_game",     h.balls_recovered_per_game,     a.balls_recovered_per_game),
@@ -1007,23 +1192,83 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     lam_corners = _compute_corners_lambda(h, a, req.league_stats)
     lam_cards   = _compute_cards_lambda(h, a, req.league_stats)
 
+    # ── Métricas por equipo ──────────────────────────────────────
+    h_goals_lam   = _compute_team_goals_lambda(h, a, req.league_stats, is_home=True)
+    a_goals_lam   = _compute_team_goals_lambda(a, h, req.league_stats, is_home=False)
+    h_corners_lam = _compute_team_corners_lambda(h, a, req.league_stats, is_home=True)
+    a_corners_lam = _compute_team_corners_lambda(a, h, req.league_stats, is_home=False)
+    h_cards_lam   = _compute_team_cards_lambda(h, a, req.league_stats, is_home=True)
+    a_cards_lam   = _compute_team_cards_lambda(a, h, req.league_stats, is_home=False)
+
     # Solo necesitamos 1x2 y BTTS (Mercados base sin líneas dinámicas)
     matrix, _ = _dc_score_matrix(h_lam, a_lam)
     markets = _sum_score_matrix_1x2_and_markets(matrix)
-    
+
     h_prob = markets["home_win_pct"] / 100.0
-    d_prob = markets["draw_pct"] / 100.0
+    d_prob = markets["draw_pct"]     / 100.0
     a_prob = markets["away_win_pct"] / 100.0
     p_btts_yes = markets["btts_yes_pct"] / 100.0
-    p_btts_no = markets["btts_no_pct"] / 100.0
+    p_btts_no  = markets["btts_no_pct"]  / 100.0
 
-    # ── Mercados base ──────────────────────────────────────────
-    market: list[tuple[str, float | None, float]] = [
-        ("Local",    req.odds.home, h_prob * 100),
-        ("Empate",   req.odds.draw, d_prob * 100),
-        ("Visitante", req.odds.away, a_prob * 100),
-        ("BTTS Sí",  req.odds.btts_yes, p_btts_yes * 100),
-        ("BTTS No",  req.odds.btts_no,  p_btts_no * 100),
+    # ── FIX 1: Blend con prior histórico de la liga (18% de peso) ──────────
+    # Ancla las probabilidades a la distribución real de la competición,
+    # especialmente útil con pocas jornadas disputadas.
+    _BLEND_W = 0.82  # 82% modelo, 18% prior de liga
+    _prior_sum = req.league_stats.home_win_pct + req.league_stats.draw_pct + req.league_stats.away_win_pct
+    if _prior_sum > 0:
+        _ph = req.league_stats.home_win_pct / _prior_sum
+        _pd = req.league_stats.draw_pct     / _prior_sum
+        _pa = req.league_stats.away_win_pct / _prior_sum
+        h_prob = h_prob * _BLEND_W + _ph * (1.0 - _BLEND_W)
+        d_prob = d_prob * _BLEND_W + _pd * (1.0 - _BLEND_W)
+        a_prob = a_prob * _BLEND_W + _pa * (1.0 - _BLEND_W)
+
+    # ── FIX 2: Helper local que remueve el overround antes de calcular edge ─
+    # Las cuotas de la casa incluyen margen (~3–8%), lo que infla las implied
+    # probability y hace que el modelo "parezca" subestimar. Normalizamos primero.
+    def _overround(*odds_list: float | None) -> float:
+        """Calcula el overround total de un mercado (e.g. 103.5 para un 3.5% de margen)."""
+        raw = [1.0 / o for o in odds_list if o and o > 1.0]
+        return sum(raw) * 100.0 if raw else 100.0
+
+    def _vi(sel: str, odds: float | None, modelp: float, overround: float = 100.0) -> ValueIndicator:
+        """
+        Calcula ValueIndicator usando implied probability JUSTA (sin margen).
+        Si overround=103.5, la implied se divide por 1.035 antes de comparar con modelp.
+        """
+        if odds is None:
+            return ValueIndicator(selection=sel, model_prob=round(modelp, 1))
+        raw_implied  = (1.0 / odds) * 100.0
+        fair_implied = raw_implied / (overround / 100.0)   # ← remoción del margen
+        edge         = modelp - fair_implied
+        is_value     = edge > 2.0
+        if   edge > 5.0:  rating = "🔥 STRONG VALUE"
+        elif edge > 2.0:  rating = "✅ VALUE"
+        elif edge > -1.0: rating = "⚖️ NEUTRAL"
+        else:             rating = "❌ NO VALUE"
+        return ValueIndicator(
+            selection=sel,
+            odds=odds,
+            implied_prob=round(fair_implied, 1),  # guardamos la implied JUSTA
+            model_prob=round(modelp, 1),
+            edge=round(edge, 1),
+            is_value=is_value,
+            rating=rating,
+        )
+
+    # ── FIX 3: market incluye overround por grupo de mercado ────────────────
+    # Cada grupo (1X2, BTTS, Goals O/U, Corners O/U, Cards O/U) tiene su propio
+    # overround calculado sólo con las cuotas disponibles de ese grupo.
+    _or_1x2  = _overround(req.odds.home, req.odds.draw, req.odds.away)
+    _or_btts = _overround(req.odds.btts_yes, req.odds.btts_no)
+
+    # market: (sel, odds, model_prob, overround_del_mercado)
+    market: list[tuple[str, float | None, float, float]] = [
+        ("Local",     req.odds.home,     h_prob     * 100, _or_1x2),
+        ("Empate",    req.odds.draw,     d_prob     * 100, _or_1x2),
+        ("Visitante", req.odds.away,     a_prob     * 100, _or_1x2),
+        ("BTTS Sí",   req.odds.btts_yes, p_btts_yes * 100, _or_btts),
+        ("BTTS No",   req.odds.btts_no,  p_btts_no  * 100, _or_btts),
     ]
 
     projected_lines: list[ProjectedLine] = []
@@ -1041,15 +1286,14 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     # ── Over/Under GOLES: múltiples líneas ─────────────────────
     for line in req.odds.goals_lines:
         p_over, p_under = _poisson_over_under(projected_total_goals, line)
-        key = str(line)
-        overOdds = req.odds.goals_over_odds.get(key)
-        underOdds = req.odds.goals_under_odds.get(key)      
+        key       = str(line)
+        overOdds  = req.odds.goals_over_odds.get(key)
+        underOdds = req.odds.goals_under_odds.get(key)
+        _or_goals = _overround(overOdds, underOdds)
 
-        market.append((f"Over {line} Goles",  overOdds,  p_over))
-        market.append((f"Under {line} Goles", underOdds, p_under))
+        market.append((f"Over {line} Goles",  overOdds,  p_over,  _or_goals))
+        market.append((f"Under {line} Goles", underOdds, p_under, _or_goals))
 
-        # Opcional: Agregar todas al projected_lines o dejar solo el Total.
-        # Aquí agregamos todas para que se vean en UI.
         projected_lines.append(ProjectedLine(
             label=f"Over {line} Goles",  value=round(p_over, 1),
             type="goals", prob=round(p_over, 1)
@@ -1062,12 +1306,13 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     ))
     for line in req.odds.corners_lines:
         p_over, p_under = _poisson_over_under(lam_corners, line)
-        key = str(line)
+        key        = str(line)
         over_odds  = req.odds.corners_over_odds.get(key)
         under_odds = req.odds.corners_under_odds.get(key)
+        _or_corn   = _overround(over_odds, under_odds)
 
-        market.append((f"Over {line} Corners",  over_odds,  p_over))
-        market.append((f"Under {line} Corners", under_odds, p_under))
+        market.append((f"Over {line} Corners",  over_odds,  p_over,  _or_corn))
+        market.append((f"Under {line} Corners", under_odds, p_under, _or_corn))
 
     # ── Over/Under TARJETAS: múltiples líneas ──────────────────
     projected_lines.append(ProjectedLine(
@@ -1076,12 +1321,13 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     ))
     for line in req.odds.cards_lines:
         p_over, p_under = _poisson_over_under(lam_cards, line)
-        key = str(line)
+        key        = str(line)
         over_odds  = req.odds.cards_over_odds.get(key)
         under_odds = req.odds.cards_under_odds.get(key)
+        _or_cards  = _overround(over_odds, under_odds)
 
-        market.append((f"Over {line} Tarjetas",  over_odds,  p_over))
-        market.append((f"Under {line} Tarjetas", under_odds, p_under))
+        market.append((f"Over {line} Tarjetas",  over_odds,  p_over,  _or_cards))
+        market.append((f"Under {line} Tarjetas", under_odds, p_under, _or_cards))
 
     # ── Handicap ───────────────────────────────────────────────
     proj_hcap = h_lam - a_lam
@@ -1090,9 +1336,48 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         type="handicap", prob=None
     ))
 
-    # Calculamos todos los values (Edge y Rating) de una sola vez
-    values = [_value_indicator(sel, odds, mp) for sel, odds, mp in market]
+    # ── Goles por equipo ────────────────────────────────────────
+    projected_lines.append(ProjectedLine(
+        label=f"Goles {h.name}", value=round(h_goals_lam, 2),
+        type="goals_team", prob=None
+    ))
+    projected_lines.append(ProjectedLine(
+        label=f"Goles {a.name}", value=round(a_goals_lam, 2),
+        type="goals_team", prob=None
+    ))
 
+    # ── Corners por equipo ──────────────────────────────────────
+    projected_lines.append(ProjectedLine(
+        label=f"Corners {h.name}", value=round(h_corners_lam, 1),
+        type="corners_team", prob=None
+    ))
+    projected_lines.append(ProjectedLine(
+        label=f"Corners {a.name}", value=round(a_corners_lam, 1),
+        type="corners_team", prob=None
+    ))
+
+    # ── Tarjetas por equipo ─────────────────────────────────────
+    projected_lines.append(ProjectedLine(
+        label=f"Tarjetas {h.name}", value=round(h_cards_lam, 1),
+        type="cards_team", prob=None
+    ))
+    projected_lines.append(ProjectedLine(
+        label=f"Tarjetas {a.name}", value=round(a_cards_lam, 1),
+        type="cards_team", prob=None
+    ))
+
+    # ── Probabilidades de Handicap ─────────────────────────────
+    for hc_line in [-1.5, -1.0, -0.5, 0.5, 1.0, 1.5]:
+        p_home_cov, p_away_cov = _compute_handicap_probabilities(h_lam, a_lam, hc_line)
+        projected_lines.append(ProjectedLine(
+            label=f"Handicap {hc_line:+.1f} Local",
+            value=hc_line,
+            type="handicap_prob",
+            prob=round(p_home_cov, 1)
+        ))
+
+    # ── Values: usando _vi con overround por mercado ────────────
+    values = [_vi(sel, odds, mp, ornd) for sel, odds, mp, ornd in market]
 
     h_adv = sum(1 for c in comparisons if c.advantage == "home")
     a_adv = sum(1 for c in comparisons if c.advantage == "away")
@@ -1101,6 +1386,9 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     summary = (
         f"Sherlock Analytics | λ Goles: {h.name} {h_lam:.2f} - {a.name} {a_lam:.2f}\n"
         f"Proyección Total: {projected_total_goals:.2f} Goles | {lam_corners:.1f} Corners | {lam_cards:.1f} Tarjetas\n"
+        f"Goles por equipo: {h.name} {h_goals_lam:.2f} | {a.name} {a_goals_lam:.2f}\n"
+        f"Corners por equipo: {h.name} {h_corners_lam:.1f} | {a.name} {a_corners_lam:.1f}\n"
+        f"Tarjetas por equipo: {h.name} {h_cards_lam:.1f} | {a.name} {a_cards_lam:.1f}\n"
         f"Handicap Estimado: {h.name} {proj_hcap:+.2f}\n"
         + (f"✅ Value detectado en: {', '.join(v.selection for v in vp)}"
            if vp else "⚖️ Sin value claro en las cuotas actuales.")
