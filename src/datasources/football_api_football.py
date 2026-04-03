@@ -172,9 +172,9 @@ class FootballApiFootballAdapter(DataSourceAdapter):
         self, match_id: str | None = None, **kwargs: Any
     ) -> list[StatLineTeam]:
         """Fetch team statistics for a fixture.
-
-        kwargs:
-            fixture (int): API-Football fixture ID.
+        
+        API-Football returns an array with two objects (one per team).
+        We need to match them to fill 'conceded' fields for each team.
         """
         fixture_id = match_id or kwargs.get("fixture")
         if not fixture_id:
@@ -185,25 +185,52 @@ class FootballApiFootballAdapter(DataSourceAdapter):
             resp.raise_for_status()
             data = resp.json()
 
-        stat_lines: list[StatLineTeam] = []
-        for team_stats in data.get("response", []):
-            team_info = team_stats.get("team", {})
-            stats_raw = {s["type"]: s["value"] for s in team_stats.get("statistics", [])}
+        responses = data.get("response", [])
+        if len(responses) < 2:
+            # If only one team or none, we can't cross-reference conceded stats easily
+            stat_lines: list[StatLineTeam] = []
+            for team_stats in responses:
+                stats_raw = {s["type"]: s["value"] for s in team_stats.get("statistics", [])}
+                stat_lines.append(self._map_single_team_stats(team_stats, stats_raw))
+            return stat_lines
 
-            stat = StatLineTeam(
-                team_id=None,  # resolved by caller
-                shots=_safe_int(stats_raw.get("Total Shots")),
-                shots_on_target=_safe_int(stats_raw.get("Shots on Goal")),
-                possession=_safe_float(stats_raw.get("Ball Possession")),
-                fouls=_safe_int(stats_raw.get("Fouls")),
-                corners=_safe_int(stats_raw.get("Corner Kicks")),
-                offsides=_safe_int(stats_raw.get("Offsides")),
-            )
-            stat._team_external_id = str(team_info.get("id", ""))  # type: ignore[attr-defined]
-            stat_lines.append(stat)
+        # Cross-reference
+        t1_data = responses[0]
+        t2_data = responses[1]
+        t1_raw = {s["type"]: s["value"] for s in t1_data.get("statistics", [])}
+        t2_raw = {s["type"]: s["value"] for s in t2_data.get("statistics", [])}
 
-        logger.info("API-Football: fetched %d team stat lines for fixture %s", len(stat_lines), fixture_id)
-        return stat_lines
+        s1 = self._map_single_team_stats(t1_data, t1_raw)
+        s2 = self._map_single_team_stats(t2_data, t2_raw)
+
+        # Fill conceded stats
+        s1.corners_conceded = s2.corners
+        s1.xga = s2.xg
+        
+        s2.corners_conceded = s1.corners
+        s2.xga = s1.xg
+
+        return [s1, s2]
+
+    def _map_single_team_stats(self, team_data: dict, stats_raw: dict) -> StatLineTeam:
+        stat = StatLineTeam(
+            team_id=None,
+            shots=_safe_int(stats_raw.get("Total Shots")),
+            shots_on_target=_safe_int(stats_raw.get("Shots on Goal")),
+            possession=_safe_float(stats_raw.get("Ball Possession")),
+            fouls=_safe_int(stats_raw.get("Fouls")),
+            corners=_safe_int(stats_raw.get("Corner Kicks")),
+            offsides=_safe_int(stats_raw.get("Offsides")),
+            yellow_cards=_safe_int(stats_raw.get("Yellow Cards")),
+            red_cards=_safe_int(stats_raw.get("Red Cards")),
+            saves=_safe_int(stats_raw.get("Goalkeeper Saves")),
+            passes=_safe_int(stats_raw.get("Total passes")),
+            passes_accurate=_safe_int(stats_raw.get("Passes accurate")),
+            xg=_safe_float(stats_raw.get("expected_goals")),
+            # big_chances usually not in this endpoint but sometimes in others
+        )
+        stat._team_external_id = str(team_data.get("team", {}).get("id", ""))  # type: ignore
+        return stat
 
     # ------------------------------------------------------------------
     # Player stats (not available on free plan, stub)

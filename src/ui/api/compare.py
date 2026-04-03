@@ -26,7 +26,9 @@ class FootballTeamStats(BaseModel):
     name: str = Field(..., description="Nombre del equipo")
 
     # Generales
-    matches_played: int = Field(1,  description="Partidos jugados")
+    matches_home:   int = Field(1,  description="Partidos jugados como local")
+    matches_away:   int = Field(1,  description="Partidos jugados como visitante")
+    matches_played: int = Field(1,  description="Partidos totales")
     wins:           int = Field(0,  description="Ganados")
     draws:          int = Field(0,  description="Empates")
     losses:         int = Field(0,  description="Perdidos")
@@ -53,7 +55,9 @@ class FootballTeamStats(BaseModel):
     corners_per_game:       float = Field(..., description="Corners por juego")
 
     # Defensa
-    clean_sheets:             float = Field(..., description="Vallas invictas")
+    clean_sheets_home:        int   = Field(0,   description="Vallas invictas como local")
+    clean_sheets_away:        int   = Field(0,   description="Vallas invictas como visitante")
+    clean_sheets:             float = Field(..., description="Vallas invictas totales")
     saves_per_game:           float = Field(0,   description="Saves por juego")
     balls_recovered_per_game: float = Field(..., description="Recuperaciones por juego")
 
@@ -66,12 +70,20 @@ class FootballTeamStats(BaseModel):
 
     # Disciplina
     fouls_per_game:        float = Field(..., description="Faltas por juego")
-    yellow_cards_per_game: float = Field(..., description="Amarillas por juego")
+    yellow_cards_per_game: float = Field(..., description="Amarillas promedio por juego")
     red_cards_total:       float = Field(0.0, description="Rojas totales")
 
-    # Extra Tactical
     errors_leading_to_goal: float = Field(0, description="Errores que llevan a gol")
     offside_per_game:       float = Field(0, description="Fuera de juego por juego")
+
+    # Extra Advanced
+    corners_conceded_per_game:    float = Field(5.0, description="Corners concedidos por juego")
+    xg_per_game:                  float = Field(1.5, description="Expected Goals por juego")
+    xga_per_game:                 float = Field(1.5, description="Expected Goals Against por juego")
+    # Pases / Centros (Totales vs Acertados)
+    passes_total_per_game:          float = Field(500.0, description="Pases totales intentados por juego")
+    passes_opp_half_total_per_game: float = Field(200.0, description="Pases totales intentados en campo rival")
+    crosses_total_per_game:         float = Field(20.0,  description="Centros totales intentados por juego")
 
 
 class LeagueStats(BaseModel):
@@ -308,6 +320,10 @@ class CompareResponse(BaseModel):
     away_name:       str
     h_lam:           Optional[float] = None
     a_lam:           Optional[float] = None
+    h_corners_lam:   Optional[float] = None
+    a_corners_lam:   Optional[float] = None
+    h_cards_lam:     Optional[float] = None
+    a_cards_lam:     Optional[float] = None
     comparisons:     list[StatComparison]
     values:          list[ValueIndicator]
     projected_lines: list[ProjectedLine] = []
@@ -454,44 +470,46 @@ def _compute_team_goals_lambda(
     """
     Calcula lambda de goles esperados para un equipo específico.
     Incluye:
-    - Fuerza de ataque del equipo
-    - Debilidad defensiva del rival
+    - Fuerza de ataque (Goles + xG)
+    - Debilidad defensiva rival (Goles Concedidos + xGA + Shots Concedidos)
     - Ventaja de localía
     - Shrinkage adaptativo
     """
-    avg_team = league.avg_goals_per_game / 2.0
+    avg_team_goals = league.avg_goals_per_game / 2.0
 
-    # Fuerza de ataque
-    att_str = attacker.goals_per_game / max(avg_team, 0.1)
+    # 1. Fuerza de Ataque (Attacking Strength)
+    # 60% xG, 40% Goles reales (si xG está disponible)
+    att_g = attacker.goals_per_game
+    if abs(attacker.xg_per_game - 1.5) > 0.05:
+        att_g = (attacker.xg_per_game * 0.6) + (attacker.goals_per_game * 0.4)
+    
+    att_str = att_g / max(avg_team_goals, 0.1)
 
-    # Debilidad defensiva del rival (goles que concede)
-    def_weakness = defender.goals_conceded_per_game / max(avg_team, 0.1)
+    # 2. Debilidad Defensiva Rival (Defensive Weakness)
+    # Hibridamos Goles Concedidos y xGA
+    def_g = defender.goals_conceded_per_game
+    if abs(defender.xga_per_game - 1.5) > 0.05:
+        def_g = (defender.xga_per_game * 0.6) + (defender.goals_conceded_per_game * 0.4)
+    
+    def_weakness = def_g / max(avg_team_goals, 0.1)
 
-    # Lambda base
-    lam_base = att_str * def_weakness * avg_team
+    # 3. Lambda Base
+    lam_base = att_str * def_weakness * avg_team_goals
 
-    # xG multiplier
-    bc_converted = max(
-        attacker.big_chances_per_game - attacker.big_chances_missed_per_game, 0.0
-    )
-    shot_xg = attacker.shots_on_target_per_game * (attacker.goal_conversion_pct / 100.0)
-    xg_signal = bc_converted * 0.45 + shot_xg * 0.55
+    # 4. Señales Tácticas Adicionales (Big Chances Propias)
+    bc_signal = attacker.big_chances_per_game / max(attacker.big_chances_missed_per_game + 0.5, 0.5)
+    tactical_mult = 1.0 + (min(bc_signal, 2.5) - 1.0) * 0.12
+    lam_adjusted = lam_base * tactical_mult
 
-    avg_xg = max(avg_team * 0.50, 0.10)
-    alpha = 0.40
-    xg_mult = 1.0 + alpha * (xg_signal / avg_xg - 1.0)
-    xg_mult = max(0.45, min(2.20, xg_mult))
-    lam_adjusted = lam_base * xg_mult
-
-    # Shrinkage adaptativo
-    prior_n = max(0.5, 2.0 - (attacker.matches_played / 10.0))
-    n = max(attacker.matches_played, 1)
+    # 5. Shrinkage Adaptativo (Usamos la muestra local/visita según corresponda)
+    m_count = attacker.matches_home if is_home else attacker.matches_away
+    prior_n = max(0.5, 3.0 - (m_count / 10.0))
+    n = max(m_count, 1)
     shrink_w = prior_n / (prior_n + n)
-    lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team * shrink_w
+    lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team_goals * shrink_w
 
-    # Ventaja de local
-    lam_final *= league.home_advantage_factor if is_home else league.away_disadvantage_factor
-
+    # 6. Ventaja de Local (Nota: se omite el multiplicador manual de liga 
+    # proque se asume que el usuario ingresa promedios ya condicionados)
     return max(lam_final, 0.10)
 
 
@@ -504,24 +522,26 @@ def _compute_team_corners_lambda(
     """
     Calcula corners esperados por equipo.
     Considera:
-    - Generación de corners del equipo
-    - Posesión como proxy de oportunidad
+    - Generación propia (Corners y Centros)
+    - Propensión del rival a conceder (Corners concedidos)
     - Ventaja de local
     """
     avg_team_corners = league.avg_corners_per_game / 2.0
 
-    # Ajuste por posesión (más posesión = más oportunidad de corners)
-    poss_factor = team.possession_pct / 50.0  # normalizado a 50%
+    # 70% corners históricos, 30% basado en centros efectivos
+    # (Los equipos que centran mucho suelen forzar más despejes a corner)
+    gen_str = (team.corners_per_game * 0.7) + (team.crosses_per_game * 0.3)
+    
+    # Capacidad del rival de conceder corners (normalizado al promedio liga)
+    opp_def_weakness = opponent.corners_conceded_per_game / max(avg_team_corners, 1.0)
 
-    # Lambda base
-    lam = team.corners_per_game * poss_factor
+    # Lambda base cruzada
+    lam = gen_str * opp_def_weakness
 
-    # Ventaja de local para corners (~10% más)
-    lam *= 1.10 if is_home else 0.95
-
-    # Shrinkage suave
-    prior_n = 1.0
-    n = max(team.matches_played, 1)
+    # Shrinkage
+    m_count = team.matches_home if is_home else team.matches_away
+    prior_n = 2.0
+    n = max(m_count, 1)
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_corners * shrink_w
 
@@ -537,27 +557,32 @@ def _compute_team_cards_lambda(
     """
     Calcula tarjetas esperadas por equipo.
     Considera:
-    - Tarjetas propias (amarillas + rojas ponderadas)
-    - Faltas cometidas
-    - Estilo de juego del rival (induce faltas)
+    - Agresividad propia (Tarjetas + Faltas cometidas)
+    - Atributos del rival que inducen tarjetas (Duelos ganados en piso = dribbling)
     """
     avg_team_cards = league.avg_cards_per_game / 2.0
 
-    # Tarjetas del equipo (rojas = 2 amarillas)
-    team_cards = team.yellow_cards_per_game + (team.red_cards_total / max(team.matches_played, 1)) * 2.0
+    # Tarjetas propias (rojas valen por 2)
+    own_cards_avg = team.yellow_cards_per_game + (team.red_cards_total / max(team.matches_played, 1)) * 2.0
+    
+    # Agresividad basada en faltas
+    # Equipos con >15 faltas p/j son "incandescentes"
+    foul_pressure = team.fouls_per_game / 12.5 # 12.5 es el promedio aproximado
 
-    # Factor de agresividad del rival (faltas que induce)
-    opp_fouls_factor = opponent.fouls_per_game / 12.0
+    # Factor de inducción del rival: 
+    # El rival recibe más tarjetas si juega por abajo y gana duelos en piso (dribbling/skilly)
+    # o si tiene mucha posesión (el equipo defensor se desespera).
+    rival_provocation = (opponent.possession_pct / 50.0) * 0.1 + (opponent.ground_duels_won_per_game / 10.0) * 0.1
+    rival_provocation = max(0.9, min(1.3, 1.0 + rival_provocation))
 
-    # Lambda base
-    lam = team_cards * (1.0 + opp_fouls_factor * 0.15)
+    # Combinación: 70% historial + 30% presión táctica actual
+    lam_base = (own_cards_avg * 0.7) + (own_cards_avg * foul_pressure * 0.3)
+    lam = lam_base * rival_provocation
 
-    # Ventaja de local (visitantes suelen recibir más tarjetas)
-    lam *= 1.05 if is_home else 1.15
-
-    # Shrinkage suave
-    prior_n = 1.0
-    n = max(team.matches_played, 1)
+    # Shrinkage (Usamos el total de partidos para amarillas ya que la métrica es global)
+    m_count = team.matches_played
+    prior_n = 2.5
+    n = max(m_count, 1)
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
 
@@ -953,67 +978,35 @@ Visitante: {a.name}
 
 SEÑALES CLAVE LOCAL:
 - Partidos jugados: {h.matches_played}
-- Victorias: {h.wins}
-- Empates: {h.draws}
-- Derrotas: {h.losses}
-- Goles p/j: {h.goals_per_game}
-- Goles concedidos p/j: {h.goals_conceded_per_game}
-- Tiros totales p/j: {h.shots_per_game}
-- Tiros a puerta p/j: {h.shots_on_target_per_game}
-- Grandes chances p/j: {h.big_chances_per_game}
-- Grandes chances falladas p/j: {h.big_chances_missed_per_game}
+- Victorias: {h.wins} | Empates: {h.draws} | Derrotas: {h.losses}
+- Goles p/j: {h.goals_per_game} | Goles concedidos p/j: {h.goals_conceded_per_game}
+- xG (Goles Esperados) p/j: {h.xg_per_game} | xGA (Goles Esperados en Contra) p/j: {h.xga_per_game}
+- Grandes chances creadas p/j: {h.big_chances_per_game}
+- Tiros totales p/j: {h.shots_per_game} | Tiros a puerta p/j: {h.shots_on_target_per_game}
 - Posesión: {h.possession_pct}%
-- Pases totales p/j: {(h.passes_completed*100)/max(h.pass_accuracy, 1.0):.1f}
-- Pases totales completados p/j: {h.passes_completed}
-- Precisión pases: {h.pass_accuracy}%
-- Pases totales campo rival p/j: {(h.passes_opp_half*100)/max(h.pass_accuracy_opp_half, 1.0):.1f}
-- Pases totales campo rival completados p/j: {h.passes_opp_half}
-- Precisión en campo rival: {h.pass_accuracy_opp_half}%
-- Centros intentados p/j: {(h.crosses_per_game*100)/max(h.cross_accuracy, 1.0):.1f}
-- Centros completados p/j: {h.crosses_per_game} con un accuracy de {h.cross_accuracy}%
-- Corners p/j: {h.corners_per_game}
-- Amarillas p/j: {h.yellow_cards_per_game}
-- Vallas invictas: {h.clean_sheets}/{h.matches_played}
-- Paradas del portero p/j: {h.saves_per_game}
-- Recuperaciones de balón p/j: {h.balls_recovered_per_game}
-- Penales cometidos (Totales): {h.penalties_conceded}
-- Errores que terminan en gol: {h.errors_leading_to_goal}
-- Duelos ganados p/j: {h.duels_won_per_game}
-- Duelos ganados en piso p/j: {h.ground_duels_won_per_game}
-- Duelos ganados aéreos p/j: {h.duels_won_per_game - h.ground_duels_won_per_game}
-- Rojas totales: {h.red_cards_total}
+- Pases Totales (Intentados) p/j: {h.passes_total_per_game} | Completados: {h.passes_completed} ({h.pass_accuracy}%)
+- Pases en Campo Rival (Intentados) p/j: {h.passes_opp_half_total_per_game} | Completados: {h.passes_opp_half} ({h.pass_accuracy_opp_half}%)
+- Centros (Intentados) p/j: {h.crosses_total_per_game} | Completados: {h.crosses_per_game} ({h.cross_accuracy}%)
+- Corners p/j: {h.corners_per_game} | Corners concedidos p/j: {h.corners_conceded_per_game}
+- Disciplina: {h.yellow_cards_per_game} Amarillas p/j | {h.fouls_per_game} Faltas p/j | {h.red_cards_total} Rojas
+- Defensa: {h.clean_sheets}/{h.matches_played} Vallas invictas | {h.saves_per_game} Paradas p/j | {h.balls_recovered_per_game} Recuperaciones p/j
+- Errores que llevan a gol: {h.errors_leading_to_goal} | Penales concedidos: {h.penalties_conceded}
 
 SEÑALES CLAVE VISITANTE:
 - Partidos jugados: {a.matches_played}
-- Victorias: {a.wins}
-- Empates: {a.draws}
-- Derrotas: {a.losses}
-- Goles p/j: {a.goals_per_game}
-- Goles concedidos p/j: {a.goals_conceded_per_game}
-- Tiros totales p/j: {a.shots_per_game}
-- Tiros a puerta p/j: {a.shots_on_target_per_game}
-- Grandes chances p/j: {a.big_chances_per_game}
-- Grandes chances falladas p/j: {a.big_chances_missed_per_game}
+- Victorias: {a.wins} | Empates: {a.draws} | Derrotas: {a.losses}
+- Goles p/j: {a.goals_per_game} | Goles concedidos p/j: {a.goals_conceded_per_game}
+- xG (Goles Esperados) p/j: {a.xg_per_game} | xGA (Goles Esperados en Contra) p/j: {a.xga_per_game}
+- Grandes chances creadas p/j: {a.big_chances_per_game}
+- Tiros totales p/j: {a.shots_per_game} | Tiros a puerta p/j: {a.shots_on_target_per_game}
 - Posesión: {a.possession_pct}%
-- Pases totales p/j: {(a.passes_completed*100)/max(a.pass_accuracy, 1.0):.1f}
-- Pases totales completados p/j: {a.passes_completed}
-- Precisión pases: {a.pass_accuracy}%
-- Pases totales campo rival p/j: {(a.passes_opp_half*100)/max(a.pass_accuracy_opp_half, 1.0):.1f}
-- Pases totales campo rival completados p/j: {a.passes_opp_half}
-- Precisión en campo rival: {a.pass_accuracy_opp_half}%
-- Centros intentados p/j: {(a.crosses_per_game*100)/max(a.cross_accuracy, 1.0):.1f}
-- Centros completados p/j: {a.crosses_per_game} con un accuracy de {a.cross_accuracy}%
-- Corners p/j: {a.corners_per_game}
-- Amarillas p/j: {a.yellow_cards_per_game}
-- Vallas invictas: {a.clean_sheets}/{a.matches_played}
-- Paradas del portero p/j: {a.saves_per_game}
-- Recuperaciones de balón p/j: {a.balls_recovered_per_game}
-- Penales cometidos (Totales): {a.penalties_conceded}
-- Errores que terminan en gol: {a.errors_leading_to_goal}
-- Duelos ganados p/j: {a.duels_won_per_game}
-- Duelos ganados en piso p/j: {a.ground_duels_won_per_game}
-- Duelos ganados aéreos p/j: {a.duels_won_per_game - a.ground_duels_won_per_game}
-- Rojas totales: {a.red_cards_total}
+- Pases Totales (Intentados) p/j: {a.passes_total_per_game} | Completados: {a.passes_completed} ({a.pass_accuracy}%)
+- Pases en Campo Rival (Intentados) p/j: {a.passes_opp_half_total_per_game} | Completados: {a.passes_opp_half} ({a.pass_accuracy_opp_half}%)
+- Centros (Intentados) p/j: {a.crosses_total_per_game} | Completados: {a.crosses_per_game} ({a.cross_accuracy}%)
+- Corners p/j: {a.corners_per_game} | Corners concedidos p/j: {a.corners_conceded_per_game}
+- Disciplina: {a.yellow_cards_per_game} Amarillas p/j | {a.fouls_per_game} Faltas p/j | {a.red_cards_total} Rojas
+- Defensa: {a.clean_sheets}/{a.matches_played} Vallas invictas | {a.saves_per_game} Paradas p/j | {a.balls_recovered_per_game} Recuperaciones p/j
+- Errores que llevan a gol: {a.errors_leading_to_goal} | Penales concedidos: {a.penalties_conceded}
 
 LÍNEAS PROYECTADAS:
 {proj_text}
@@ -1044,7 +1037,7 @@ async def generate_nba_analysis(
     vp_text = (
         "\n".join(
             [
-                f"- {v.selection}: cuota={v.odds if v.odds is not None else 'N/A'} | modelo={v.modelprob:.1f}% | edge={v.edge:.1f}% | rating={v.rating}"
+                f"- {v.selection}: cuota={v.odds if v.odds is not None else 'N/A'} | modelo={v.model_prob:.1f}% | edge={v.edge:.1f}% | rating={v.rating}"
                 for v in vp[:6]
             ]
         )
@@ -1383,6 +1376,14 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     a_adv = sum(1 for c in comparisons if c.advantage == "away")
     vp    = [v for v in values if v.is_value]
 
+    # ── Proyecciones por Equipo ───────────────────────────────
+    projected_lines.append(ProjectedLine(label=f"Goles {h.name}", value=h_goals_lam, type="goals_team"))
+    projected_lines.append(ProjectedLine(label=f"Goles {a.name}", value=a_goals_lam, type="goals_team"))
+    projected_lines.append(ProjectedLine(label=f"Corners {h.name}", value=h_corners_lam, type="corners_team"))
+    projected_lines.append(ProjectedLine(label=f"Corners {a.name}", value=a_corners_lam, type="corners_team"))
+    projected_lines.append(ProjectedLine(label=f"Tarjetas {h.name}", value=h_cards_lam, type="cards_team"))
+    projected_lines.append(ProjectedLine(label=f"Tarjetas {a.name}", value=a_cards_lam, type="cards_team"))
+
     summary = (
         f"Sherlock Analytics | λ Goles: {h.name} {h_lam:.2f} - {a.name} {a_lam:.2f}\n"
         f"Proyección Total: {projected_total_goals:.2f} Goles | {lam_corners:.1f} Corners | {lam_cards:.1f} Tarjetas\n"
@@ -1400,8 +1401,12 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         sport="football",
         home_name=h.name,
         away_name=a.name,
-        h_lam=h_lam,
-        a_lam=a_lam,
+        h_lam=h_goals_lam,
+        a_lam=a_goals_lam,
+        h_corners_lam=h_corners_lam,
+        a_corners_lam=a_corners_lam,
+        h_cards_lam=h_cards_lam,
+        a_cards_lam=a_cards_lam,
         comparisons=comparisons,
         values=values,
         projected_lines=projected_lines,

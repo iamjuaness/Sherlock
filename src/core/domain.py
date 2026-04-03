@@ -209,7 +209,18 @@ class StatLineTeam(Base):
     possession = Column(Float, nullable=True)
     fouls = Column(Integer, nullable=True)
     corners = Column(Integer, nullable=True)
+    corners_conceded = Column(Integer, nullable=True)
     offsides = Column(Integer, nullable=True)
+
+    # Football-specific (detailed)
+    yellow_cards = Column(Integer, nullable=True)
+    red_cards = Column(Integer, nullable=True)
+    saves = Column(Integer, nullable=True)
+    big_chances = Column(Integer, nullable=True)
+    xg = Column(Float, default=0)  # Goles esperados
+    xga = Column(Float, nullable=True)
+    passes = Column(Integer, nullable=True)
+    passes_accurate = Column(Integer, nullable=True)
 
     # Basketball-specific
     rebounds = Column(Integer, nullable=True)

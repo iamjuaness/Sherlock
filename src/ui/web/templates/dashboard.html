@@ -98,7 +98,17 @@
           <div class="comparator__team">
             <div class="team-header team-header--home">
               <span class="team-badge">🏠</span>
-              <h2>Local</h2>
+              <div style="display: flex; flex-direction: column; gap: 2px">
+                <h2 style="margin: 0; line-height: 1">Local</h2>
+                <small
+                  style="
+                    color: var(--text-dim);
+                    font-size: 0.72rem;
+                    opacity: 0.8;
+                  "
+                  >(Ingresa datos de CASA)</small
+                >
+              </div>
             </div>
 
             <div class="form-group">
@@ -115,12 +125,22 @@
               <div class="stats-section__title">📋 General</div>
               <div class="stats-grid">
                 <div class="form-group">
-                  <label>Partidos Jugados</label>
+                  <label>Partidos Local</label>
                   <input
                     type="number"
                     step="1"
-                    id="fb-home-matches"
-                    placeholder="20"
+                    id="fb-home-matches-home"
+                    placeholder="10"
+                    class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>Partidos Visita</label>
+                  <input
+                    type="number"
+                    step="1"
+                    id="fb-home-matches-away"
+                    placeholder="10"
                     class="input"
                   />
                 </div>
@@ -138,6 +158,17 @@
                     id="fb-home-goals-per-game"
                     placeholder="1.8"
                     class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>xG/juego</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    id="fb-home-xg"
+                    placeholder="2.1"
+                    class="input"
+                    title="Expected Goals por partido"
                   />
                 </div>
                 <div class="form-group">
@@ -213,12 +244,12 @@
                   />
                 </div>
                 <div class="form-group">
-                  <label>Pases acertados</label>
+                  <label>Pases Acertados</label>
                   <input
                     type="number"
-                    step="1"
+                    step="0.1"
                     id="fb-home-pass"
-                    placeholder="100"
+                    placeholder="480"
                     class="input"
                   />
                 </div>
@@ -282,6 +313,17 @@
                     class="input"
                   />
                 </div>
+                <div class="form-group">
+                  <label>Corners Recibidos/j</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    id="fb-home-corners-conceded"
+                    placeholder="4.1"
+                    class="input"
+                    title="Córners que concede el equipo por partido"
+                  />
+                </div>
               </div>
             </div>
 
@@ -289,23 +331,44 @@
               <div class="stats-section__title">🛡️ Defensa</div>
               <div class="stats-grid">
                 <div class="form-group">
-                  <label>Vallas invictas (Total)</label>
+                  <label>Vallas invictas Casa</label>
                   <input
                     type="number"
                     step="1"
-                    id="fb-home-clean-sheets"
-                    placeholder="5"
+                    id="fb-home-clean-sheets-home"
+                    placeholder="4"
                     class="input"
                   />
                 </div>
                 <div class="form-group">
-                  <label>Goles concedidos/juego</label>
+                  <label>Vallas invictas Fuera</label>
+                  <input
+                    type="number"
+                    step="1"
+                    id="fb-home-clean-sheets-away"
+                    placeholder="2"
+                    class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>G. Concedidos/j</label>
                   <input
                     type="number"
                     step="0.01"
                     id="fb-home-goals-conceded"
                     placeholder="0.8"
                     class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>xGA/juego</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    id="fb-home-xga"
+                    placeholder="1.1"
+                    class="input"
+                    title="Expected Goals Against por partido"
                   />
                 </div>
                 <div class="form-group">
@@ -460,7 +523,17 @@
           <div class="comparator__team">
             <div class="team-header team-header--away">
               <span class="team-badge">✈️</span>
-              <h2>Visitante</h2>
+              <div style="display: flex; flex-direction: column; gap: 2px">
+                <h2 style="margin: 0; line-height: 1">Visitante</h2>
+                <small
+                  style="
+                    color: var(--text-dim);
+                    font-size: 0.72rem;
+                    opacity: 0.8;
+                  "
+                  >(Ingresa datos de FUERA)</small
+                >
+              </div>
             </div>
 
             <div class="form-group">
@@ -477,12 +550,22 @@
               <div class="stats-section__title">📋 General</div>
               <div class="stats-grid">
                 <div class="form-group">
-                  <label>Partidos Jugados</label>
+                  <label>Partidos Local</label>
                   <input
                     type="number"
                     step="1"
-                    id="fb-away-matches"
-                    placeholder="20"
+                    id="fb-away-matches-home"
+                    placeholder="10"
+                    class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>Partidos Visita</label>
+                  <input
+                    type="number"
+                    step="1"
+                    id="fb-away-matches-away"
+                    placeholder="10"
                     class="input"
                   />
                 </div>
@@ -500,6 +583,17 @@
                     id="fb-away-goals-per-game"
                     placeholder="1.8"
                     class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>xG/juego</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    id="fb-away-xg"
+                    placeholder="2.1"
+                    class="input"
+                    title="Expected Goals por partido"
                   />
                 </div>
                 <div class="form-group">
@@ -580,7 +674,7 @@
                     type="number"
                     step="0.1"
                     id="fb-away-pass"
-                    placeholder="100"
+                    placeholder="480"
                     class="input"
                   />
                 </div>
@@ -644,6 +738,17 @@
                     class="input"
                   />
                 </div>
+                <div class="form-group">
+                  <label>Corners Recibidos/j</label>
+                  <input
+                    type="number"
+                    step="0.1"
+                    id="fb-away-corners-conceded"
+                    placeholder="4.1"
+                    class="input"
+                    title="Córners que concede el equipo por partido"
+                  />
+                </div>
               </div>
             </div>
 
@@ -651,23 +756,44 @@
               <div class="stats-section__title">🛡️ Defensa</div>
               <div class="stats-grid">
                 <div class="form-group">
-                  <label>Vallas invictas (Total)</label>
+                  <label>Vallas invictas Casa</label>
                   <input
                     type="number"
                     step="1"
-                    id="fb-away-clean-sheets"
-                    placeholder="5"
+                    id="fb-away-clean-sheets-home"
+                    placeholder="4"
                     class="input"
                   />
                 </div>
                 <div class="form-group">
-                  <label>Goles concedidos/juego</label>
+                  <label>Vallas invictas Fuera</label>
+                  <input
+                    type="number"
+                    step="1"
+                    id="fb-away-clean-sheets-away"
+                    placeholder="2"
+                    class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>G. Concedidos/j</label>
                   <input
                     type="number"
                     step="0.01"
                     id="fb-away-goals-conceded"
                     placeholder="0.8"
                     class="input"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>xGA/juego</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    id="fb-away-xga"
+                    placeholder="1.1"
+                    class="input"
+                    title="Expected Goals Against por partido"
                   />
                 </div>
                 <div class="form-group">

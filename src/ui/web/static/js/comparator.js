@@ -239,16 +239,32 @@ function renderResults(data) {
       if (data.projected_lines && data.projected_lines.length > 0) {
         if (projectedLinesEl.parentElement)
           projectedLinesEl.parentElement.style.display = "block";
-        projectedLinesEl.innerHTML = data.projected_lines
-          .map(
-            (p) => `
+        
+        // Custom rendering for a "premium" feel: grouping by category or showing prominent team lines
+        const teamLines = [];
+        const totalLines = [];
+        
+        data.projected_lines.forEach(p => {
+          if (p.label.includes("(") && (p.label.includes(data.home_name) || p.label.includes(data.away_name))) {
+            teamLines.push(p);
+          } else {
+            totalLines.push(p);
+          }
+        });
+
+        const renderCard = (p) => `
           <div class="projected-card">
             <div class="projected-card__label">${p.label}</div>
             <div class="projected-card__value" style="font-size: 1.25rem; font-weight: 700; color: var(--accent); margin-top: 0.25rem;">${p.value.toFixed(2)}</div>
           </div>
-        `,
-          )
-          .join("");
+        `;
+
+        projectedLinesEl.innerHTML = `
+          <div style="grid-column: 1 / -1; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px;">Proyecciones Totales</div>
+          ${totalLines.map(renderCard).join("")}
+          <div style="grid-column: 1 / -1; margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px;">Proyecciones por Equipo</div>
+          ${teamLines.map(renderCard).join("")}
+        `;
       } else {
         if (projectedLinesEl.parentElement)
           projectedLinesEl.parentElement.style.display = "none";
@@ -771,7 +787,8 @@ function populateAppForm(sport, data) {
     const { home, away, odds } = data;
 
     setSafeValue("fb-home-name", home.name);
-    setSafeValue("fb-home-matches", home.matches_played);
+    setSafeValue("fb-home-matches-home", home.matches_home);
+    setSafeValue("fb-home-matches-away", home.matches_away);
     setSafeValue("fb-home-wins", home.wins);
     setSafeValue("fb-home-draws", home.draws);
     setSafeValue("fb-home-losses", home.losses);
@@ -793,7 +810,8 @@ function populateAppForm(sport, data) {
     setSafeValue("fb-home-cross-completed", home.crosses_per_game);
     setSafeValue("fb-home-cross-acc", home.cross_accuracy);
     setSafeValue("fb-home-corners", home.corners_per_game);
-    setSafeValue("fb-home-clean-sheets", home.clean_sheets);
+    setSafeValue("fb-home-clean-sheets-home", home.clean_sheets_home);
+    setSafeValue("fb-home-clean-sheets-away", home.clean_sheets_away);
     setSafeValue("fb-home-saves", home.saves_per_game);
     setSafeValue("fb-home-balls-recovered", home.balls_recovered_per_game);
     setSafeValue("fb-home-duels", home.duels_won_per_game);
@@ -804,9 +822,14 @@ function populateAppForm(sport, data) {
     setSafeValue("fb-home-red-cards", home.red_cards_total);
     setSafeValue("fb-home-offsides", home.offside_per_game);
     setSafeValue("fb-home-errors-goal", home.errors_leading_to_goal);
+    // Nuevos campos
+    setSafeValue("fb-home-xg", home.xg_per_game);
+    setSafeValue("fb-home-xga", home.xga_per_game);
+    setSafeValue("fb-home-corners-conceded", home.corners_conceded_per_game);
 
     setSafeValue("fb-away-name", away.name);
-    setSafeValue("fb-away-matches", away.matches_played);
+    setSafeValue("fb-away-matches-home", away.matches_home);
+    setSafeValue("fb-away-matches-away", away.matches_away);
     setSafeValue("fb-away-wins", away.wins);
     setSafeValue("fb-away-draws", away.draws);
     setSafeValue("fb-away-losses", away.losses);
@@ -828,7 +851,8 @@ function populateAppForm(sport, data) {
     setSafeValue("fb-away-cross-completed", away.crosses_per_game);
     setSafeValue("fb-away-cross-acc", away.cross_accuracy);
     setSafeValue("fb-away-corners", away.corners_per_game);
-    setSafeValue("fb-away-clean-sheets", away.clean_sheets);
+    setSafeValue("fb-away-clean-sheets-home", away.clean_sheets_home);
+    setSafeValue("fb-away-clean-sheets-away", away.clean_sheets_away);
     setSafeValue("fb-away-saves", away.saves_per_game);
     setSafeValue("fb-away-balls-recovered", away.balls_recovered_per_game);
     setSafeValue("fb-away-duels", away.duels_won_per_game);
@@ -839,6 +863,10 @@ function populateAppForm(sport, data) {
     setSafeValue("fb-away-red-cards", away.red_cards_total);
     setSafeValue("fb-away-offsides", away.offside_per_game);
     setSafeValue("fb-away-errors-goal", away.errors_leading_to_goal);
+    // Nuevos campos
+    setSafeValue("fb-away-xg", away.xg_per_game);
+    setSafeValue("fb-away-xga", away.xga_per_game);
+    setSafeValue("fb-away-corners-conceded", away.corners_conceded_per_game);
 
     if (data.competition) {
       setSafeValue("fb-competition", data.competition);
@@ -1159,7 +1187,9 @@ function validatePayload(payload, sport) {
 function _fbTeam(p) {
   return {
     name: val(`fb-${p}-name`),
-    matches_played: val(`fb-${p}-matches`),
+    matches_home: val(`fb-${p}-matches-home`),
+    matches_away: val(`fb-${p}-matches-away`),
+    matches_played: (val(`fb-${p}-matches-home`) || 0) + (val(`fb-${p}-matches-away`) || 0),
     wins: val(`fb-${p}-wins`),
     draws: val(`fb-${p}-draws`),
     losses: val(`fb-${p}-losses`),
@@ -1178,7 +1208,9 @@ function _fbTeam(p) {
     crosses_per_game: val(`fb-${p}-cross-completed`),
     cross_accuracy: val(`fb-${p}-cross-acc`),
     corners_per_game: val(`fb-${p}-corners`),
-    clean_sheets: val(`fb-${p}-clean-sheets`),
+    clean_sheets_home: val(`fb-${p}-clean-sheets-home`),
+    clean_sheets_away: val(`fb-${p}-clean-sheets-away`),
+    clean_sheets: (val(`fb-${p}-clean-sheets-home`) || 0) + (val(`fb-${p}-clean-sheets-away`) || 0),
     saves_per_game: val(`fb-${p}-saves`),
     balls_recovered_per_game: val(`fb-${p}-balls-recovered`),
     duels_won_per_game: val(`fb-${p}-duels`),
@@ -1189,6 +1221,14 @@ function _fbTeam(p) {
     red_cards_total: val(`fb-${p}-red-cards`),
     offside_per_game: val(`fb-${p}-offsides`),
     errors_leading_to_goal: val(`fb-${p}-errors-goal`),
+    // Nuevos campos granularidad avanzada
+    xg_per_game: val(`fb-${p}-xg`),
+    xga_per_game: val(`fb-${p}-xga`),
+    corners_conceded_per_game: val(`fb-${p}-corners-conceded`),
+    // Cálculos on-the-fly para enviar al backend
+    passes_total_per_game: (val(`fb-${p}-pass`) * 100) / (val(`fb-${p}-pass-acc`) || 1),
+    passes_opp_half_total_per_game: (val(`fb-${p}-pass-opp-half`) * 100) / (val(`fb-${p}-pass-opp`) || 1),
+    crosses_total_per_game: (val(`fb-${p}-cross-completed`) * 100) / (val(`fb-${p}-cross-acc`) || 1),
   };
 }
 
