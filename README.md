@@ -55,22 +55,22 @@ Donde $\lambda$ es el promedio esperado de eventos.
 
 ### 2. Bayesian Shrinkage (Regresión a la Media)
 Para estabilizar datos en muestras pequeñas (pocos partidos), Sherlock aplica una regresión hacia el promedio de la liga:
-$$w = \frac{\text{prior\_n}}{\text{prior\_n} + n}$$
-$$\lambda_{\text{final}} = \lambda_{\text{ajustado}} \cdot (1 - w) + \lambda_{\text{liga}} \cdot w$$
+$$w = \frac{\text{prior}}{\text{prior} + n}$$
+$$\lambda_{\text{final}} = \lambda_{\text{modelo}} \cdot (1 - w) + \lambda_{\text{liga}} \cdot w$$
 *Esto evita sobreestimar a equipos con rachas atípicas en muestras cortas.*
 
 ### 3. Cálculo de Lambdas ($\lambda$)
-- **Goles ($\lambda_{goals}$)**:
+- **Goles ($\lambda_{\text{goles}}$)**:
   Se calcula cruzando la **Fuerza de Ataque** (hibridación de Goles y xG) del atacante con la **Debilidad Defensiva** del rival, ajustado por señales tácticas como la creación de *Big Chances*.
-- **Corners ($\lambda_{corners}$)**:
+- **Corners ($\lambda_{\text{corners}}$)**:
   Hibridación del 70% del historial de corners y 30% del volumen de centros efectivos, cruzado con el ratio de corners concedidos del oponente.
-- **Tarjetas ($\lambda_{cards}$)**:
+- **Tarjetas ($\lambda_{\text{tarjetas}}$)**:
   Basado en la agresividad propia (Faltas + Tarjetas) y un **Factor de Provocación** del rival (basado en posesión y duelos ganados en piso).
 
 ### 4. Análisis de Valor (Value Betting)
 El sistema identifica valor si la probabilidad del modelo es significativamente mayor a la implícita en la cuota:
-$$\text{Edge} = P(\text{modelo}) - P(\text{justa\_bookie})$$
-*Donde $P(\text{justa\_bookie})$ se calcula eliminando el **overround** (margen) de la casa de apuestas.*
+$$\text{Edge} = P(\text{modelo}) - P(\text{cuota justa})$$
+*Donde $P(\text{cuota justa})$ se calcula eliminando el **overround** (margen) de la casa de apuestas.*
 
 ---
 
