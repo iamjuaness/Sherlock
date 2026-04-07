@@ -467,49 +467,61 @@ def _compute_team_goals_lambda(
     league: LeagueStats,
     is_home: bool,
 ) -> float:
-    """
-    Calcula lambda de goles esperados para un equipo específico.
-    Incluye:
-    - Fuerza de ataque (Goles + xG)
-    - Debilidad defensiva rival (Goles Concedidos + xGA + Shots Concedidos)
-    - Ventaja de localía
-    - Shrinkage adaptativo
-    """
     avg_team_goals = league.avg_goals_per_game / 2.0
 
-    # 1. Fuerza de Ataque (Attacking Strength)
-    # 60% xG, 40% Goles reales (si xG está disponible)
-    att_g = attacker.goals_per_game
-    if abs(attacker.xg_per_game - 1.5) > 0.05:
-        att_g = (attacker.xg_per_game * 0.6) + (attacker.goals_per_game * 0.4)
-    
-    att_str = att_g / max(avg_team_goals, 0.1)
+    # ── 1. Determinar Datos Segmentados por Localía ──
+    if is_home:
+        # El atacante es local, el defensor es visita
+        att_n = max(attacker.matches_home, 1)
+        prior_att_xg = attacker.xg_per_game
+        actual_att_g = attacker.goals_per_game
 
-    # 2. Debilidad Defensiva Rival (Defensive Weakness)
-    # Hibridamos Goles Concedidos y xGA
-    def_g = defender.goals_conceded_per_game
-    if abs(defender.xga_per_game - 1.5) > 0.05:
-        def_g = (defender.xga_per_game * 0.6) + (defender.goals_conceded_per_game * 0.4)
-    
-    def_weakness = def_g / max(avg_team_goals, 0.1)
+        def_n = max(defender.matches_away, 1)
+        prior_def_xga = defender.xga_per_game
+        actual_def_g = defender.goals_conceded_per_game
+    else:
+        # El atacante es visita, el defensor es local
+        att_n = max(attacker.matches_away, 1)
+        prior_att_xg = attacker.xg_per_game
+        actual_att_g = attacker.goals_per_game
 
-    # 3. Lambda Base
+        def_n = max(defender.matches_home, 1)
+        prior_def_xga = defender.xga_per_game
+        actual_def_g = defender.goals_conceded_per_game
+
+    # beta_prior representa cuántos "partidos de peso" le damos a la estadística subyacente (xG / xGA)
+    beta_prior = 4.0 
+
+    # ── 2. Fuerza de Ataque Bayesiana (Poisson-Gamma) ──
+    S_att = actual_att_g * att_n
+    alpha_att = prior_att_xg * beta_prior
+    
+    att_g_bayesian = (alpha_att + S_att) / (beta_prior + att_n)
+    att_str = att_g_bayesian / max(avg_team_goals, 0.1)
+
+    # ── 3. Debilidad Defensiva Rival Bayesiana ──
+    S_def = actual_def_g * def_n
+    alpha_def = prior_def_xga * beta_prior
+    
+    def_g_bayesian = (alpha_def + S_def) / (beta_prior + def_n)
+    def_weakness = def_g_bayesian / max(avg_team_goals, 0.1)
+
+    # ── 4. Lambda Base ──
     lam_base = att_str * def_weakness * avg_team_goals
 
-    # 4. Señales Tácticas Adicionales (Big Chances Propias)
+    # ── 5. Señales Tácticas Adicionales (Opcional) ──
     bc_signal = attacker.big_chances_per_game / max(attacker.big_chances_missed_per_game + 0.5, 0.5)
     tactical_mult = 1.0 + (min(bc_signal, 2.5) - 1.0) * 0.12
     lam_adjusted = lam_base * tactical_mult
 
-    # 5. Shrinkage Adaptativo (Usamos la muestra local/visita según corresponda)
-    m_count = attacker.matches_home if is_home else attacker.matches_away
-    prior_n = max(0.5, 3.0 - (m_count / 10.0))
-    n = max(m_count, 1)
-    shrink_w = prior_n / (prior_n + n)
+    # ── 6. Shrinkage Global a la Liga ──
+    # Actúa como seguro de "Regresión a la Media" cuando la muestra segmentada (Local/Visita) es muy pequeña
+    total_n = min(att_n, def_n)
+    prior_league_n = max(0.5, 3.0 - (total_n / 10.0))
+    shrink_w = prior_league_n / (prior_league_n + total_n)
+    
     lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team_goals * shrink_w
 
-    # 6. Ventaja de Local (Nota: se omite el multiplicador manual de liga 
-    # proque se asume que el usuario ingresa promedios ya condicionados)
     return max(lam_final, 0.10)
 
 
@@ -554,39 +566,43 @@ def _compute_team_cards_lambda(
     league: LeagueStats,
     is_home: bool,
 ) -> float:
-    """
-    Calcula tarjetas esperadas por equipo.
-    Considera:
-    - Agresividad propia (Tarjetas + Faltas cometidas)
-    - Atributos del rival que inducen tarjetas (Duelos ganados en piso = dribbling)
-    """
-    avg_team_cards = league.avg_cards_per_game / 2.0
-
-    # Tarjetas propias (rojas valen por 2)
-    own_cards_avg = team.yellow_cards_per_game + (team.red_cards_total / max(team.matches_played, 1)) * 2.0
+    # Usamos 15 partidos de "prior" para evitar que 2 rojas en 3 fechas rompan el modelo
+    actual_matches = max(team.matches_played, 1)
     
-    # Agresividad basada en faltas
-    # Equipos con >15 faltas p/j son "incandescentes"
-    foul_pressure = team.fouls_per_game / 12.5 # 12.5 es el promedio aproximado
+    # 1. Promedio base del equipo
+    # Una roja suele valer 2 amarillas en los mercados de casas de apuestas
+    red_card_weight = 2.0 
+    team_reds_per_game = (team.red_cards_total / actual_matches) * red_card_weight
+    own_cards_avg = team.yellow_cards_per_game + team_reds_per_game
 
-    # Factor de inducción del rival: 
-    # El rival recibe más tarjetas si juega por abajo y gana duelos en piso (dribbling/skilly)
-    # o si tiene mucha posesión (el equipo defensor se desespera).
-    rival_provocation = (opponent.possession_pct / 50.0) * 0.1 + (opponent.ground_duels_won_per_game / 10.0) * 0.1
-    rival_provocation = max(0.9, min(1.3, 1.0 + rival_provocation))
+    # 2. Ajuste por agresividad (Faltas)
+    # En vez de multiplicar ciegamente, medimos cuánto se desvía del promedio (12.5)
+    foul_deviation = (team.fouls_per_game - 12.5) / 12.5
+    # Solo permitimos que las faltas modifiquen el promedio un máximo de ±15%
+    foul_modifier = 1.0 + (foul_deviation * 0.15)
 
-    # Combinación: 70% historial + 30% presión táctica actual
-    lam_base = (own_cards_avg * 0.7) + (own_cards_avg * foul_pressure * 0.3)
-    lam = lam_base * rival_provocation
+    # 3. Ajuste por inducción del rival (Duelos/Posesión)
+    # Medimos la desviación en lugar del valor absoluto
+    poss_deviation = (opponent.possession_pct - 50.0) / 50.0
+    duel_deviation = (opponent.ground_duels_won_per_game - 10.0) / 10.0
+    
+    # Solo permitimos que el rival modifique las tarjetas un máximo de ±15%
+    rival_modifier = 1.0 + (poss_deviation * 0.05) + (duel_deviation * 0.10)
+    
+    # Limitamos los modificadores a un techo lógico (max 25% de alteración total)
+    total_modifier = max(0.75, min(1.25, foul_modifier * rival_modifier))
 
-    # Shrinkage (Usamos el total de partidos para amarillas ya que la métrica es global)
-    m_count = team.matches_played
-    prior_n = 2.5
-    n = max(m_count, 1)
-    shrink_w = prior_n / (prior_n + n)
+    # 4. Cálculo del lambda del equipo
+    lam = own_cards_avg * total_modifier
+
+    # 5. Shrinkage (Regresión a la media)
+    avg_team_cards = league.avg_cards_per_game / 2.0
+    prior_n = 5.0 # Mayor peso al promedio de la liga para estabilizar
+    shrink_w = prior_n / (prior_n + actual_matches)
+    
     lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
 
-    return max(lam, 0.3)
+    return max(lam, 0.5)
 
 
 def _compute_handicap_probabilities(
@@ -930,6 +946,53 @@ async def _call_openrouter(prompt: str) -> str:
         return f"Error al generar análisis IA: {e}"
 
 
+def _rate_pick_quality(v: ValueIndicator) -> int:
+    """
+    Replica la lógica de filtrado del frontend para asegurar que el LLM 
+    solo reciba picks verdaderamente viables y rentables.
+    """
+    edge = v.edge
+    odds = v.odds if v.odds is not None else 0.0
+    prob = v.model_prob
+    sel = (v.selection or "").lower()
+
+    # Filtro 1: Descartar edge negativo, muy bajo o cuotas inválidas
+    if edge < 2.0 or odds <= 1.01:
+        return -1
+
+    score = 0
+
+    # Filtro 2: Rango Dorado de Cuotas (1.50 - 2.50)
+    if 1.50 <= odds <= 2.50:
+        score += 50
+    elif 2.50 < odds <= 3.50:
+        score += 20
+    else:
+        score -= 30
+
+    # Filtro 3: Filtro de Ruido (Eventos cercanos al 50/50)
+    if 45.0 <= prob <= 55.0:
+        if edge < 5.0:
+            return -1
+        else:
+            score += 10
+
+    # Filtro 4: Identificación de Mercados Secundarios y Anomalías
+    is_secondary = "corner" in sel or "tarjeta" in sel
+
+    if is_secondary:
+        if edge < 6.0:
+            return -1
+        else:
+            score += int(edge * 1.5)
+    else:
+        if edge > 20.0:
+            score -= 50
+        else:
+            score += int(edge * 2)
+
+    return score
+
 async def generate_football_analysis(
     h: FootballTeamStats,
     a: FootballTeamStats,
@@ -938,15 +1001,27 @@ async def generate_football_analysis(
     competition: str = "Desconocida",
     user_context: str = "",
 ) -> str:
+    
+    # ── NUEVO: Filtramos y ordenamos los picks antes de dárselos al LLM ──
+    # Creamos tuplas de (pick, score)
+    scored_picks = [(v, _rate_pick_quality(v)) for v in vp]
+    # Filtramos los que tienen score negativo (descartados)
+    valid_picks = [(v, score) for v, score in scored_picks if score >= 0]
+    # Ordenamos de mejor a peor pick
+    valid_picks.sort(key=lambda x: x[1], reverse=True)
+    # Extraemos solo los objetos ValueIndicator de los mejores 6 picks
+    top_filtered_vp = [p[0] for p in valid_picks[:6]]
+
+    # Armamos el texto solo con los picks filtrados
     vp_text = (
         "\n".join(
             [
                 f"- {v.selection}: cuota={v.odds if v.odds is not None else 'N/A'} | modelo={v.model_prob:.1f}% | edge={v.edge:.1f}% | rating={v.rating}"
-                for v in vp[:6]
+                for v in top_filtered_vp
             ]
         )
-        if vp
-        else "- No hay mercados de valor claros."
+        if top_filtered_vp
+        else "- No hay mercados de valor claros. Aclara que no recomiendas apostar en este partido."
     )
 
     proj_text = (
@@ -967,7 +1042,7 @@ REGLAS:
 - Usa SOLO la información entregada.
 - No inventes lesiones, rachas recientes, contexto histórico ni alineaciones.
 - No digas que un mercado tiene valor si no aparece en "MERCADOS DE VALOR".
-- Si no hay value claro, dilo explícitamente.
+- Si no hay value claro, dilo explícitamente y no fuerces ningún pick.
 - Sé concreto: máximo 360 palabras.
 - Prioriza interpretación sobre repetir cifras.
 
@@ -1017,13 +1092,14 @@ MERCADOS DE VALOR:
 CONTEXTO ADICIONAL DEL USUARIO:
 {user_context}
 ''' if user_context else ''}
+
 FORMATO DE RESPUESTA:
 1. Un primer párrafo explicando el choque táctico: quién debería controlar, quién genera más peligro y dónde puede estar la ventaja.
 2. Un segundo párrafo evaluando goles, BTTS, corners y tarjetas solo si las proyecciones lo justifican.
-3. Un bloque final llamado "Pronósticos recomendados" con exactamente 3 picks:
+3. Un bloque final llamado "Pronósticos recomendados" con exactamente 2 picks:
    - pick
    - justificación breve basada en datos + proyección + value
-Si no hay 3 mercados de valor claros, da solo los que sí existan y acláralo.
+Si no hay 2 mercados de valor claros, da solo los que sí existan y acláralo.
 """
     return await _call_openrouter(prompt)
 
@@ -1226,23 +1302,34 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
 
     def _vi(sel: str, odds: float | None, modelp: float, overround: float = 100.0) -> ValueIndicator:
         """
-        Calcula ValueIndicator usando implied probability JUSTA (sin margen).
-        Si overround=103.5, la implied se divide por 1.035 antes de comparar con modelp.
+        Calcula ValueIndicator usando la implied probability REAL.
+        El Edge es la ventaja real sobre lo que paga la casa, asumiendo su margen.
         """
         if odds is None:
             return ValueIndicator(selection=sel, model_prob=round(modelp, 1))
+
+        # 1. La probabilidad que necesitas para empatar (Break-even)
         raw_implied  = (1.0 / odds) * 100.0
-        fair_implied = raw_implied / (overround / 100.0)   # ← remoción del margen
-        edge         = modelp - fair_implied
-        is_value     = edge > 2.0
-        if   edge > 5.0:  rating = "🔥 STRONG VALUE"
-        elif edge > 2.0:  rating = "✅ VALUE"
-        elif edge > -1.0: rating = "⚖️ NEUTRAL"
+        
+        # 2. La probabilidad "justa" sin el margen de la casa (Opcional, solo para análisis)
+        fair_implied = raw_implied / (overround / 100.0) 
+
+        # 3. EL CAMBIO CRÍTICO: Calculamos el Edge contra la cuota real
+        edge = modelp - raw_implied
+        is_value = edge > 0.0  # Solo hay valor si superamos el margen de la casa
+
+        # Reajustamos los rangos porque un Edge real del 5% es altísimo
+        if   edge > 8.0:  rating = "🔥 STRONG VALUE"
+        elif edge > 3.0:  rating = "✅ VALUE"
+        elif edge > 0.0:  rating = "⚖️ MARGINAL VALUE"
         else:             rating = "❌ NO VALUE"
+
         return ValueIndicator(
             selection=sel,
             odds=odds,
-            implied_prob=round(fair_implied, 1),  # guardamos la implied JUSTA
+            # Es mejor mandar la raw_implied al frontend para que el usuario 
+            # vea exactamente qué porcentaje necesita superar para ser rentable
+            implied_prob=round(raw_implied, 1), 
             model_prob=round(modelp, 1),
             edge=round(edge, 1),
             is_value=is_value,
@@ -1329,35 +1416,7 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         type="handicap", prob=None
     ))
 
-    # ── Goles por equipo ────────────────────────────────────────
-    projected_lines.append(ProjectedLine(
-        label=f"Goles {h.name}", value=round(h_goals_lam, 2),
-        type="goals_team", prob=None
-    ))
-    projected_lines.append(ProjectedLine(
-        label=f"Goles {a.name}", value=round(a_goals_lam, 2),
-        type="goals_team", prob=None
-    ))
 
-    # ── Corners por equipo ──────────────────────────────────────
-    projected_lines.append(ProjectedLine(
-        label=f"Corners {h.name}", value=round(h_corners_lam, 1),
-        type="corners_team", prob=None
-    ))
-    projected_lines.append(ProjectedLine(
-        label=f"Corners {a.name}", value=round(a_corners_lam, 1),
-        type="corners_team", prob=None
-    ))
-
-    # ── Tarjetas por equipo ─────────────────────────────────────
-    projected_lines.append(ProjectedLine(
-        label=f"Tarjetas {h.name}", value=round(h_cards_lam, 1),
-        type="cards_team", prob=None
-    ))
-    projected_lines.append(ProjectedLine(
-        label=f"Tarjetas {a.name}", value=round(a_cards_lam, 1),
-        type="cards_team", prob=None
-    ))
 
     # ── Probabilidades de Handicap ─────────────────────────────
     for hc_line in [-1.5, -1.0, -0.5, 0.5, 1.0, 1.5]:

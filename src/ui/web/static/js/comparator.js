@@ -110,26 +110,46 @@ function renderMultiLineCards(values) {
   if (!grid) return;
   grid.innerHTML = "";
 
+  // ── 1. Evaluar y Puntuar la Calidad Estratégica del Pick ──
+  const ratePickQuality = (v) => {
+    const edge = Number(v.edge ?? 0);
+    const odds = Number(v.odds ?? 0);
+    const sel = (v.selection ?? "").toLowerCase();
+
+    // Filtro 1: Descartar si el edge es negativo o las cuotas son inválidas
+    if (edge < 2.0 || odds <= 1.01) return -1;
+
+    let score = 0;
+
+    // Filtro 2: Rango Dorado de Cuotas (1.50 - 2.50)
+    // Penabiliza cuotas muy bajas o extremadamente altas
+    if (odds >= 1.5 && odds <= 2.5) score += 50;
+    else if (odds > 2.5 && odds <= 3.5) score += 20;
+    else score -= 30; // Cuotas minúsculas o enormes
+
+    // Filtro 3: Identificación de Mercados Secundarios
+    const isSecondary = sel.includes("corner") || sel.includes("tarjeta");
+
+    if (isSecondary) {
+      // Los mercados exóticos necesitan un margen de error más amplio
+      if (edge < 6.0) score -= 40;
+      else score += edge * 1.5; // Premia Edges altos en mercados volátiles
+    } else {
+      // Mercados Principales (Goles, 1X2, BTTS)
+      // Filtro 4: Red Flag / Anomalía (Edge > 20% en mercado principal es sospechoso)
+      if (edge > 20.0) score -= 50;
+      else score += edge * 2;
+    }
+
+    return score;
+  };
+
   const filtered = Array.isArray(values)
     ? values
-        .filter((v) => v.selection && v.odds != null && v.odds !== undefined)
-        .sort((a, b) => {
-          const aIsValue = a.is_value ?? a.isValue ?? a.isvalue ?? false;
-          const bIsValue = b.is_value ?? b.isValue ?? b.isvalue ?? false;
-
-          if (aIsValue !== bIsValue) {
-            return bIsValue - aIsValue; // primero los que tienen value
-          }
-
-          const aImplied = Number(
-            a.implied_prob ?? a.impliedProb ?? a.impliedprob ?? 0,
-          );
-          const bImplied = Number(
-            b.implied_prob ?? b.impliedProb ?? b.impliedprob ?? 0,
-          );
-
-          return bImplied - aImplied; // luego mayor prob. implícita
-        })
+        .filter((v) => v.selection && v.odds != null)
+        .map((v) => ({ ...v, strategicScore: ratePickQuality(v) }))
+        .filter((v) => v.strategicScore >= 0) // Ocultar basura (edge < 0 o score negativo)
+        .sort((a, b) => b.strategicScore - a.strategicScore) // Ordenar de mejor a peor pick real
     : [];
 
   if (!card) {
@@ -155,29 +175,33 @@ function renderMultiLineCards(values) {
     const edgeText =
       edgeVal >= 0 ? `+${edgeVal.toFixed(1)}%` : `${edgeVal.toFixed(1)}%`;
 
-    const edgeColor =
-      edgeVal >= 5
-        ? "var(--color-success)"
-        : edgeVal >= 2
-          ? "var(--color-blue)"
-          : edgeVal >= 0
-            ? "var(--color-text-muted)"
-            : "var(--color-notification)";
-
-    const rating = v.rating ?? "";
     let mod = "neutral";
-    if (rating.includes("STRONG")) mod = "strong";
-    else if (rating.includes("VALUE") && edgeVal >= 0) mod = "value";
-    else if (edgeVal < 0) mod = "no";
+    let badgeText = "";
+
+    // ── 2. Etiquetas Estratégicas Visuales ──
+    const isSecondary = (v.selection ?? "")
+      .toLowerCase()
+      .match(/corner|tarjeta/);
+
+    if (edgeVal > 20.0 && !isSecondary) {
+      mod = "no"; // Color rojo/naranja
+      badgeText = "⚠️ ANOMALÍA (Revisar Infos)";
+    } else if (v.strategicScore >= 50) {
+      mod = "strong";
+      badgeText = "🎯 PICK ÓPTIMO";
+    } else if (v.strategicScore > 0) {
+      mod = "value";
+      badgeText = "✅ VALUE MARGINAL";
+    }
+
+    const edgeColor =
+      mod === "strong"
+        ? "var(--color-success)"
+        : mod === "no"
+          ? "var(--color-notification)"
+          : "var(--color-blue)";
 
     const implied = v.implied_prob ?? v.impliedProb ?? v.impliedprob ?? null;
-
-    const badgeLabels = {
-      strong: "🔥 STRONG VALUE",
-      value: "✅ VALUE",
-      neutral: "〰️ NEUTRAL",
-      no: "❌ SIN VALUE",
-    };
 
     const el = document.createElement("div");
     el.className = `value-line-card value-line-card--${mod}`;
@@ -195,10 +219,10 @@ function renderMultiLineCards(values) {
         <span>Prob. implícita</span>
         <span>${implied != null ? Number(implied).toFixed(1) + "%" : "—"}</span>
       </div>
-      <div class="value-line-card__edge" style="color: ${edgeColor}">
+      <div class="value-line-card__edge" style="color: ${edgeColor}; font-weight: bold;">
         Edge ${edgeText}
       </div>
-      <span class="value-line-card__badge badge--${mod}">${badgeLabels[mod]}</span>
+      <span class="value-line-card__badge badge--${mod}">${badgeText}</span>
     `;
     grid.appendChild(el);
   });
@@ -239,13 +263,17 @@ function renderResults(data) {
       if (data.projected_lines && data.projected_lines.length > 0) {
         if (projectedLinesEl.parentElement)
           projectedLinesEl.parentElement.style.display = "block";
-        
+
         // Custom rendering for a "premium" feel: grouping by category or showing prominent team lines
         const teamLines = [];
         const totalLines = [];
-        
-        data.projected_lines.forEach(p => {
-          if (p.label.includes("(") && (p.label.includes(data.home_name) || p.label.includes(data.away_name))) {
+
+        data.projected_lines.forEach((p) => {
+          if (
+            p.label.includes("(") &&
+            (p.label.includes(data.home_name) ||
+              p.label.includes(data.away_name))
+          ) {
             teamLines.push(p);
           } else {
             totalLines.push(p);
@@ -262,8 +290,6 @@ function renderResults(data) {
         projectedLinesEl.innerHTML = `
           <div style="grid-column: 1 / -1; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px;">Proyecciones Totales</div>
           ${totalLines.map(renderCard).join("")}
-          <div style="grid-column: 1 / -1; margin-top: 1.5rem; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px;">Proyecciones por Equipo</div>
-          ${teamLines.map(renderCard).join("")}
         `;
       } else {
         if (projectedLinesEl.parentElement)
@@ -1189,7 +1215,8 @@ function _fbTeam(p) {
     name: val(`fb-${p}-name`),
     matches_home: val(`fb-${p}-matches-home`),
     matches_away: val(`fb-${p}-matches-away`),
-    matches_played: (val(`fb-${p}-matches-home`) || 0) + (val(`fb-${p}-matches-away`) || 0),
+    matches_played:
+      (val(`fb-${p}-matches-home`) || 0) + (val(`fb-${p}-matches-away`) || 0),
     wins: val(`fb-${p}-wins`),
     draws: val(`fb-${p}-draws`),
     losses: val(`fb-${p}-losses`),
@@ -1210,7 +1237,9 @@ function _fbTeam(p) {
     corners_per_game: val(`fb-${p}-corners`),
     clean_sheets_home: val(`fb-${p}-clean-sheets-home`),
     clean_sheets_away: val(`fb-${p}-clean-sheets-away`),
-    clean_sheets: (val(`fb-${p}-clean-sheets-home`) || 0) + (val(`fb-${p}-clean-sheets-away`) || 0),
+    clean_sheets:
+      (val(`fb-${p}-clean-sheets-home`) || 0) +
+      (val(`fb-${p}-clean-sheets-away`) || 0),
     saves_per_game: val(`fb-${p}-saves`),
     balls_recovered_per_game: val(`fb-${p}-balls-recovered`),
     duels_won_per_game: val(`fb-${p}-duels`),
@@ -1226,9 +1255,12 @@ function _fbTeam(p) {
     xga_per_game: val(`fb-${p}-xga`),
     corners_conceded_per_game: val(`fb-${p}-corners-conceded`),
     // Cálculos on-the-fly para enviar al backend
-    passes_total_per_game: (val(`fb-${p}-pass`) * 100) / (val(`fb-${p}-pass-acc`) || 1),
-    passes_opp_half_total_per_game: (val(`fb-${p}-pass-opp-half`) * 100) / (val(`fb-${p}-pass-opp`) || 1),
-    crosses_total_per_game: (val(`fb-${p}-cross-completed`) * 100) / (val(`fb-${p}-cross-acc`) || 1),
+    passes_total_per_game:
+      (val(`fb-${p}-pass`) * 100) / (val(`fb-${p}-pass-acc`) || 1),
+    passes_opp_half_total_per_game:
+      (val(`fb-${p}-pass-opp-half`) * 100) / (val(`fb-${p}-pass-opp`) || 1),
+    crosses_total_per_game:
+      (val(`fb-${p}-cross-completed`) * 100) / (val(`fb-${p}-cross-acc`) || 1),
   };
 }
 
