@@ -95,6 +95,8 @@ class LeagueStats(BaseModel):
     away_win_pct:              float = Field(30.0, description="% Victoria visitante liga")
     avg_yellow_cards_per_game: float = Field(4.0,  description="Promedio amarillas liga")
     avg_red_cards_per_game:    float = Field(0.2,  description="Promedio rojas liga")
+    avg_shots_per_game:        float = Field(26.0, description="Promedio tiros totales liga")
+    avg_shots_target_per_game: float = Field(8.5,  description="Promedio tiros a puerta liga")
     home_advantage_factor:    float = Field(1.20, description="Multiplicador goles local (1.15–1.30)")
     away_disadvantage_factor: float = Field(0.85, description="Factor penalización visitante")
 
@@ -122,6 +124,14 @@ class FootballOdds(BaseModel):
     cards_lines:      list[float]                = [2.5, 3.5, 4.5, 5.5]
     cards_over_odds:  Dict[str, Optional[float]] = Field(default_factory=dict)
     cards_under_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
+
+    shots_lines:      list[float]                = [21.5, 22.5, 23.5, 24.5]
+    shots_over_odds:  Dict[str, Optional[float]] = Field(default_factory=dict)
+    shots_under_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
+
+    shots_target_lines: list[float]                = [7.5, 8.5, 9.5, 10.5]
+    shots_target_over_odds:  Dict[str, Optional[float]] = Field(default_factory=dict)
+    shots_target_under_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
 
     bookmaker: str = ""
 
@@ -605,6 +615,42 @@ def _compute_team_cards_lambda(
     return max(lam, 0.5)
 
 
+def _compute_team_shots_lambda(
+    team: FootballTeamStats,
+    opponent: FootballTeamStats,
+    league: LeagueStats,
+    is_home: bool,
+) -> float:
+    avg_team_shots = league.avg_shots_per_game / 2.0
+    gen_str = team.shots_per_game
+    opp_def_factor = max((100.0 - opponent.possession_pct) / 50.0, 0.5)
+    
+    lam = gen_str * opp_def_factor
+    m_count = team.matches_home if is_home else team.matches_away
+    n = max(m_count, 1)
+    shrink_w = 2.0 / (2.0 + n)
+    lam = lam * (1.0 - shrink_w) + avg_team_shots * shrink_w
+    return max(lam, 1.0)
+
+
+def _compute_team_shots_target_lambda(
+    team: FootballTeamStats,
+    opponent: FootballTeamStats,
+    league: LeagueStats,
+    is_home: bool,
+) -> float:
+    avg_team_sot = league.avg_shots_target_per_game / 2.0
+    gen_str = team.shots_on_target_per_game
+    opp_def_factor = max((100.0 - opponent.possession_pct) / 50.0, 0.5)
+    
+    lam = gen_str * opp_def_factor
+    m_count = team.matches_home if is_home else team.matches_away
+    n = max(m_count, 1)
+    shrink_w = 2.0 / (2.0 + n)
+    lam = lam * (1.0 - shrink_w) + avg_team_sot * shrink_w
+    return max(lam, 0.5)
+
+
 def _compute_handicap_probabilities(
     h_lam: float,
     a_lam: float,
@@ -887,6 +933,20 @@ def _compute_cards_lambda(h: FootballTeamStats, a: FootballTeamStats, league: Le
     return lam_cards
 
 
+def _compute_shots_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats) -> float:
+    h_s_exp = _compute_team_shots_lambda(h, a, league, is_home=True)
+    a_s_exp = _compute_team_shots_lambda(a, h, league, is_home=False)
+    lam_shots = h_s_exp + a_s_exp
+    return max(lam_shots, league.avg_shots_per_game * 0.5)
+
+
+def _compute_shots_target_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats) -> float:
+    h_st_exp = _compute_team_shots_target_lambda(h, a, league, is_home=True)
+    a_st_exp = _compute_team_shots_target_lambda(a, h, league, is_home=False)
+    lam_shots_target = h_st_exp + a_st_exp
+    return max(lam_shots_target, league.avg_shots_target_per_game * 0.5)
+
+
 def _poisson_over_under(lam: float, line: float, max_k: int = 30) -> tuple[float, float]:
     """
     Devuelve (p_over, p_under) en porcentaje.
@@ -927,23 +987,128 @@ PLACEHOLDER_TENNIS = (
 )
 
 
+import os
+import asyncio
+from openai import AsyncOpenAI
+
 async def _call_openrouter(prompt: str) -> str:
     api_key = os.environ.get("OPENROUTER_API_KEY")
     if not api_key:
         return "Para ver el análisis con IA, configura OPENROUTER_API_KEY en tu .env"
 
-    client = AsyncOpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key)
-    model  = os.environ.get("OPENROUTER_MODEL")
-    try:
-        r = await client.chat.completions.create(
-            model=model,
-            messages=[{"role": "user", "content": prompt}],
-            max_tokens=2500,
-        )
-        return r.choices[0].message.content or "⚠️ El modelo no generó contenido."
-    except Exception as e:
-        print(f"[LLM ERROR] {e}")
-        return f"Error al generar análisis IA: {e}"
+    primary_model = os.environ.get("OPENROUTER_MODEL")
+    if not primary_model:
+        return "Para generar el análisis con IA, configura OPENROUTER_MODEL en tu .env"
+
+    fallback_model = os.environ.get("OPENROUTER_FALLBACK_MODEL")
+    client = AsyncOpenAI(
+        base_url="https://openrouter.ai/api/v1",
+        api_key=api_key,
+    )
+
+    retry_delays = [1.5, 3, 5]
+    last_error = None
+
+    def _extract_content(response) -> str | None:
+        if response is None:
+            return None
+
+        err = getattr(response, "error", None)
+        if err:
+            return None
+
+        choices = getattr(response, "choices", None)
+        if not choices:
+            return None
+
+        message = getattr(choices[0], "message", None)
+        if message is None:
+            return None
+
+        content = getattr(message, "content", None)
+
+        if isinstance(content, str) and content.strip():
+            return content.strip()
+
+        if isinstance(content, list):
+            text_parts = []
+            for part in content:
+                if isinstance(part, dict):
+                    if part.get("text"):
+                        text_parts.append(part["text"])
+                else:
+                    txt = getattr(part, "text", None)
+                    if txt:
+                        text_parts.append(txt)
+
+            joined = "\n".join(x.strip() for x in text_parts if x and str(x).strip())
+            if joined:
+                return joined
+
+        return None
+
+    def _response_error_info(response):
+        err = getattr(response, "error", None)
+        if isinstance(err, dict):
+            return str(err.get("code", "N/A")), str(err.get("message", "Error desconocido"))
+        if err:
+            return "N/A", str(err)
+        return None, None
+
+    for attempt, delay in enumerate(retry_delays, start=1):
+        try:
+            extra_body = {}
+            if fallback_model and fallback_model != primary_model:
+                extra_body["models"] = [fallback_model]
+
+            r = await client.chat.completions.create(
+                model=primary_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=3000,
+                extra_headers={
+                    "HTTP-Referer": "http://localhost",
+                    "X-Title": "football-analysis",
+                },
+                extra_body=extra_body if extra_body else None,
+            )
+
+            content = _extract_content(r)
+            if content:
+                return content
+
+            code, msg = _response_error_info(r)
+            if code:
+                last_error = f"Error del modelo ({code}): {msg}"
+            else:
+                last_error = "⚠️ El modelo no devolvió contenido válido."
+
+        except Exception as e:
+            msg = str(e)
+            last_error = msg
+
+            retryable_markers = [
+                "429",
+                "500",
+                "502",
+                "503",
+                "504",
+                "524",
+                "529",
+                "rate limit",
+                "timeout",
+                "temporarily unavailable",
+                "internal server error",
+                "bad gateway",
+                "service unavailable",
+            ]
+
+            if not any(marker.lower() in msg.lower() for marker in retryable_markers):
+                return f"Error al generar análisis IA: {e}"
+
+        if attempt < len(retry_delays):
+            await asyncio.sleep(delay)
+
+    return last_error or "⚠️ No se pudo generar el análisis con IA tras varios intentos."
 
 
 def _rate_pick_quality(v: ValueIndicator) -> int:
@@ -1001,7 +1166,7 @@ async def generate_football_analysis(
     competition: str = "Desconocida",
     user_context: str = "",
 ) -> str:
-    
+   
     # ── NUEVO: Filtramos y ordenamos los picks antes de dárselos al LLM ──
     # Creamos tuplas de (pick, score)
     scored_picks = [(v, _rate_pick_quality(v)) for v in vp]
@@ -1011,6 +1176,7 @@ async def generate_football_analysis(
     valid_picks.sort(key=lambda x: x[1], reverse=True)
     # Extraemos solo los objetos ValueIndicator de los mejores 6 picks
     top_filtered_vp = [p[0] for p in valid_picks[:6]]
+
 
     # Armamos el texto solo con los picks filtrados
     vp_text = (
@@ -1024,6 +1190,7 @@ async def generate_football_analysis(
         else "- No hay mercados de valor claros. Aclara que no recomiendas apostar en este partido."
     )
 
+
     proj_text = (
         "\n".join(
             [
@@ -1035,6 +1202,8 @@ async def generate_football_analysis(
         else "- No hay líneas proyectadas disponibles."
     )
 
+    additional_context = f"\nCONTEXTO ADICIONAL DEL USUARIO:\n{user_context}\n" if user_context else ""
+
     prompt = f"""
 Eres un analista táctico y de apuestas de élite. Tu trabajo es explicar el partido con claridad, criterio estadístico y lenguaje natural, sin exagerar ni repetir números innecesariamente.
 
@@ -1045,6 +1214,28 @@ REGLAS:
 - Si no hay value claro, dilo explícitamente y no fuerces ningún pick.
 - Sé concreto: máximo 360 palabras.
 - Prioriza interpretación sobre repetir cifras.
+- Los mercados listados en "MERCADOS DE VALOR" ya fueron prefiltrados y ordenados aproximadamente por solidez. Usa ese orden como pista secundaria, pero decide con criterio propio según estadísticas y proyecciones.
+
+OBJETIVO PRINCIPAL:
+No debes elegir picks solo porque tengan más edge.
+Debes seleccionar los picks que tengan MAYOR PROBABILIDAD REAL DE CUMPLIRSE dentro de los mercados de valor disponibles.
+
+JERARQUÍA OBLIGATORIA PARA ESCOGER PICKS:
+1. Primero, prioriza la probabilidad real de acierto del mercado.
+2. Después, verifica que esté claramente respaldado por las estadísticas de ambos equipos.
+3. Luego, confirma que la proyección del partido y de las líneas vaya en la misma dirección.
+4. Solo después de eso, usa la diferencia entre probabilidad del modelo y probabilidad implícita de la casa para validar el value.
+5. El edge por sí solo NO convierte un pick en uno de los mejores.
+
+CRITERIOS ESTRICTOS:
+- Favorece mercados con probabilidad del modelo alta y sostenida por el perfil estadístico del partido.
+- Penaliza mercados con cuota alta y probabilidad absoluta baja, aunque tengan edge positivo.
+- Penaliza mercados atractivos en precio, pero débiles en respaldo estadístico.
+- Penaliza mercados que dependan de demasiada varianza o de un guion poco sólido.
+- Entre dos picks parecidos, elige el más probable de cumplirse, no el que más paga.
+- No elijas picks contradictorios entre sí.
+- Si un pick tiene edge alto pero parece menos probable de salir que otro mercado más sólido, NO lo selecciones.
+- Tu meta no es encontrar los picks con más value bruto, sino los 2 picks más fuertes y confiables que además tengan value.
 
 PARTIDO:
 Competencia: {competition}
@@ -1088,19 +1279,25 @@ LÍNEAS PROYECTADAS:
 
 MERCADOS DE VALOR:
 {vp_text}
-{f'''
-CONTEXTO ADICIONAL DEL USUARIO:
-{user_context}
-''' if user_context else ''}
+{additional_context}
 
 FORMATO DE RESPUESTA:
 1. Un primer párrafo explicando el choque táctico: quién debería controlar, quién genera más peligro y dónde puede estar la ventaja.
-2. Un segundo párrafo evaluando goles, BTTS, corners y tarjetas solo si las proyecciones lo justifican.
-3. Un bloque final llamado "Pronósticos recomendados" con exactamente 2 picks:
+2. Un segundo párrafo evaluando goles, BTTS, corners y tarjetas solo si las proyecciones y estadísticas lo justifican.
+3. Un bloque final llamado "Pronósticos recomendados".
+4. Incluye HASTA 2 picks, nunca más.
+5. Esos picks deben ser los 2 mercados más sólidos, más probables y mejor sustentados del partido entre los mercados disponibles.
+6. No elijas picks solo por tener edge alto.
+7. Para cada pick escribe exactamente:
    - pick
-   - justificación breve basada en datos + proyección + value
-Si no hay 2 mercados de valor claros, da solo los que sí existan y acláralo.
-"""
+   - probabilidad de modelo e implícita de casa
+   - justificación breve basada en estadísticas
+   - respaldo de la proyección
+   - por qué además tiene valor
+8. Si solo existe 1 pick realmente sólido, da solo 1.
+9. Si no hay picks suficientemente sólidos, di claramente que no recomiendas apostar en este partido.
+""".strip()
+
     return await _call_openrouter(prompt)
 
 
@@ -1260,6 +1457,8 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     a_lam = _compute_lambda_v2(a, h, req.league_stats, is_home=False)
     lam_corners = _compute_corners_lambda(h, a, req.league_stats)
     lam_cards   = _compute_cards_lambda(h, a, req.league_stats)
+    lam_shots   = _compute_shots_lambda(h, a, req.league_stats)
+    lam_shots_target = _compute_shots_target_lambda(h, a, req.league_stats)
 
     # ── Métricas por equipo ──────────────────────────────────────
     h_goals_lam   = _compute_team_goals_lambda(h, a, req.league_stats, is_home=True)
@@ -1268,6 +1467,10 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     a_corners_lam = _compute_team_corners_lambda(a, h, req.league_stats, is_home=False)
     h_cards_lam   = _compute_team_cards_lambda(h, a, req.league_stats, is_home=True)
     a_cards_lam   = _compute_team_cards_lambda(a, h, req.league_stats, is_home=False)
+    h_shots_lam   = _compute_team_shots_lambda(h, a, req.league_stats, is_home=True)
+    a_shots_lam   = _compute_team_shots_lambda(a, h, req.league_stats, is_home=False)
+    h_shots_target_lam = _compute_team_shots_target_lambda(h, a, req.league_stats, is_home=True)
+    a_shots_target_lam = _compute_team_shots_target_lambda(a, h, req.league_stats, is_home=False)
 
     # Solo necesitamos 1x2 y BTTS (Mercados base sin líneas dinámicas)
     matrix, _ = _dc_score_matrix(h_lam, a_lam)
@@ -1409,6 +1612,36 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         market.append((f"Over {line} Tarjetas",  over_odds,  p_over,  _or_cards))
         market.append((f"Under {line} Tarjetas", under_odds, p_under, _or_cards))
 
+    # ── Over/Under TIROS TOTALES: múltiples líneas ──────────────────
+    projected_lines.append(ProjectedLine(
+        label="Tiros Totales (λ)", value=round(lam_shots, 1),
+        type="shots", prob=None
+    ))
+    for line in req.odds.shots_lines:
+        p_over, p_under = _poisson_over_under(lam_shots, line)
+        key        = str(line)
+        over_odds  = req.odds.shots_over_odds.get(key)
+        under_odds = req.odds.shots_under_odds.get(key)
+        _or_shots  = _overround(over_odds, under_odds)
+
+        market.append((f"Over {line} Tiros",  over_odds,  p_over,  _or_shots))
+        market.append((f"Under {line} Tiros", under_odds, p_under, _or_shots))
+
+    # ── Over/Under TIROS A PUERTA: múltiples líneas ──────────────────
+    projected_lines.append(ProjectedLine(
+        label="Tiros a Puerta (λ)", value=round(lam_shots_target, 1),
+        type="shots_target", prob=None
+    ))
+    for line in req.odds.shots_target_lines:
+        p_over, p_under = _poisson_over_under(lam_shots_target, line)
+        key        = str(line)
+        over_odds  = req.odds.shots_target_over_odds.get(key)
+        under_odds = req.odds.shots_target_under_odds.get(key)
+        _or_shots_t  = _overround(over_odds, under_odds)
+
+        market.append((f"Over {line} Tiros a Pta",  over_odds,  p_over,  _or_shots_t))
+        market.append((f"Under {line} Tiros a Pta", under_odds, p_under, _or_shots_t))
+
     # ── Handicap ───────────────────────────────────────────────
     proj_hcap = h_lam - a_lam
     projected_lines.append(ProjectedLine(
@@ -1442,10 +1675,14 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     projected_lines.append(ProjectedLine(label=f"Corners {a.name}", value=a_corners_lam, type="corners_team"))
     projected_lines.append(ProjectedLine(label=f"Tarjetas {h.name}", value=h_cards_lam, type="cards_team"))
     projected_lines.append(ProjectedLine(label=f"Tarjetas {a.name}", value=a_cards_lam, type="cards_team"))
+    projected_lines.append(ProjectedLine(label=f"Tiros {h.name}", value=h_shots_lam, type="shots_team"))
+    projected_lines.append(ProjectedLine(label=f"Tiros {a.name}", value=a_shots_lam, type="shots_team"))
+    projected_lines.append(ProjectedLine(label=f"Tiros a Pta {h.name}", value=h_shots_target_lam, type="shots_target_team"))
+    projected_lines.append(ProjectedLine(label=f"Tiros a Pta {a.name}", value=a_shots_target_lam, type="shots_target_team"))
 
     summary = (
         f"Sherlock Analytics | λ Goles: {h.name} {h_lam:.2f} - {a.name} {a_lam:.2f}\n"
-        f"Proyección Total: {projected_total_goals:.2f} Goles | {lam_corners:.1f} Corners | {lam_cards:.1f} Tarjetas\n"
+        f"Proyección Total: {projected_total_goals:.2f} Goles | {lam_corners:.1f} Corners | {lam_cards:.1f} Tarjetas | {lam_shots:.1f} Tiros | {lam_shots_target:.1f} a Pta\n"
         f"Goles por equipo: {h.name} {h_goals_lam:.2f} | {a.name} {a_goals_lam:.2f}\n"
         f"Corners por equipo: {h.name} {h_corners_lam:.1f} | {a.name} {a_corners_lam:.1f}\n"
         f"Tarjetas por equipo: {h.name} {h_cards_lam:.1f} | {a.name} {a_cards_lam:.1f}\n"

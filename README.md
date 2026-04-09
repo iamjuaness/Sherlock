@@ -8,6 +8,7 @@ Sherlock es una plataforma avanzada de análisis deportivo diseñada para identi
 - **Granularidad Condicional**: Análisis diferenciado de estadísticas según la condición del partido (**Local/Visitante**).
 - **Motor Engine Poisson**: Cálculo probabilístico para mercados de 1X2, Over/Under, Marcador Exacto y Hándicaps.
 - **Integración con API-Football**: Carga automática de estadísticas de ligas principales para evitar entrada manual.
+- **Líneas de Cuotas Dinámicas**: Posibilidad de añadir y gestionar múltiples líneas de apuestas ilimitadas de forma simultánea (ej. diferentes escalones de over/under) para Goles, Corners, Tarjetas, Tiros Totales y a Puerta.
 - **Calculadora de Valor (Value Betting)**: Identificación de "Edge" comparando las probabilidades del modelo contra las cuotas de las casas de apuestas.
 - **Adaptadores Extensibles**: Estructura preparada para múltiples fuentes de datos (TheSportsDB, BallDontLie, etc.).
 
@@ -66,6 +67,8 @@ $$\lambda_{\text{final}} = \lambda_{\text{modelo}} \cdot (1 - w) + \lambda_{\tex
   Hibridación del 70% del historial de corners y 30% del volumen de centros efectivos, cruzado con el ratio de corners concedidos del oponente.
 - **Tarjetas ($\lambda_{\text{tarjetas}}$)**:
   Basado en la agresividad propia (Faltas + Tarjetas) y un **Factor de Provocación** del rival (basado en posesión y duelos ganados en piso).
+- **Tiros ($\lambda_{\text{shots}}$) y Tiros a Puerta ($\lambda_{\text{shots\_target}}$)**:
+  Analiza la producción ofensiva de volumen de remates ajustado mediante Bayes a la defensiva y concesión de oportunidades del rival para proyecciones por equipo de mercado de tiros.
 
 ### 4. Análisis de Valor (Value Betting)
 El sistema identifica valor si la probabilidad del modelo es significativamente mayor a la implícita en la cuota:

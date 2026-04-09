@@ -913,47 +913,57 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-odds-btts-yes", odds.btts_yes);
       setSafeValue("fb-odds-btts-no", odds.btts_no);
 
-      // ── Goles multi-línea ──────────────────────────────────────────
-      if (odds.goalsOverOdds) {
-        setSafeValue("fb-odds-g-o15", odds.goalsOverOdds["1.5"]);
-        setSafeValue("fb-odds-g-o25", odds.goalsOverOdds["2.5"]);
-        setSafeValue("fb-odds-g-o35", odds.goalsOverOdds["3.5"]);
-        setSafeValue("fb-odds-g-o45", odds.goalsOverOdds["4.5"]);
-      }
-      if (odds.goalsUnderOdds) {
-        setSafeValue("fb-odds-g-u15", odds.goalsUnderOdds["1.5"]);
-        setSafeValue("fb-odds-g-u25", odds.goalsUnderOdds["2.5"]);
-        setSafeValue("fb-odds-g-u35", odds.goalsUnderOdds["3.5"]);
-        setSafeValue("fb-odds-g-u45", odds.goalsUnderOdds["4.5"]);
-      }
+      const populateTable = (tbodyId, lines, overOdds, underOdds) => {
+        const tb = document.getElementById(tbodyId);
+        if (!tb) return;
+        tb.innerHTML = ""; // Clear existing rows
+        if (lines && lines.length > 0) {
+          lines.forEach((line) => {
+            const over =
+              overOdds && overOdds[line] !== undefined ? overOdds[line] : "";
+            const under =
+              underOdds && underOdds[line] !== undefined ? underOdds[line] : "";
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+              <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${line}" /></td>
+              <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${over}" /></td>
+              <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${under}" /></td>
+            `;
+            tb.appendChild(tr);
+          });
+        }
+      };
 
-      // ── Corners multi-línea ────────────────────────────────────────
-      if (odds.cornersOverOdds) {
-        setSafeValue("fb-odds-c-o75", odds.cornersOverOdds["7.5"]);
-        setSafeValue("fb-odds-c-o85", odds.cornersOverOdds["8.5"]);
-        setSafeValue("fb-odds-c-o95", odds.cornersOverOdds["9.5"]);
-        setSafeValue("fb-odds-c-o105", odds.cornersOverOdds["10.5"]);
-      }
-      if (odds.cornersUnderOdds) {
-        setSafeValue("fb-odds-c-u75", odds.cornersUnderOdds["7.5"]);
-        setSafeValue("fb-odds-c-u85", odds.cornersUnderOdds["8.5"]);
-        setSafeValue("fb-odds-c-u95", odds.cornersUnderOdds["9.5"]);
-        setSafeValue("fb-odds-c-u105", odds.cornersUnderOdds["10.5"]);
-      }
-
-      // ── Tarjetas multi-línea ───────────────────────────────────────
-      if (odds.cardsOverOdds) {
-        setSafeValue("fb-odds-t-o25", odds.cardsOverOdds["2.5"]);
-        setSafeValue("fb-odds-t-o35", odds.cardsOverOdds["3.5"]);
-        setSafeValue("fb-odds-t-o45", odds.cardsOverOdds["4.5"]);
-        setSafeValue("fb-odds-t-o55", odds.cardsOverOdds["5.5"]);
-      }
-      if (odds.cardsUnderOdds) {
-        setSafeValue("fb-odds-t-u25", odds.cardsUnderOdds["2.5"]);
-        setSafeValue("fb-odds-t-u35", odds.cardsUnderOdds["3.5"]);
-        setSafeValue("fb-odds-t-u45", odds.cardsUnderOdds["4.5"]);
-        setSafeValue("fb-odds-t-u55", odds.cardsUnderOdds["5.5"]);
-      }
+      populateTable(
+        "goals-odds-tbody",
+        odds.goals_lines || ["1.5", "2.5", "3.5", "4.5"],
+        odds.goalsOverOdds,
+        odds.goalsUnderOdds,
+      );
+      populateTable(
+        "corners-odds-tbody",
+        odds.corners_lines || ["7.5", "8.5", "9.5", "10.5"],
+        odds.cornersOverOdds,
+        odds.cornersUnderOdds,
+      );
+      populateTable(
+        "cards-odds-tbody",
+        odds.cards_lines || ["2.5", "3.5", "4.5", "5.5"],
+        odds.cardsOverOdds,
+        odds.cardsUnderOdds,
+      );
+      populateTable(
+        "shots-odds-tbody",
+        odds.shots_lines || ["21.5", "22.5", "23.5", "24.5"],
+        odds.shotsOverOdds,
+        odds.shotsUnderOdds,
+      );
+      populateTable(
+        "shots-target-odds-tbody",
+        odds.shots_target_lines || ["7.5", "8.5", "9.5", "10.5"],
+        odds.shotsTargetOverOdds,
+        odds.shotsTargetUnderOdds,
+      );
     }
   } else if (sport === "nba") {
     const { home, away, odds } = data;
@@ -1264,6 +1274,26 @@ function _fbTeam(p) {
   };
 }
 
+function addOddsLine(type) {
+  let tbId = "";
+  if (type === "goals") tbId = "goals-odds-tbody";
+  else if (type === "corners") tbId = "corners-odds-tbody";
+  else if (type === "cards") tbId = "cards-odds-tbody";
+  else if (type === "shots") tbId = "shots-odds-tbody";
+  else if (type === "shots-target") tbId = "shots-target-odds-tbody";
+
+  const tb = document.getElementById(tbId);
+  if (!tb) return;
+
+  const tr = document.createElement("tr");
+  tr.innerHTML = `
+    <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" placeholder="Ej: 5.5" /></td>
+    <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" placeholder="" /></td>
+    <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" placeholder="" /></td>
+  `;
+  tb.appendChild(tr);
+}
+
 function buildFootballPayloadFromForm() {
   const home = _fbTeam("home");
   const away = _fbTeam("away");
@@ -1282,44 +1312,55 @@ function buildFootballPayloadFromForm() {
     return isNaN(val) ? null : val;
   }
 
-  const goalsOverOdds = Object.fromEntries([
-    ["1.5", getVal("fb-odds-g-o15")],
-    ["2.5", getVal("fb-odds-g-o25")],
-    ["3.5", getVal("fb-odds-g-o35")],
-    ["4.5", getVal("fb-odds-g-o45")],
-  ]);
-  const goalsUnderOdds = Object.fromEntries([
-    ["1.5", getVal("fb-odds-g-u15")],
-    ["2.5", getVal("fb-odds-g-u25")],
-    ["3.5", getVal("fb-odds-g-u35")],
-    ["4.5", getVal("fb-odds-g-u45")],
-  ]);
+  const getOddsFromTable = (tbodyId) => {
+    const lines = [];
+    const overOdds = {};
+    const underOdds = {};
+    const tb = document.getElementById(tbodyId);
+    if (tb) {
+      tb.querySelectorAll("tr").forEach((tr) => {
+        let lineVal = null;
+        const inputLine = tr.children[0].querySelector("input");
+        if (inputLine) {
+          if (inputLine.value) lineVal = inputLine.value.trim();
+        } else {
+          lineVal = tr.children[0].innerText.trim();
+        }
 
-  const cornersOverOdds = Object.fromEntries([
-    ["7.5", getVal("fb-odds-c-o75")],
-    ["8.5", getVal("fb-odds-c-o85")],
-    ["9.5", getVal("fb-odds-c-o95")],
-    ["10.5", getVal("fb-odds-c-o105")],
-  ]);
-  const cornersUnderOdds = Object.fromEntries([
-    ["7.5", getVal("fb-odds-c-u75")],
-    ["8.5", getVal("fb-odds-c-u85")],
-    ["9.5", getVal("fb-odds-c-u95")],
-    ["10.5", getVal("fb-odds-c-u105")],
-  ]);
+        const inputOver = tr.children[1].querySelector("input");
+        const inputUnder = tr.children[2].querySelector("input");
 
-  const cardsOverOdds = Object.fromEntries([
-    ["2.5", getVal("fb-odds-t-o25")],
-    ["3.5", getVal("fb-odds-t-o35")],
-    ["4.5", getVal("fb-odds-t-o45")],
-    ["5.5", getVal("fb-odds-t-o55")],
-  ]);
-  const cardsUnderOdds = Object.fromEntries([
-    ["2.5", getVal("fb-odds-t-u25")],
-    ["3.5", getVal("fb-odds-t-u35")],
-    ["4.5", getVal("fb-odds-t-u45")],
-    ["5.5", getVal("fb-odds-t-u55")],
-  ]);
+        if (lineVal) {
+          let added = false;
+          if (
+            inputOver &&
+            inputOver.value &&
+            !isNaN(parseFloat(inputOver.value))
+          ) {
+            overOdds[lineVal] = parseFloat(inputOver.value);
+            added = true;
+          }
+          if (
+            inputUnder &&
+            inputUnder.value &&
+            !isNaN(parseFloat(inputUnder.value))
+          ) {
+            underOdds[lineVal] = parseFloat(inputUnder.value);
+            added = true;
+          }
+          // Only include line if at least one odd was provided. But if user adds line dynamically, it might be partial. Wait, allow empty as well if lineVal is there. Actually only push if there are odds.
+          if (added) lines.push(lineVal);
+        }
+      });
+    }
+    return { lines, overOdds, underOdds };
+  };
+
+  const goalsParsed = getOddsFromTable("goals-odds-tbody");
+  const cornersParsed = getOddsFromTable("corners-odds-tbody");
+  const cardsParsed = getOddsFromTable("cards-odds-tbody");
+  const shotsParsed = getOddsFromTable("shots-odds-tbody");
+  const shotsTargetParsed = getOddsFromTable("shots-target-odds-tbody");
 
   const odds = {
     home: getVal("fb-odds-home"),
@@ -1328,17 +1369,25 @@ function buildFootballPayloadFromForm() {
     btts_yes: getVal("fb-odds-btts-yes"),
     btts_no: getVal("fb-odds-btts-no"),
 
-    goals_lines: ["1.5", "2.5", "3.5", "4.5"],
-    goalsOverOdds,
-    goalsUnderOdds,
+    goals_lines: goalsParsed.lines,
+    goalsOverOdds: goalsParsed.overOdds,
+    goalsUnderOdds: goalsParsed.underOdds,
 
-    corners_lines: ["7.5", "8.5", "9.5", "10.5"],
-    cornersOverOdds,
-    cornersUnderOdds,
+    corners_lines: cornersParsed.lines,
+    cornersOverOdds: cornersParsed.overOdds,
+    cornersUnderOdds: cornersParsed.underOdds,
 
-    cards_lines: ["2.5", "3.5", "4.5", "5.5"],
-    cardsOverOdds,
-    cardsUnderOdds,
+    cards_lines: cardsParsed.lines,
+    cardsOverOdds: cardsParsed.overOdds,
+    cardsUnderOdds: cardsParsed.underOdds,
+
+    shots_lines: shotsParsed.lines,
+    shotsOverOdds: shotsParsed.overOdds,
+    shotsUnderOdds: shotsParsed.underOdds,
+
+    shots_target_lines: shotsTargetParsed.lines,
+    shotsTargetOverOdds: shotsTargetParsed.overOdds,
+    shotsTargetUnderOdds: shotsTargetParsed.underOdds,
   };
 
   const competition = val("fb-competition") || "General";
