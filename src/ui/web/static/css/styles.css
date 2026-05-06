@@ -287,6 +287,16 @@ body {
   gap: 0.4rem 1rem;
 }
 
+.stats-grid--tennis {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+@media (min-width: 1200px) {
+  .stats-grid--tennis {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 /* FORZAR horizontalidad dentro de stats-grid */
 .stats-grid .form-group {
   display: flex !important;
@@ -1288,4 +1298,86 @@ body {
   .value-checker-grid {
     grid-template-columns: 1fr;
   }
+}
+/* ── Historial & Grupos ───────────────────────────────────────── */
+.history-group-row {
+  background: rgba(255, 255, 255, 0.05);
+  font-weight: 700;
+  font-size: 0.75rem;
+  color: var(--accent-light);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  border-left: 3px solid var(--accent);
+}
+.history-group-row td {
+  padding: 0.6rem 1rem !important;
+  text-align: left !important;
+}
+
+.history-has-llm {
+  color: var(--accent-light);
+  font-size: 0.8rem;
+  margin-left: 0.4rem;
+  opacity: 0.8;
+}
+
+.history-actions {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.btn-history-action {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--text-secondary);
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.btn-history-action:hover {
+  background: var(--accent);
+  color: #fff;
+  border-color: transparent;
+}
+
+.btn-history-action.recalc:hover {
+  background: var(--green);
+}
+
+/* ── Notification (SimpleToast) ────────────────────────────────── */
+.notification {
+  position: fixed;
+  bottom: 2rem;
+  right: 2rem;
+  padding: 1rem 2rem;
+  background: var(--bg-card);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius);
+  color: #fff;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  z-index: 2000;
+  display: none;
+  animation: slideUp 0.3s ease;
+}
+@keyframes slideUp {
+  from {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.notification--error {
+  border-color: var(--red);
+  background: rgba(239, 68, 68, 0.1);
 }

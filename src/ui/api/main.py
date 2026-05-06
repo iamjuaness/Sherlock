@@ -19,6 +19,9 @@ from src.ui.api.schemas import (
     SyncResult,
     AnalysisSave,
     AnalysisHistoryOut,
+    AnalysisResultsUpdate,
+    GlobalStatsOut,
+    PickStat,
 )
 from src.ui.api.compare import (
     compare_football,
@@ -323,7 +326,7 @@ async def _call_llm_for_result(sport: str, result: CompareResponse, request) -> 
         fn = getattr(_cmp, "safe_generate_football_analysis", None) \
           or getattr(_cmp, "_safe_generate_football_analysis", None)
         if fn:
-            return await fn(request.home, request.away, vp, result.projected_lines, request.competition_name, user_context)
+            return await fn(request.home, request.away, vp, result.projected_lines, request.league_stats, request.competition_name, user_context)
 
     elif sport == "nba":
         fn = getattr(_cmp, "safe_generate_nba_analysis", None) \
@@ -384,21 +387,60 @@ def save_analysis(
     req: AnalysisSave,
     db: Session = Depends(get_db),
 ) -> AnalysisHistoryOut:
-    """Save an analysis to history."""
+    """Save or update an analysis in history."""
     try:
         sport_enum = Sport(req.sport)
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid sport: {req.sport}")
 
+    # Check for existing record (Upsert logic)
+    existing = (
+        db.query(AnalysisHistory)
+        .filter(
+            AnalysisHistory.sport == sport_enum,
+            AnalysisHistory.match_title == req.match_title,
+        )
+        .first()
+    )
+
+    if existing:
+        existing.payload = json.dumps(req.payload)
+        existing.match_date = req.match_date
+        if req.picks_calculados is not None:
+            existing.picks_calculados = json.dumps(req.picks_calculados)
+        if req.user_context is not None:
+            existing.user_context = req.user_context
+        if req.llm_response is not None:
+            existing.llm_response = req.llm_response
+            existing.llm_timestamp = req.llm_timestamp or datetime.utcnow()
+        if req.needs_reanalysis is not None:
+            existing.needs_reanalysis = req.needs_reanalysis
+        if req.compare_response_snapshot is not None:
+            existing.compare_response_snapshot = json.dumps(req.compare_response_snapshot)
+        
+        db.commit()
+        db.refresh(existing)
+        out = AnalysisHistoryOut.model_validate(existing)
+        return _populate_history_extra_fields(existing, out)
+
+    # Create new record
     history = AnalysisHistory(
         sport=sport_enum,
         match_title=req.match_title,
         payload=json.dumps(req.payload),
+        match_date=req.match_date,
+        picks_calculados=json.dumps(req.picks_calculados) if req.picks_calculados else None,
+        user_context=req.user_context,
+        llm_response=req.llm_response,
+        llm_timestamp=req.llm_timestamp,
+        compare_response_snapshot=json.dumps(req.compare_response_snapshot) if req.compare_response_snapshot else None,
+        needs_reanalysis=req.needs_reanalysis or False,
     )
     db.add(history)
     db.commit()
     db.refresh(history)
-    return AnalysisHistoryOut.model_validate(history)
+    out = AnalysisHistoryOut.model_validate(history)
+    return _populate_history_extra_fields(history, out)
 
 
 @app.get("/api/v1/analysis", response_model=list[AnalysisHistoryOut], tags=["Analysis History"])
@@ -406,7 +448,9 @@ def list_analysis(
     sport: str | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
-    limit: int = Query(50, ge=1, le=100),
+    match_date_from: str | None = Query(None),
+    match_date_to: str | None = Query(None),
+    limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> list[AnalysisHistoryOut]:
     """List saved analyses with optional filters."""
@@ -418,13 +462,357 @@ def list_analysis(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid sport: {sport}")
 
+    # Created date filters
     if date_from:
         query = query.filter(AnalysisHistory.date >= datetime.fromisoformat(date_from))
     if date_to:
         query = query.filter(AnalysisHistory.date <= datetime.fromisoformat(date_to))
+        
+    # Match date filters
+    if match_date_from:
+        query = query.filter(AnalysisHistory.match_date >= datetime.fromisoformat(match_date_from))
+    if match_date_to:
+        query = query.filter(AnalysisHistory.match_date <= datetime.fromisoformat(match_date_to))
 
     query = query.order_by(AnalysisHistory.date.desc()).limit(limit)
-    return [AnalysisHistoryOut.model_validate(h) for h in query.all()]
+    history_list = query.all()
+    results = []
+    for h in history_list:
+        out = AnalysisHistoryOut.model_validate(h)
+        results.append(_populate_history_extra_fields(h, out))
+    return results
+
+
+@app.post("/api/v1/analysis/{analysis_id}/results", response_model=AnalysisHistoryOut, tags=["Analysis History"])
+def update_analysis_results(
+    analysis_id: str,
+    req: AnalysisResultsUpdate,
+    db: Session = Depends(get_db),
+) -> AnalysisHistoryOut:
+    """Update final match results and calculate accuracy."""
+    history = db.query(AnalysisHistory).filter(AnalysisHistory.id == analysis_id).first()
+    if not history:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+
+    # Update result fields
+    for field, value in req.model_dump(exclude_unset=True).items():
+        setattr(history, field, value)
+
+    # Calculate Accuracy
+    if history.picks_calculados:
+        try:
+            picks = json.loads(history.picks_calculados)
+            if isinstance(picks, list) and len(picks) > 0:
+                results_dict = req.model_dump()
+                hits = 0
+                total = 0
+                
+                # We calculate accuracy for all "Value" picks (rating > 0)
+                # or just all generated picks if preferred. 
+                # User said: "(picks acertados / total picks generados) * 100"
+                for pick in picks:
+                    # Filter: Only picks shown to the user (is_publishable or is_value)
+                    if not pick.get("is_publishable", pick.get("is_value", False)):
+                        continue
+                        
+                    success = _check_pick_success(pick, results_dict)
+                    if success is not None:
+                        total += 1
+                        if success:
+                            hits += 1
+                
+                if total > 0:
+                    history.accuracy_percentage = (hits / total) * 100
+        except Exception as e:
+            print(f"Error calculating accuracy: {e}")
+
+    db.commit()
+    db.refresh(history)
+    out = AnalysisHistoryOut.model_validate(history)
+    return _populate_history_extra_fields(history, out)
+
+
+@app.get("/api/v1/stats/global", response_model=GlobalStatsOut, tags=["Stats"])
+def get_global_stats(db: Session = Depends(get_db)):
+    """Calculate global performance metrics across all sports."""
+    history = db.query(AnalysisHistory).all()
+    
+    total_matches = len(history)
+    matches_with_results = 0
+    total_picks = 0
+    total_hits = 0
+    
+    sport_stats = {}
+    
+    for h in history:
+        # Check if match has a result (home score is usually a good indicator)
+        has_result = h.final_score_home is not None
+        if has_result:
+            matches_with_results += 1
+            
+        if h.picks_calculados:
+            try:
+                picks = json.loads(h.picks_calculados)
+                if not isinstance(picks, list): continue
+                
+                results_dict = {
+                    "final_score_home": h.final_score_home,
+                    "final_score_away": h.final_score_away,
+                    "final_corners_home": h.final_corners_home,
+                    "final_corners_away": h.final_corners_away,
+                    "final_yellow_cards_home": h.final_yellow_cards_home,
+                    "final_yellow_cards_away": h.final_yellow_cards_away,
+                    "final_red_cards_home": h.final_red_cards_home,
+                    "final_red_cards_away": h.final_red_cards_away,
+                    "final_shots_home": h.final_shots_home,
+                    "final_shots_away": h.final_shots_away,
+                    "final_shots_on_target_home": h.final_shots_on_target_home,
+                    "final_shots_on_target_away": h.final_shots_on_target_away,
+                }
+                
+                sport = h.sport.value if hasattr(h.sport, 'value') else str(h.sport)
+                if sport not in sport_stats:
+                    sport_stats[sport] = {"picks": 0, "hits": 0}
+                
+                for pick in picks:
+                    # Filter: Only picks shown to the user
+                    if not pick.get("is_publishable", pick.get("is_value", False)):
+                        continue
+
+                    total_picks += 1
+                    sport_stats[sport]["picks"] += 1
+                    
+                    if has_result:
+                        success = _check_pick_success(pick, results_dict)
+                        if success:
+                            total_hits += 1
+                            sport_stats[sport]["hits"] += 1
+            except:
+                continue
+                
+    accuracy = (total_hits / total_picks * 100) if total_picks > 0 else 0.0
+    
+    # Calculate per-sport accuracy
+    for s in sport_stats:
+        p = sport_stats[s]["picks"]
+        h = sport_stats[s]["hits"]
+        sport_stats[s]["accuracy"] = (h / p * 100) if p > 0 else 0.0
+        
+    return {
+        "total_matches": total_matches,
+        "total_matches_with_results": matches_with_results,
+        "total_picks": total_picks,
+        "total_hits": total_hits,
+        "global_accuracy": accuracy,
+        "sport_stats": sport_stats
+    }
+
+@app.get("/api/v1/stats/picks", response_model=list[PickStat], tags=["Stats"])
+def get_all_picks(
+    limit: int = 100,
+    sport: str | None = None,
+    db: Session = Depends(get_db)
+):
+    """Get a detailed list of all calculated picks with their outcomes."""
+    query = db.query(AnalysisHistory)
+    if sport:
+        try:
+            sport_enum = Sport(sport)
+            query = query.filter(AnalysisHistory.sport == sport_enum)
+        except:
+            pass
+            
+    history = query.order_by(AnalysisHistory.date.desc()).limit(limit).all()
+    all_picks = []
+    
+    for h in history:
+        if not h.picks_calculados: continue
+        try:
+            picks = json.loads(h.picks_calculados)
+            results_dict = {
+                "final_score_home": h.final_score_home,
+                "final_score_away": h.final_score_away,
+                "final_corners_home": h.final_corners_home,
+                "final_corners_away": h.final_corners_away,
+                "final_yellow_cards_home": h.final_yellow_cards_home,
+                "final_yellow_cards_away": h.final_yellow_cards_away,
+                "final_red_cards_home": h.final_red_cards_home,
+                "final_red_cards_away": h.final_red_cards_away,
+                "final_shots_home": h.final_shots_home,
+                "final_shots_away": h.final_shots_away,
+                "final_shots_on_target_home": h.final_shots_on_target_home,
+                "final_shots_on_target_away": h.final_shots_on_target_away,
+            }
+            
+            has_result = h.final_score_home is not None
+            
+            for pick in picks:
+                # Filter: Only picks shown to the user
+                if not pick.get("is_publishable", pick.get("is_value", False)):
+                    continue
+
+                success = None
+                if has_result:
+                    success = _check_pick_success(pick, results_dict)
+                
+                all_picks.append({
+                    "match_id": h.id,
+                    "match_title": h.match_title,
+                    "sport": h.sport.value if hasattr(h.sport, 'value') else str(h.sport),
+                    "date": h.date,
+                    "selection": pick.get("selection", "N/A"),
+                    "market": pick.get("market", "N/A"),
+                    "line": pick.get("line"),
+                    "odds": pick.get("odds", 0.0),
+                    "success": success,
+                    "is_value": pick.get("is_value", False)
+                })
+        except:
+            continue
+            
+    return all_picks
+
+
+def _check_pick_success(pick: dict, res: dict) -> bool | None:
+    """Helper to verify if a pick was successful based on results."""
+    sel = pick.get("selection", "").lower()
+    
+    h_score = res.get("final_score_home")
+    a_score = res.get("final_score_away")
+    
+    # 1X2
+    if sel == "local":
+        if h_score is not None and a_score is not None: return h_score > a_score
+    if sel == "empate":
+        if h_score is not None and a_score is not None: return h_score == a_score
+    if sel == "visitante":
+        if h_score is not None and a_score is not None: return a_score > h_score
+        
+    # BTTS
+    if "btts sí" in sel or "btts yes" in sel:
+        if h_score is not None and a_score is not None: return h_score > 0 and a_score > 0
+    if "btts no" in sel:
+        if h_score is not None and a_score is not None: return h_score == 0 or a_score == 0
+        
+    # Goals
+    if "goles" in sel or "goals" in sel:
+        total_g = (h_score + a_score) if (h_score is not None and a_score is not None) else None
+        if "over" in sel:
+            line = _extract_line(sel, "over")
+            if line is not None and total_g is not None: return total_g > line
+        if "under" in sel:
+            line = _extract_line(sel, "under")
+            if line is not None and total_g is not None: return total_g < line
+
+    # Corners
+    h_corn = res.get("final_corners_home")
+    a_corn = res.get("final_corners_away")
+    if "corners" in sel:
+        total_c = (h_corn + a_corn) if (h_corn is not None and a_corn is not None) else None
+        if "over" in sel:
+            line = _extract_line(sel, "over")
+            if line is not None and total_c is not None: return total_c > line
+        if "under" in sel:
+            line = _extract_line(sel, "under")
+            if line is not None and total_c is not None: return total_c < line
+
+    # Cards
+    h_y = res.get("final_yellow_cards_home") or 0
+    a_y = res.get("final_yellow_cards_away") or 0
+    h_r = res.get("final_red_cards_home") or 0
+    a_r = res.get("final_red_cards_away") or 0
+    total_cards = h_y + a_y + h_r + a_r # Simple sum
+    if "tarjetas" in sel or "cards" in sel:
+        if "over" in sel:
+            line = _extract_line(sel, "over")
+            if line is not None: return total_cards > line
+        if "under" in sel:
+            line = _extract_line(sel, "under")
+            if line is not None: return total_cards < line
+
+    # Shots
+    h_s = res.get("final_shots_home")
+    a_s = res.get("final_shots_away")
+    if "tiros" in sel or "shots" in sel:
+        total_s = (h_s + a_s) if (h_s is not None and a_s is not None) else None
+        if "pta" in sel or "target" in sel:
+            h_st = res.get("final_shots_on_target_home")
+            a_st = res.get("final_shots_on_target_away")
+            total_st = (h_st + a_st) if (h_st is not None and a_st is not None) else None
+            if "over" in sel:
+                line = _extract_line(sel, "over")
+                if line is not None and total_st is not None: return total_st > line
+            if "under" in sel:
+                line = _extract_line(sel, "under")
+                if line is not None and total_st is not None: return total_st < line
+        else:
+            if "over" in sel:
+                line = _extract_line(sel, "over")
+                if line is not None and total_s is not None: return total_s > line
+            if "under" in sel:
+                line = _extract_line(sel, "under")
+                if line is not None and total_s is not None: return total_s < line
+
+    return None
+
+def _extract_line(text: str, prefix: str) -> float | None:
+    try:
+        parts = text.split(prefix)
+        if len(parts) > 1:
+            # Get the first number found after prefix
+            import re
+            match = re.search(r"(\d+(\.\d+)?)", parts[1])
+            if match:
+                return float(match.group(1))
+    except: pass
+    return None
+
+def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) -> AnalysisHistoryOut:
+    """Computa campos virtuales de picks y acierto para el historial."""
+    if not h.picks_calculados:
+        out.has_picks = False
+        return out
+        
+    try:
+        picks = json.loads(h.picks_calculados)
+        if not isinstance(picks, list):
+            out.has_picks = False
+            return out
+            
+        # Solo consideramos picks "publicables" o marcados como valor
+        publishable_picks = [p for p in picks if p.get("is_publishable", p.get("is_value", False))]
+        out.has_picks = len(publishable_picks) > 0
+        
+        if out.has_picks and h.final_score_home is not None:
+            res_dict = {
+                "final_score_home": h.final_score_home,
+                "final_score_away": h.final_score_away,
+                "final_corners_home": h.final_corners_home,
+                "final_corners_away": h.final_corners_away,
+                "final_yellow_cards_home": h.final_yellow_cards_home,
+                "final_yellow_cards_away": h.final_yellow_cards_away,
+                "final_red_cards_home": h.final_red_cards_home,
+                "final_red_cards_away": h.final_red_cards_away,
+                "final_shots_home": h.final_shots_home,
+                "final_shots_away": h.final_shots_away,
+                "final_shots_on_target_home": h.final_shots_on_target_home,
+                "final_shots_on_target_away": h.final_shots_on_target_away,
+            }
+            hits = 0
+            total = 0
+            for p in publishable_picks:
+                success = _check_pick_success(p, res_dict)
+                if success is not None:
+                    total += 1
+                    if success:
+                        hits += 1
+            if total > 0:
+                out.picks_hits_summary = f"{hits}/{total}"
+    except Exception as e:
+        print(f"Error populating history extra fields: {e}")
+        out.has_picks = False
+        
+    return out
 
 
 @app.get("/api/v1/analysis/{analysis_id}", response_model=AnalysisHistoryOut, tags=["Analysis History"])
@@ -436,7 +824,8 @@ def get_analysis_by_id(
     history = db.query(AnalysisHistory).filter(AnalysisHistory.id == analysis_id).first()
     if not history:
         raise HTTPException(status_code=404, detail="Analysis not found")
-    return AnalysisHistoryOut.model_validate(history)
+    out = AnalysisHistoryOut.model_validate(history)
+    return _populate_history_extra_fields(history, out)
 
 @app.delete("/api/v1/analysis/{analysis_id}", status_code=204, tags=["Analysis History"])
 def delete_analysis(

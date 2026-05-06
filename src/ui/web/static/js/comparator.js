@@ -110,46 +110,20 @@ function renderMultiLineCards(values) {
   if (!grid) return;
   grid.innerHTML = "";
 
-  // ── 1. Evaluar y Puntuar la Calidad Estratégica del Pick ──
-  const ratePickQuality = (v) => {
-    const edge = Number(v.edge ?? 0);
-    const odds = Number(v.odds ?? 0);
-    const sel = (v.selection ?? "").toLowerCase();
-
-    // Filtro 1: Descartar si el edge es negativo o las cuotas son inválidas
-    if (edge < 2.0 || odds <= 1.01) return -1;
-
-    let score = 0;
-
-    // Filtro 2: Rango Dorado de Cuotas (1.50 - 2.50)
-    // Penabiliza cuotas muy bajas o extremadamente altas
-    if (odds >= 1.5 && odds <= 2.5) score += 50;
-    else if (odds > 2.5 && odds <= 3.5) score += 20;
-    else score -= 30; // Cuotas minúsculas o enormes
-
-    // Filtro 3: Identificación de Mercados Secundarios
-    const isSecondary = sel.includes("corner") || sel.includes("tarjeta");
-
-    if (isSecondary) {
-      // Los mercados exóticos necesitan un margen de error más amplio
-      if (edge < 6.0) score -= 40;
-      else score += edge * 1.5; // Premia Edges altos en mercados volátiles
-    } else {
-      // Mercados Principales (Goles, 1X2, BTTS)
-      // Filtro 4: Red Flag / Anomalía (Edge > 20% en mercado principal es sospechoso)
-      if (edge > 20.0) score -= 50;
-      else score += edge * 2;
-    }
-
-    return score;
-  };
-
+  // ── 1. Evaluar picks (Sincronizado con Backend y LLM) ──
+  // El backend ya calculó is_value, strategic_score y quality_score usando filtros de seguridad
   const filtered = Array.isArray(values)
     ? values
         .filter((v) => v.selection && v.odds != null)
-        .map((v) => ({ ...v, strategicScore: ratePickQuality(v) }))
-        .filter((v) => v.strategicScore >= 0) // Ocultar basura (edge < 0 o score negativo)
-        .sort((a, b) => b.strategicScore - a.strategicScore) // Ordenar de mejor a peor pick real
+        .filter((v) => v.is_value === true) // El backend ya aplicó _rate_pick_quality
+        .sort((a, b) => {
+          const dqA = a.data_quality_score ?? 0;
+          const dqB = b.data_quality_score ?? 0;
+          if (dqB !== dqA) {
+            return dqB - dqA;
+          }
+          return (b.model_prob ?? 0) - (a.model_prob ?? 0);
+        })
     : [];
 
   if (!card) {
@@ -162,15 +136,7 @@ function renderMultiLineCards(values) {
 
   filtered.forEach((v) => {
     const edgeVal = Number(v.edge ?? 0);
-    const probText =
-      v.model_prob != null
-        ? `${Number(v.model_prob).toFixed(1)}%`
-        : v.modelProb != null
-          ? `${Number(v.modelProb).toFixed(1)}%`
-          : v.modelprob != null
-            ? `${Number(v.modelprob).toFixed(1)}%`
-            : "—";
-
+    const probText = Number(v.model_prob ?? 0).toFixed(1) + "%";
     const oddsText = Number(v.odds).toFixed(2);
     const edgeText =
       edgeVal >= 0 ? `+${edgeVal.toFixed(1)}%` : `${edgeVal.toFixed(1)}%`;
@@ -178,48 +144,36 @@ function renderMultiLineCards(values) {
     let mod = "neutral";
     let badgeText = "";
 
-    // ── 2. Etiquetas Estratégicas Visuales ──
-    const isSecondary = (v.selection ?? "")
-      .toLowerCase()
-      .match(/corner|tarjeta/);
-
-    if (edgeVal > 20.0 && !isSecondary) {
-      mod = "no"; // Color rojo/naranja
-      badgeText = "⚠️ ANOMALÍA (Revisar Infos)";
-    } else if (v.strategicScore >= 50) {
+    // ── Etiquetas Estratégicas y Calidad (Sincronizado) ──
+    if (v.is_publishable) {
       mod = "strong";
-      badgeText = "🎯 PICK ÓPTIMO";
-    } else if (v.strategicScore > 0) {
+      badgeText = "🎯 PROFESIONAL";
+    } else if (edgeVal > 0) {
       mod = "value";
-      badgeText = "✅ VALUE MARGINAL";
+      badgeText = "⚖️ VALOR";
     }
 
-    const edgeColor =
-      mod === "strong"
-        ? "var(--color-success)"
-        : mod === "no"
-          ? "var(--color-notification)"
-          : "var(--color-blue)";
-
-    const implied = v.implied_prob ?? v.impliedProb ?? v.impliedprob ?? null;
+    const dqScore =
+      v.data_quality_score != null ? Math.round(v.data_quality_score) : null;
+    const confTier = v.market_confidence_tier || "N/A";
 
     const el = document.createElement("div");
     el.className = `value-line-card value-line-card--${mod}`;
     el.innerHTML = `
       <div class="value-line-card__market" title="${v.selection}">${v.selection}</div>
       <div class="value-line-card__row">
-        <span>Prob. modelo</span>
+        <span>Confianza Datos</span>
+        <span style="color: ${dqScore > 70 ? "var(--color-success)" : dqScore > 40 ? "var(--color-warning)" : "var(--color-error)"}">${dqScore ?? "—"}% (${confTier})</span>
+      </div>
+      <div class="value-line-card__row">
+        <span>Prob. Modelo</span>
         <span>${probText}</span>
       </div>
       <div class="value-line-card__row">
-        <span>Cuota bookie</span>
+        <span>Cuota Bookie</span>
         <span>${oddsText}</span>
       </div>
-      <div class="value-line-card__row">
-        <span>Prob. implícita</span>
-        <span>${implied != null ? Number(implied).toFixed(1) + "%" : "—"}</span>
-      </div>
-      <div class="value-line-card__edge" style="color: ${edgeColor}; font-weight: bold;">
+      <div class="value-line-card__edge" style="font-weight: bold; font-size: 1.1rem; margin-top: 0.5rem;">
         Edge ${edgeText}
       </div>
       <span class="value-line-card__badge badge--${mod}">${badgeText}</span>
@@ -629,21 +583,28 @@ function updateRealTimeValue() {
   }
 
   const modelProb = v.model_prob / 100;
-  const bookieProb = 1 / bookieOdds;
-  const edge = (modelProb - bookieProb) * 100;
+  const pushProb = (v.push_prob || 0) / 100;
+
+  // Cálculo de Edge considerando el PUSH (Expected Value)
+  // EV = (P_win * Odds) + (P_push * 1) - 1
+  const edge = (modelProb * bookieOdds + pushProb - 1) * 100;
+
   // Simplified Kelly (1/4 Kelly suggested)
   const kellyMultiplier = 0.25;
   const kelly =
-    edge > 0
-      ? ((modelProb * bookieOdds - 1) / (bookieOdds - 1)) * kellyMultiplier
-      : 0;
+    edge > 0 ? (edge / 100 / (bookieOdds - 1)) * kellyMultiplier : 0;
 
-  const color = edge > 5 ? "var(--green)" : edge > 0 ? "#86efac" : "var(--red)";
+  const color =
+    edge > 6.0
+      ? "var(--color-success)"
+      : edge > 2.5
+        ? "#86efac"
+        : "var(--color-error)";
   const recommendation =
-    edge > 8
-      ? "🔥 GRAN VALOR"
-      : edge > 3
-        ? "✅ VALUE DETECTADO"
+    edge > 10.0
+      ? "🔥 VALOR EXTREMO"
+      : edge > 5.0
+        ? "✅ VALUE PROFESIONAL"
         : edge > 0
           ? "⚖️ Valor marginal"
           : "❌ SIN VALOR";
@@ -665,7 +626,8 @@ function updateRealTimeValue() {
     </div>
   `;
 }
-async function saveToHistory(sport, payload) {
+// ── Persistencia y Resultados ──────────────────────────────────
+async function saveAnalysisDataToDB(sport, payload, results = null) {
   try {
     const entry = {
       sport: sport,
@@ -673,16 +635,26 @@ async function saveToHistory(sport, payload) {
         (payload.home?.name || payload.player1?.name || "Local") +
         " vs " +
         (payload.away?.name || payload.player2?.name || "Visitante"),
+      match_date: payload.match_date || new Date().toISOString(),
       payload: payload,
+      picks_calculados: results ? results.values : [],
+      user_context: payload.context || "",
+      llm_response: results && results.llm_analysis ? results.llm_analysis : "",
+      llm_timestamp:
+        results && results.llm_analysis ? new Date().toISOString() : null,
+      compare_response_snapshot: results ? results : null,
     };
 
-    await fetch("/api/v1/analysis", {
+    const res = await fetch("/api/v1/analysis", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(entry),
     });
+    const data = await res.json();
+    console.log("Analysis persisted:", data.id);
+    return data;
   } catch (e) {
-    console.error("Error saving history:", e);
+    console.error("Error saving to DB:", e);
   }
 }
 
@@ -702,54 +674,104 @@ function toggleHistoryModal() {
     const sport = document.querySelector(".tab--active").dataset.sport;
 
     // Verificamos que el select existe antes de asignarle un valor
-    const sportSelect = document.getElementById("history-sport");
+    const sportSelect = document.getElementById("history-sport-filter");
     if (sportSelect) {
       sportSelect.value = sport;
     }
 
-    loadHistory(sport);
+    loadHistory();
   } else {
     modal.style.display = "none";
   }
 }
 
 // ── Cargar y pintar la lista del historial ─────────────────────
-async function loadHistory(sport) {
+async function loadHistory() {
+  const sport = document.getElementById("history-sport-filter")?.value || "";
+  const dateFrom = document.getElementById("history-date-from")?.value || "";
+  const dateTo = document.getElementById("history-date-to")?.value || "";
+
   const list = document.getElementById("history-list");
-  list.innerHTML = "<tr><td colspan='4'>Cargando historial...</td></tr>";
+  list.innerHTML = "<tr><td colspan='5'>Cargando historial...</td></tr>";
 
   try {
-    const url = sport ? `/api/v1/analysis?sport=${sport}` : "/api/v1/analysis";
+    let url = `/api/v1/analysis?`;
+    if (sport) url += `sport=${sport}&`;
+    if (dateFrom) url += `match_date_from=${dateFrom}&`;
+    if (dateTo) url += `match_date_to=${dateTo}&`;
+
     const r = await fetch(url);
     const entries = await r.json();
 
     if (entries.length === 0) {
       list.innerHTML =
-        "<tr><td colspan='4'>No hay registros previos.</td></tr>";
+        "<tr><td colspan='5'>No hay registros previos que coincidan.</td></tr>";
       return;
     }
 
-    list.innerHTML = entries
-      .map(
-        (e) => `
+    // Guardamos globalmente para filtrar en UI sin recargar
+    window._historyEntries = entries;
+    renderHistoryList(entries);
+  } catch (e) {
+    list.innerHTML =
+      "<tr><td colspan='5'>Error al cargar el historial.</td></tr>";
+  }
+}
+
+function renderHistoryList(entries) {
+  const list = document.getElementById("history-list");
+  list.innerHTML = entries
+    .map((e) => {
+      let accuracy = "—";
+      if (e.accuracy_percentage != null) {
+        accuracy = `${e.accuracy_percentage.toFixed(0)}%`;
+        if (e.picks_hits_summary) {
+          accuracy += ` <small style="opacity: 0.8; font-size: 0.8em;">(${e.picks_hits_summary})</small>`;
+        }
+      } else if (e.picks_hits_summary) {
+        accuracy = `<small style="opacity: 0.8;">(${e.picks_hits_summary})</small>`;
+      }
+
+      const accClass =
+        e.accuracy_percentage >= 70
+          ? "success"
+          : e.accuracy_percentage >= 40
+            ? "warning"
+            : "error";
+
+      return `
       <tr>
-        <td>${new Date(e.date).toLocaleString()}</td>
+        <td>${new Date(e.match_date || e.date).toLocaleDateString()}</td>
         <td>${e.sport.toUpperCase()}</td>
-        <td>${e.match_title}</td>
+        <td style="text-align: left;">
+          ${e.has_picks ? '<span title="Tiene Picks" style="margin-right: 5px; cursor: help;">🎯</span>' : '<span title="Sin Picks" style="margin-right: 5px; opacity: 0.3; cursor: help;">⭕</span>'}
+          ${e.match_title}
+        </td>
+        <td><span class="badge badge--${accClass}">${accuracy}</span></td>
         <td>
-          <div style="display: flex; gap: 0.5rem; justify-content: center;">
-            <button class="btn-preset" onclick="loadHistoryEntry('${e.id}')">Cargar</button>
-            <button class="btn-preset" style="color: var(--red); border-color: rgba(239, 68, 68, 0.4);" onclick="deleteHistoryEntry('${e.id}')">Eliminar</button>
+          <div style="display: flex; gap: 0.4rem; justify-content: center;">
+            <button class="btn-preset" title="Cargar Datos" onclick="loadHistoryEntry('${e.id}')">📂</button>
+            <button class="btn-preset" title="Reanalizar" onclick="reanalyzeHistoryEntry('${e.id}')">🔄</button>
+            <button class="btn-preset" title="Registrar Resultado" onclick="openResultsModal('${e.id}', '${e.match_title}')">🏆</button>
+            <button class="btn-preset" style="color: var(--red);" title="Eliminar" onclick="deleteHistoryEntry('${e.id}')">🗑️</button>
           </div>
         </td>
       </tr>
-    `,
-      )
-      .join("");
-  } catch (e) {
-    list.innerHTML =
-      "<tr><td colspan='4'>Error al cargar el historial.</td></tr>";
-  }
+    `;
+    })
+    .join("");
+}
+
+function filterHistoryUI() {
+  const query = document.getElementById("history-search").value.toLowerCase();
+  if (!window._historyEntries) return;
+
+  const filtered = window._historyEntries.filter(
+    (e) =>
+      e.match_title.toLowerCase().includes(query) ||
+      e.sport.toLowerCase().includes(query),
+  );
+  renderHistoryList(filtered);
 }
 
 // ── Eliminar un análisis del historial ─────────────────────────
@@ -766,10 +788,10 @@ async function deleteHistoryEntry(id) {
     }
 
     // ✅ Busca el elemento de forma segura antes de leer .value
-    const sportSelect = document.getElementById("history-sport");
-    const currentSport = sportSelect ? sportSelect.value : "football"; // fallback
+    const sportSelect = document.getElementById("history-sport-filter");
+    const currentSport = sportSelect ? sportSelect.value : "";
 
-    loadHistory(currentSport);
+    loadHistory();
   } catch (error) {
     console.error("Error al eliminar:", error);
     alert(error.message);
@@ -797,10 +819,90 @@ async function loadHistoryEntry(id) {
           : entry.payload;
       populateAppForm(entry.sport, payload);
       toggleHistoryModal();
+
+      if (entry.compare_response_snapshot && !entry.needs_reanalysis) {
+        const snapshot =
+          typeof entry.compare_response_snapshot === "string"
+            ? JSON.parse(entry.compare_response_snapshot)
+            : entry.compare_response_snapshot;
+
+        currentSport = entry.sport;
+        currentPayload = payload;
+        window._currentSnapshot = snapshot;
+
+        if (entry.sport === "football" || entry.sport === "nba") {
+          renderResults(snapshot);
+        } else if (entry.sport === "tennis") {
+          renderComparison(snapshot, "tennis");
+        }
+
+        if (entry.llm_response) {
+          const llmBox = document.getElementById("llm-analysis");
+          const btn = document.getElementById("btn-sherlock-analysis");
+          const streamingEl = document.getElementById("llm-streaming-text");
+          if (llmBox && !streamingEl) {
+            llmBox.innerHTML = `
+                  <div class="llm-box">
+                      <h3>🔍 Veredicto Sherlock</h3>
+                      <div class="llm-body" id="llm-streaming-text" style="color: var(--color-text-muted, #94a3b8)">
+                          ${renderMarkdown(entry.llm_response)}
+                      </div>
+                  </div>`;
+          } else if (streamingEl) {
+            streamingEl.innerHTML = renderMarkdown(entry.llm_response);
+          }
+          if (btn) {
+            btn.innerHTML = "✅ Veredicto generado — pedir de nuevo";
+          }
+        }
+      }
     }
   } catch (e) {
     console.error("Error loading history entry:", e);
     showError("Error al cargar la entrada del historial.");
+  }
+}
+
+async function reanalyzeHistoryEntry(id) {
+  if (
+    !confirm(
+      "¿Deseas descartar el snapshot actual y recalcular el análisis para este partido?",
+    )
+  )
+    return;
+  try {
+    const r = await fetch(`/api/v1/analysis/${id}`);
+    const entry = await r.json();
+    if (entry && entry.payload) {
+      // Set needs_reanalysis to true in DB
+      await fetch(`/api/v1/analysis`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sport: entry.sport,
+          match_title: entry.match_title,
+          payload:
+            typeof entry.payload === "string"
+              ? JSON.parse(entry.payload)
+              : entry.payload,
+          needs_reanalysis: true,
+        }),
+      });
+
+      const payload =
+        typeof entry.payload === "string"
+          ? JSON.parse(entry.payload)
+          : entry.payload;
+      populateAppForm(entry.sport, payload);
+      toggleHistoryModal();
+
+      // Trigger specific sport analysis
+      if (entry.sport === "football") analyzeFootball();
+      else if (entry.sport === "nba") analyzeNBA();
+      else if (entry.sport === "tennis") analyzeTennis();
+    }
+  } catch (e) {
+    showError("Error al reanalizar.");
   }
 }
 
@@ -901,6 +1003,8 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-league-goals", data.league_stats.avg_goals_per_game);
       setSafeValue("fb-league-corners", data.league_stats.avg_corners_per_game);
       setSafeValue("fb-league-cards", data.league_stats.avg_cards_per_game);
+      setSafeValue("fb-referee-yellow", data.league_stats.referee_avg_yellow);
+      setSafeValue("fb-referee-red", data.league_stats.referee_avg_red);
     }
 
     if (odds) {
@@ -1022,6 +1126,10 @@ function populateAppForm(sport, data) {
     const { player1, player2, odds } = data;
 
     setSafeValue("tennis-p1-name", player1.name);
+    setSafeValue("tennis-p1-age", player1.age);
+    setSafeValue("tennis-p1-height", player1.height);
+    setSafeValue("tennis-p1-hand", player1.hand);
+    setSafeValue("tennis-p1-rank", player1.rank);
     setSafeValue("tennis-p1-matches-won", player1.matches_won);
     setSafeValue("tennis-p1-total-matches", player1.total_matches);
     setSafeValue("tennis-p1-tournaments-won", player1.tournaments_won);
@@ -1049,10 +1157,12 @@ function populateAppForm(sport, data) {
     setSafeValue("tennis-p1-tiebreak-total", player1.tiebreaks_total);
     setSafeValue("tennis-p1-surface-won", player1.matches_on_surface_won);
     setSafeValue("tennis-p1-surface-total", player1.total_matches_on_surface);
-    setSafeValue("tennis-p1-h2h-won", player1.head_to_head_won);
-    setSafeValue("tennis-p1-h2h-total", player1.total_head_to_head);
 
     setSafeValue("tennis-p2-name", player2.name);
+    setSafeValue("tennis-p2-age", player2.age);
+    setSafeValue("tennis-p2-height", player2.height);
+    setSafeValue("tennis-p2-hand", player2.hand);
+    setSafeValue("tennis-p2-rank", player2.rank);
     setSafeValue("tennis-p2-matches-won", player2.matches_won);
     setSafeValue("tennis-p2-total-matches", player2.total_matches);
     setSafeValue("tennis-p2-tournaments-won", player2.tournaments_won);
@@ -1080,8 +1190,6 @@ function populateAppForm(sport, data) {
     setSafeValue("tennis-p2-tiebreak-total", player2.tiebreaks_total);
     setSafeValue("tennis-p2-surface-won", player2.matches_on_surface_won);
     setSafeValue("tennis-p2-surface-total", player2.total_matches_on_surface);
-    setSafeValue("tennis-p2-h2h-won", player2.head_to_head_won);
-    setSafeValue("tennis-p2-h2h-total", player2.total_head_to_head);
 
     setSafeValue("tennis-surface", data.surface || "hard");
 
@@ -1180,6 +1288,12 @@ async function streamLlmAnalysis(sport, payload) {
           }
         } catch (_) {}
       }
+    }
+
+    if (fullText.trim() && window._currentSnapshot) {
+      const snap = { ...window._currentSnapshot, llm_analysis: fullText };
+      window._currentSnapshot = snap;
+      await saveAnalysisDataToDB(sport, payload, snap);
     }
   } catch (e) {
     const streamingEl = document.getElementById("llm-streaming-text");
@@ -1396,6 +1510,8 @@ function buildFootballPayloadFromForm() {
     avg_goals_per_game: getSafeNumber("fb-league-goals", 2.74),
     avg_corners_per_game: getSafeNumber("fb-league-corners", 9.5),
     avg_cards_per_game: getSafeNumber("fb-league-cards", 4.5),
+    referee_avg_yellow: getSafeNumber("fb-referee-yellow", 0.0),
+    referee_avg_red: getSafeNumber("fb-referee-red", 0.0),
   };
 
   return { home, away, odds, competition, league_stats };
@@ -1415,10 +1531,14 @@ async function analyzeFootball() {
     generatellmanalysis: false,
   });
   if (!data) return;
-  renderResults(data); // muestra gráficos al instante, llm_analysis=null
+  window._currentSnapshot = data;
+  renderResults(data);
 
-  // FASE 2: análisis LLM → en paralelo, typewriter
-  // streamLlmAnalysis("football", { ...payload, generatellmanalysis: false });
+  // Persistir en DB inmediatamente para tener el registro
+  await saveAnalysisDataToDB("football", payload, data);
+
+  // FASE 2: análisis LLM (Opcional si ya existe en DB, pero aquí es nuevo análisis)
+  // streamLlmAnalysis("football", payload);
 }
 
 function saveFootballPreset() {
@@ -1534,19 +1654,25 @@ async function analyzeNBA() {
     generatellmanalysis: false,
   });
   if (!data) return;
+
+  window._currentSnapshot = data;
   renderResults(data);
+  await saveAnalysisDataToDB("nba", payload, data);
+
   streamLlmAnalysis("nba", { ...payload, generatellmanalysis: false });
 }
 
-// ═══ TENNIS ═══
-async function analyzeTennis() {
+function buildTennisPayloadFromForm() {
   const p1Name = val("tennis-p1-name"),
     p2Name = val("tennis-p2-name");
-  if (!p1Name || !p2Name) return showError("Ingresa los nombres");
 
-  const payload = {
+  return {
     player1: {
       name: p1Name,
+      age: val("tennis-p1-age"),
+      height: val("tennis-p1-height"),
+      hand: val("tennis-p1-hand"),
+      rank: val("tennis-p1-rank"),
       matches_won: val("tennis-p1-matches-won"),
       total_matches: val("tennis-p1-total-matches"),
       tournaments_won: val("tennis-p1-tournaments-won"),
@@ -1565,11 +1691,13 @@ async function analyzeTennis() {
       tiebreaks_total: val("tennis-p1-tiebreak-total"),
       matches_on_surface_won: val("tennis-p1-surface-won"),
       total_matches_on_surface: val("tennis-p1-surface-total"),
-      head_to_head_won: val("tennis-p1-h2h-won"),
-      total_head_to_head: val("tennis-p1-h2h-total"),
     },
     player2: {
       name: p2Name,
+      age: val("tennis-p2-age"),
+      height: val("tennis-p2-height"),
+      hand: val("tennis-p2-hand"),
+      rank: val("tennis-p2-rank"),
       matches_won: val("tennis-p2-matches-won"),
       total_matches: val("tennis-p2-total-matches"),
       tournaments_won: val("tennis-p2-tournaments-won"),
@@ -1588,8 +1716,6 @@ async function analyzeTennis() {
       tiebreaks_total: val("tennis-p2-tiebreak-total"),
       matches_on_surface_won: val("tennis-p2-surface-won"),
       total_matches_on_surface: val("tennis-p2-surface-total"),
-      head_to_head_won: val("tennis-p2-h2h-won"),
-      total_head_to_head: val("tennis-p2-h2h-total"),
     },
     surface: val("tennis-surface"),
     odds: {
@@ -1598,18 +1724,70 @@ async function analyzeTennis() {
       bookmaker: val("tennis-bookmaker"),
     },
   };
+}
 
-  if (!validatePayload(payload, "tennis")) return;
+// ═══ TENNIS ═══
+async function analyzeTennis() {
+  const payload = buildTennisPayloadFromForm();
+
+  if (!payload.player1.name || !payload.player2.name) {
+    showError("Por favor ingresa los nombres de ambos jugadores.");
+    return;
+  }
+
+  const data = await apiCompare("tennis", payload);
+  if (!data) return;
 
   currentSport = "tennis";
   currentPayload = payload;
-  const data = await apiCompare("tennis", {
-    ...payload,
-    generatellmanalysis: false,
-  });
-  if (!data) return;
-  renderResults(data);
+
+  window._currentSnapshot = data;
+  renderComparison(data, "tennis");
+  await saveAnalysisDataToDB("tennis", payload, data);
+
+  // Enviar a LLM
   streamLlmAnalysis("tennis", { ...payload, generatellmanalysis: false });
+}
+
+function saveTennisPreset() {
+  const payload = buildTennisPayloadFromForm();
+  const fileContent = JSON.stringify(
+    { sport: "tennis", data: payload },
+    null,
+    2,
+  );
+  const blob = new Blob([fileContent], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download =
+    `sherlock_tennis_${payload.player1.name}_vs_${payload.player2.name}.json`.replace(
+      /\s+/g,
+      "_",
+    );
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
+function loadTennisPreset(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const json = JSON.parse(e.target.result);
+      if (json.sport !== "tennis") {
+        showError("El archivo no parece ser un preset de Tenis válido.");
+        return;
+      }
+      populateAppForm("tennis", json.data);
+      alert("Preset de Tenis cargado ✅");
+    } catch (err) {
+      showError("Error al leer el archivo JSON: " + err.message);
+    }
+  };
+  reader.readAsText(file);
 }
 // ── Guardar en Base de Datos (Analysis History) ──────────────────
 async function saveToDB() {
@@ -1788,6 +1966,12 @@ async function requestSherlockAnalysis() {
 
     // Restaurar botón con texto de éxito
     btn.innerHTML = "✅ Veredicto generado — pedir de nuevo";
+
+    if (fullText.trim() && window._currentSnapshot) {
+      const snap = { ...window._currentSnapshot, llm_analysis: fullText };
+      window._currentSnapshot = snap;
+      await saveAnalysisDataToDB(currentSport, currentPayload, snap);
+    }
   } catch (e) {
     const streamingEl = document.getElementById("llm-streaming-text");
     if (streamingEl)
@@ -1796,5 +1980,163 @@ async function requestSherlockAnalysis() {
   } finally {
     btn.disabled = false;
     btn.style.opacity = "1";
+  }
+}
+
+function toggleResultsModal() {
+  const modal = document.getElementById("results-modal");
+  if (!modal) return;
+  modal.style.display = modal.style.display === "flex" ? "none" : "flex";
+}
+
+function openResultsModal(id, matchTitle) {
+  document.getElementById("results-analysis-id").value = id;
+  document.getElementById("results-match-info").textContent = matchTitle;
+  document.getElementById("results-form").reset();
+  toggleResultsModal();
+}
+
+async function saveFinalResults(event) {
+  event.preventDefault();
+  const id = document.getElementById("results-analysis-id").value;
+
+  const body = {
+    final_score_home: toNullableNumber("res-score-h"),
+    final_score_away: toNullableNumber("res-score-a"),
+    final_corners_home: toNullableNumber("res-corners-h"),
+    final_corners_away: toNullableNumber("res-corners-a"),
+    final_yellow_cards_home: toNullableNumber("res-yellow-h"),
+    final_yellow_cards_away: toNullableNumber("res-yellow-a"),
+    final_red_cards_home: toNullableNumber("res-red-h"),
+    final_red_cards_away: toNullableNumber("res-red-a"),
+    final_shots_home: toNullableNumber("res-shots-h"),
+    final_shots_away: toNullableNumber("res-shots-a"),
+  };
+
+  try {
+    const res = await fetch(`/api/v1/analysis/${id}/results`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!res.ok) throw new Error("Error al guardar resultados");
+
+    const data = await res.json();
+    const acc =
+      data.accuracy_percentage != null
+        ? data.accuracy_percentage.toFixed(1)
+        : "0.0";
+    toggleResultsModal();
+    loadHistory(); // Recargar lista para ver el nuevo acierto
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function toggleStatsModal() {
+  const modal = document.getElementById("stats-modal");
+  const isVisible = modal.style.display !== "none";
+
+  if (!isVisible) {
+    modal.style.display = "flex";
+    await loadGlobalStats();
+    await loadDetailedPicks();
+  } else {
+    modal.style.display = "none";
+  }
+}
+
+async function loadGlobalStats() {
+  try {
+    const res = await fetch("/api/v1/stats/global");
+    if (!res.ok) throw new Error("Error cargando estadísticas");
+    const data = await res.json();
+
+    document.getElementById("stat-total-picks").textContent = data.total_picks;
+    document.getElementById("stat-total-hits").textContent = data.total_hits;
+    document.getElementById("stat-total-misses").textContent =
+      data.total_picks - data.total_hits;
+    document.getElementById("stat-global-accuracy").textContent =
+      `${data.global_accuracy.toFixed(1)}%`;
+
+    // Render sport chips
+    const container = document.getElementById("sport-stats-container");
+    container.innerHTML = "";
+
+    Object.entries(data.sport_stats).forEach(([sport, stats]) => {
+      const chip = document.createElement("div");
+      chip.style = `
+        padding: 0.5rem 1rem;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        font-size: 0.85rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+      `;
+      chip.innerHTML = `
+        <span style="font-weight: 600; text-transform: uppercase;">${sport}:</span>
+        <span style="color: var(--accent)">${stats.hits}/${stats.picks}</span>
+        <small style="opacity: 0.7">(${stats.accuracy.toFixed(1)}%)</small>
+      `;
+      container.appendChild(chip);
+    });
+  } catch (e) {
+    showError(e.message);
+  }
+}
+
+async function loadDetailedPicks() {
+  const tbody = document.getElementById("picks-stats-list");
+  tbody.innerHTML =
+    '<tr><td colspan="5" style="text-align: center; padding: 2rem;">Cargando picks...</td></tr>';
+
+  try {
+    const res = await fetch("/api/v1/stats/picks?limit=200");
+    if (!res.ok) throw new Error("Error cargando picks");
+    const picks = await res.json();
+
+    tbody.innerHTML = "";
+    if (picks.length === 0) {
+      tbody.innerHTML =
+        '<tr><td colspan="5" style="text-align: center; padding: 2rem;">No hay picks registrados aún.</td></tr>';
+      return;
+    }
+
+    picks.forEach((p) => {
+      const tr = document.createElement("tr");
+      tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+
+      const dateStr = new Date(p.date).toLocaleDateString();
+      const statusBadge =
+        p.success === null
+          ? '<span style="color: var(--text-dim)">⏳ Pendiente</span>'
+          : p.success
+            ? '<span style="color: #22c55e; font-weight: 600;">✅ Acierto</span>'
+            : '<span style="color: #ef4444; font-weight: 600;">❌ Fallo</span>';
+
+      const valueBadge = p.is_value
+        ? '<span title="Value Pick" style="color: var(--accent); margin-right: 4px;">💎</span>'
+        : "";
+
+      tr.innerHTML = `
+        <td style="padding: 0.75rem; font-size: 0.85rem; color: var(--text-dim);">${dateStr}</td>
+        <td style="padding: 0.75rem; font-weight: 500;">
+          <div style="font-size: 0.9rem;">${p.match_title}</div>
+          <small style="text-transform: uppercase; opacity: 0.6; font-size: 0.7rem;">${p.sport}</small>
+        </td>
+        <td style="padding: 0.75rem;">
+          ${valueBadge}<span style="font-weight: 600;">${p.selection}</span>
+          <div style="font-size: 0.75rem; opacity: 0.7;">${p.market} ${p.line || ""}</div>
+        </td>
+        <td style="padding: 0.75rem; text-align: center; font-family: monospace;">${p.odds.toFixed(2)}</td>
+        <td style="padding: 0.75rem; text-align: center;">${statusBadge}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error); padding: 2rem;">${e.message}</td></tr>`;
   }
 }

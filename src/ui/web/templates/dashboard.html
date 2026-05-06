@@ -34,9 +34,14 @@
         <button class="tab" data-sport="nba">🏀 NBA</button>
         <button class="tab" data-sport="tennis">🎾 Tenis</button>
       </div>
-      <button class="btn-history" onclick="toggleHistoryModal()">
-        📜 Historial
-      </button>
+      <div style="display: flex; gap: 0.5rem">
+        <button class="btn-history" onclick="toggleStatsModal()">
+          🎯 Rendimiento
+        </button>
+        <button class="btn-history" onclick="toggleHistoryModal()">
+          📜 Historial
+        </button>
+      </div>
     </nav>
 
     <main class="main">
@@ -89,6 +94,28 @@
               id="fb-league-cards"
               placeholder="4.80"
               class="input"
+            />
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 140px">
+            <label>Árb. Amarillas/j</label>
+            <input
+              type="number"
+              step="0.01"
+              id="fb-referee-yellow"
+              placeholder="4.20"
+              class="input"
+              title="Promedio de amarillas del árbitro asignado"
+            />
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 140px">
+            <label>Árb. Rojas/j</label>
+            <input
+              type="number"
+              step="0.01"
+              id="fb-referee-red"
+              placeholder="0.22"
+              class="input"
+              title="Promedio de rojas del árbitro asignado"
             />
           </div>
         </div>
@@ -1122,7 +1149,19 @@
                   </tr>
                 </tbody>
               </table>
-              <button type="button" class="btn-preset" style="margin-top: 0.5rem; width: 100%; border: 1px dashed var(--border-color); background: transparent;" onclick="addOddsLine('goals')">+ Agregar Línea Extra</button>
+              <button
+                type="button"
+                class="btn-preset"
+                style="
+                  margin-top: 0.5rem;
+                  width: 100%;
+                  border: 1px dashed var(--border-color);
+                  background: transparent;
+                "
+                onclick="addOddsLine('goals')"
+              >
+                + Agregar Línea Extra
+              </button>
             </div>
 
             <!-- CORNERS -->
@@ -1225,7 +1264,19 @@
                   </tr>
                 </tbody>
               </table>
-              <button type="button" class="btn-preset" style="margin-top: 0.5rem; width: 100%; border: 1px dashed var(--border-color); background: transparent;" onclick="addOddsLine('corners')">+ Agregar Línea Extra</button>
+              <button
+                type="button"
+                class="btn-preset"
+                style="
+                  margin-top: 0.5rem;
+                  width: 100%;
+                  border: 1px dashed var(--border-color);
+                  background: transparent;
+                "
+                onclick="addOddsLine('corners')"
+              >
+                + Agregar Línea Extra
+              </button>
             </div>
 
             <!-- TARJETAS -->
@@ -1328,7 +1379,19 @@
                   </tr>
                 </tbody>
               </table>
-              <button type="button" class="btn-preset" style="margin-top: 0.5rem; width: 100%; border: 1px dashed var(--border-color); background: transparent;" onclick="addOddsLine('cards')">+ Agregar Línea Extra</button>
+              <button
+                type="button"
+                class="btn-preset"
+                style="
+                  margin-top: 0.5rem;
+                  width: 100%;
+                  border: 1px dashed var(--border-color);
+                  background: transparent;
+                "
+                onclick="addOddsLine('cards')"
+              >
+                + Agregar Línea Extra
+              </button>
             </div>
 
             <!-- TIROS TOTALES -->
@@ -1347,27 +1410,103 @@
                 <tbody id="shots-odds-tbody">
                   <tr>
                     <td>21.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-o215" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-u215" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-o215"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-u215"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                   <tr>
                     <td>22.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-o225" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-u225" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-o225"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-u225"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                   <tr>
                     <td>23.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-o235" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-u235" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-o235"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-u235"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                   <tr>
                     <td>24.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-o245" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-s-u245" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-o245"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-s-u245"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                 </tbody>
               </table>
-              <button type="button" class="btn-preset" style="margin-top: 0.5rem; width: 100%; border: 1px dashed var(--border-color); background: transparent;" onclick="addOddsLine('shots')">+ Agregar Línea Extra</button>
+              <button
+                type="button"
+                class="btn-preset"
+                style="
+                  margin-top: 0.5rem;
+                  width: 100%;
+                  border: 1px dashed var(--border-color);
+                  background: transparent;
+                "
+                onclick="addOddsLine('shots')"
+              >
+                + Agregar Línea Extra
+              </button>
             </div>
 
             <!-- TIROS A PUERTA -->
@@ -1386,27 +1525,103 @@
                 <tbody id="shots-target-odds-tbody">
                   <tr>
                     <td>7.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-o75" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-u75" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-o75"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-u75"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                   <tr>
                     <td>8.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-o85" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-u85" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-o85"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-u85"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                   <tr>
                     <td>9.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-o95" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-u95" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-o95"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-u95"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                   <tr>
                     <td>10.5</td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-o105" class="input" style="padding: 0.2rem; text-align: center" /></td>
-                    <td><input type="number" step="0.01" id="fb-odds-st-u105" class="input" style="padding: 0.2rem; text-align: center" /></td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-o105"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="number"
+                        step="0.01"
+                        id="fb-odds-st-u105"
+                        class="input"
+                        style="padding: 0.2rem; text-align: center"
+                      />
+                    </td>
                   </tr>
                 </tbody>
               </table>
-              <button type="button" class="btn-preset" style="margin-top: 0.5rem; width: 100%; border: 1px dashed var(--border-color); background: transparent;" onclick="addOddsLine('shots-target')">+ Agregar Línea Extra</button>
+              <button
+                type="button"
+                class="btn-preset"
+                style="
+                  margin-top: 0.5rem;
+                  width: 100%;
+                  border: 1px dashed var(--border-color);
+                  background: transparent;
+                "
+                onclick="addOddsLine('shots-target')"
+              >
+                + Agregar Línea Extra
+              </button>
             </div>
           </div>
         </div>
@@ -1924,6 +2139,41 @@
               />
             </div>
             <div class="stats-grid stats-grid--tennis">
+              <!-- Perfil -->
+              <div class="form-group">
+                <label>Edad</label>
+                <input
+                  type="number"
+                  id="tennis-p1-age"
+                  placeholder="25"
+                  class="input"
+                />
+              </div>
+              <div class="form-group">
+                <label>Altura (cm)</label>
+                <input
+                  type="number"
+                  id="tennis-p1-height"
+                  placeholder="185"
+                  class="input"
+                />
+              </div>
+              <div class="form-group">
+                <label>Mano</label>
+                <select id="tennis-p1-hand" class="input">
+                  <option value="Right">Diestro</option>
+                  <option value="Left">Zurdo</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Ranking ATP</label>
+                <input
+                  type="number"
+                  id="tennis-p1-rank"
+                  placeholder="10"
+                  class="input"
+                />
+              </div>
               <div class="form-group">
                 <label>Partidos ganados</label>
                 <input
@@ -2104,26 +2354,6 @@
                   class="input"
                 />
               </div>
-              <div class="form-group">
-                <label>H2H W</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-h2h-won"
-                  placeholder="2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>H2H Total</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-h2h-total"
-                  placeholder="3"
-                  class="input"
-                />
-              </div>
             </div>
           </div>
 
@@ -2144,6 +2374,41 @@
               />
             </div>
             <div class="stats-grid stats-grid--tennis">
+              <!-- Perfil -->
+              <div class="form-group">
+                <label>Edad</label>
+                <input
+                  type="number"
+                  id="tennis-p2-age"
+                  placeholder="28"
+                  class="input"
+                />
+              </div>
+              <div class="form-group">
+                <label>Altura (cm)</label>
+                <input
+                  type="number"
+                  id="tennis-p2-height"
+                  placeholder="188"
+                  class="input"
+                />
+              </div>
+              <div class="form-group">
+                <label>Mano</label>
+                <select id="tennis-p2-hand" class="input">
+                  <option value="Right">Diestro</option>
+                  <option value="Left">Zurdo</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label>Ranking ATP</label>
+                <input
+                  type="number"
+                  id="tennis-p2-rank"
+                  placeholder="5"
+                  class="input"
+                />
+              </div>
               <div class="form-group">
                 <label>Partidos ganados</label>
                 <input
@@ -2321,26 +2586,6 @@
                   step="1"
                   id="tennis-p2-surface-total"
                   placeholder="20"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>H2H W</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-h2h-won"
-                  placeholder="1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>H2H Total</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-h2h-total"
-                  placeholder="3"
                   class="input"
                 />
               </div>
@@ -2570,35 +2815,420 @@
 
     <!-- History Modal -->
     <div id="history-modal" class="modal" style="display: none">
-      <div class="modal__content">
+      <div class="modal__content" style="max-width: 900px">
         <div class="modal__header">
           <h3>📜 Historial de Análisis</h3>
           <button class="modal__close" onclick="toggleHistoryModal()">
             &times;
           </button>
         </div>
-        <div class="modal__filters">
-          <select id="history-sport-filter" onchange="loadHistory()">
+        <div
+          class="modal__filters"
+          style="
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            padding: 1rem;
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 8px;
+            margin-bottom: 1rem;
+          "
+        >
+          <input
+            type="text"
+            id="history-search"
+            placeholder="Buscar equipo o competencia..."
+            oninput="filterHistoryUI()"
+            class="input"
+            style="flex: 2; min-width: 200px"
+          />
+          <select
+            id="history-sport-filter"
+            onchange="loadHistory()"
+            class="input"
+            style="flex: 1"
+          >
             <option value="">Todos los deportes</option>
             <option value="football">Fútbol</option>
             <option value="basketball">NBA</option>
             <option value="tennis">Tenis</option>
           </select>
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+              flex: 2;
+              min-width: 300px;
+            "
+          >
+            <span style="font-size: 0.85rem; white-space: nowrap"
+              >📅 Rango:</span
+            >
+            <input
+              type="date"
+              id="history-date-from"
+              onchange="loadHistory()"
+              class="input"
+              style="font-size: 0.8rem"
+            />
+            <span>-</span>
+            <input
+              type="date"
+              id="history-date-to"
+              onchange="loadHistory()"
+              class="input"
+              style="font-size: 0.8rem"
+            />
+          </div>
         </div>
         <div class="modal__body">
-          <table class="table table--history">
-            <thead>
-              <tr>
-                <th>Fecha</th>
-                <th>Deporte</th>
-                <th>Encuentro</th>
-                <th>Acción</th>
-              </tr>
-            </thead>
-            <tbody id="history-list">
-              <!-- Dynamically populated -->
-            </tbody>
-          </table>
+          <div id="history-container">
+            <!-- Table or Grouped View -->
+            <table class="table table--history">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Deporte</th>
+                  <th>Encuentro</th>
+                  <th>Acierto</th>
+                  <th>Acción</th>
+                </tr>
+              </thead>
+              <tbody id="history-list">
+                <!-- Dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Stats Modal -->
+    <div id="stats-modal" class="modal" style="display: none">
+      <div class="modal__content" style="max-width: 1000px">
+        <div class="modal__header">
+          <h3>🎯 Rendimiento Global del Modelo</h3>
+          <button class="modal__close" onclick="toggleStatsModal()">
+            &times;
+          </button>
+        </div>
+        <div class="modal__body">
+          <!-- Summary Cards -->
+          <div
+            class="stats-grid"
+            style="
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 1rem;
+              margin-bottom: 2rem;
+            "
+          >
+            <div
+              class="stat-card"
+              style="
+                background: rgba(99, 102, 241, 0.1);
+                padding: 1rem;
+                border-radius: 12px;
+                text-align: center;
+                border: 1px solid rgba(99, 102, 241, 0.2);
+              "
+            >
+              <small
+                style="
+                  color: var(--text-dim);
+                  display: block;
+                  margin-bottom: 0.5rem;
+                "
+                >Total Picks</small
+              >
+              <div
+                id="stat-total-picks"
+                style="
+                  font-size: 1.5rem;
+                  font-weight: 700;
+                  color: var(--accent);
+                "
+              >
+                0
+              </div>
+            </div>
+            <div
+              class="stat-card"
+              style="
+                background: rgba(34, 197, 94, 0.1);
+                padding: 1rem;
+                border-radius: 12px;
+                text-align: center;
+                border: 1px solid rgba(34, 197, 94, 0.2);
+              "
+            >
+              <small
+                style="
+                  color: var(--text-dim);
+                  display: block;
+                  margin-bottom: 0.5rem;
+                "
+                >Aciertos (Hits)</small
+              >
+              <div
+                id="stat-total-hits"
+                style="font-size: 1.5rem; font-weight: 700; color: #22c55e"
+              >
+                0
+              </div>
+            </div>
+            <div
+              class="stat-card"
+              style="
+                background: rgba(239, 68, 68, 0.1);
+                padding: 1rem;
+                border-radius: 12px;
+                text-align: center;
+                border: 1px solid rgba(239, 68, 68, 0.2);
+              "
+            >
+              <small
+                style="
+                  color: var(--text-dim);
+                  display: block;
+                  margin-bottom: 0.5rem;
+                "
+                >Fallos (Misses)</small
+              >
+              <div
+                id="stat-total-misses"
+                style="font-size: 1.5rem; font-weight: 700; color: #ef4444"
+              >
+                0
+              </div>
+            </div>
+            <div
+              class="stat-card"
+              style="
+                background: rgba(168, 85, 247, 0.1);
+                padding: 1rem;
+                border-radius: 12px;
+                text-align: center;
+                border: 1px solid rgba(168, 85, 247, 0.2);
+              "
+            >
+              <small
+                style="
+                  color: var(--text-dim);
+                  display: block;
+                  margin-bottom: 0.5rem;
+                "
+                >Precisión Global</small
+              >
+              <div
+                id="stat-global-accuracy"
+                style="font-size: 1.5rem; font-weight: 700; color: #a855f7"
+              >
+                0%
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 1.5rem">
+            <h4>📊 Desglose por Deporte</h4>
+            <div
+              id="sport-stats-container"
+              style="
+                display: flex;
+                gap: 1rem;
+                flex-wrap: wrap;
+                margin-top: 0.5rem;
+              "
+            >
+              <!-- Sport chips will be added here -->
+            </div>
+          </div>
+
+          <hr
+            style="
+              border: none;
+              border-top: 1px solid var(--border);
+              margin: 1.5rem 0;
+            "
+          />
+
+          <h4>📋 Historial Detallado de Picks</h4>
+          <div style="max-height: 400px; overflow-y: auto; margin-top: 1rem">
+            <table class="table" style="width: 100%; border-collapse: collapse">
+              <thead
+                style="
+                  position: sticky;
+                  top: 0;
+                  background: var(--bg-card);
+                  z-index: 1;
+                "
+              >
+                <tr>
+                  <th style="text-align: left; padding: 0.75rem">Fecha</th>
+                  <th style="text-align: left; padding: 0.75rem">Partido</th>
+                  <th style="text-align: left; padding: 0.75rem">Pick</th>
+                  <th style="text-align: center; padding: 0.75rem">Cuota</th>
+                  <th style="text-align: center; padding: 0.75rem">
+                    Resultado
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="picks-stats-list">
+                <!-- Picks will be added here -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Results Modal -->
+    <div id="results-modal" class="modal" style="display: none">
+      <div class="modal__content" style="max-width: 600px">
+        <div class="modal__header">
+          <h3>🏆 Registro de Resultados Finales</h3>
+          <button class="modal__close" onclick="toggleResultsModal()">
+            &times;
+          </button>
+        </div>
+        <div class="modal__body">
+          <div
+            id="results-match-info"
+            style="
+              margin-bottom: 1.5rem;
+              font-weight: 600;
+              text-align: center;
+              color: var(--accent);
+              font-size: 1.1rem;
+              padding: 1rem;
+              background: rgba(99, 102, 241, 0.1);
+              border-radius: 8px;
+            "
+          ></div>
+          <form id="results-form" onsubmit="saveFinalResults(event)">
+            <input type="hidden" id="results-analysis-id" />
+            <div
+              class="stats-grid"
+              style="grid-template-columns: 1fr 1fr; gap: 1rem"
+            >
+              <div class="form-group">
+                <label>⚽ Goles Local</label>
+                <input
+                  type="number"
+                  id="res-score-h"
+                  class="input"
+                  placeholder="0"
+                  required
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>⚽ Goles Visitante</label>
+                <input
+                  type="number"
+                  id="res-score-a"
+                  class="input"
+                  placeholder="0"
+                  required
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🚩 Corners Local</label>
+                <input
+                  type="number"
+                  id="res-corners-h"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🚩 Corners Visitante</label>
+                <input
+                  type="number"
+                  id="res-corners-a"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🟨 Amarillas Local</label>
+                <input
+                  type="number"
+                  id="res-yellow-h"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🟨 Amarillas Visitante</label>
+                <input
+                  type="number"
+                  id="res-yellow-a"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🟥 Rojas Local</label>
+                <input
+                  type="number"
+                  id="res-red-h"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🟥 Rojas Visitante</label>
+                <input
+                  type="number"
+                  id="res-red-a"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🎯 Tiros Local</label>
+                <input
+                  type="number"
+                  id="res-shots-h"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🎯 Tiros Visitante</label>
+                <input
+                  type="number"
+                  id="res-shots-a"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+            </div>
+            <div style="margin-top: 1.5rem; display: flex; gap: 1rem">
+              <button type="submit" class="btn-analyze" style="flex: 2">
+                💾 Guardar y Calcular Acierto
+              </button>
+              <button
+                type="button"
+                class="btn-preset"
+                onclick="toggleResultsModal()"
+                style="flex: 1"
+              >
+                Cancelar
+              </button>
+            </div>
+          </form>
         </div>
       </div>
     </div>

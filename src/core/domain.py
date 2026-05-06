@@ -11,6 +11,7 @@ import uuid
 from datetime import date, datetime
 
 from sqlalchemy import (
+    Boolean,
     Column,
     DateTime,
     Enum,
@@ -287,8 +288,32 @@ class AnalysisHistory(Base):
     id = Column(String(36), primary_key=True, default=_new_id)
     sport = Column(Enum(Sport), nullable=False, index=True)
     date = Column(DateTime, nullable=False, index=True, default=datetime.utcnow)
+    match_date = Column(DateTime, nullable=True, index=True)
     match_title = Column(String(200), nullable=False)  # e.g. "Real Madrid vs Barcelona"
     payload = Column(Text, nullable=False)  # JSON blob of the form data
+
+    # Persistence & LLM
+    picks_calculados = Column(Text, nullable=True)  # JSON blob
+    user_context = Column(Text, nullable=True)
+    llm_response = Column(Text, nullable=True)
+    llm_timestamp = Column(DateTime, nullable=True)
+    compare_response_snapshot = Column(Text, nullable=True)
+    needs_reanalysis = Column(Boolean, default=False)
+
+    # Final Results
+    final_score_home = Column(Integer, nullable=True)
+    final_score_away = Column(Integer, nullable=True)
+    final_corners_home = Column(Integer, nullable=True)
+    final_corners_away = Column(Integer, nullable=True)
+    final_yellow_cards_home = Column(Integer, nullable=True)
+    final_yellow_cards_away = Column(Integer, nullable=True)
+    final_red_cards_home = Column(Integer, nullable=True)
+    final_red_cards_away = Column(Integer, nullable=True)
+    final_shots_home = Column(Integer, nullable=True)
+    final_shots_away = Column(Integer, nullable=True)
+    final_shots_on_target_home = Column(Integer, nullable=True)
+    final_shots_on_target_away = Column(Integer, nullable=True)
+    accuracy_percentage = Column(Float, nullable=True)
 
     def __repr__(self) -> str:
         return f"<AnalysisHistory {self.match_title} ({self.date})>"
