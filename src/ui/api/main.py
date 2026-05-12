@@ -534,7 +534,7 @@ def update_analysis_results(
 
 @app.get("/api/v1/stats/global", response_model=GlobalStatsOut, tags=["Stats"])
 def get_global_stats(db: Session = Depends(get_db)):
-    """Calculate global performance metrics across all sports."""
+    """Calculate global performance metrics across all sports with advanced analytics."""
     history = db.query(AnalysisHistory).all()
     
     total_matches = len(history)
@@ -542,10 +542,16 @@ def get_global_stats(db: Session = Depends(get_db)):
     total_picks = 0
     total_hits = 0
     
+    total_odds = 0.0
+    total_winning_odds = 0.0
+    winning_picks_count = 0
+    
     sport_stats = {}
+    market_counters = {}
+    league_counters = {}
+    team_counters = {}
     
     for h in history:
-        # Check if match has a result (home score is usually a good indicator)
         has_result = h.final_score_home is not None
         if has_result:
             matches_with_results += 1
@@ -574,37 +580,107 @@ def get_global_stats(db: Session = Depends(get_db)):
                 if sport not in sport_stats:
                     sport_stats[sport] = {"picks": 0, "hits": 0}
                 
+                # Extract league info
+                league = "Desconocida"
+                if h.payload:
+                    try:
+                        p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
+                        league = p_data.get("match", {}).get("competition", {}).get("name", "Desconocida")
+                    except: pass
+                
+                # Extract team info
+                teams = []
+                if " vs " in h.match_title:
+                    teams = [t.strip() for t in h.match_title.split(" vs ")]
+                elif " - " in h.match_title:
+                    teams = [t.strip() for t in h.match_title.split(" - ")]
+
                 for pick in picks:
-                    # Filter: Only picks shown to the user
                     if not pick.get("is_publishable", pick.get("is_value", False)):
                         continue
 
                     total_picks += 1
                     sport_stats[sport]["picks"] += 1
                     
+                    odds = float(pick.get("odds", 0.0))
+                    total_odds += odds
+                    
+                    market = pick.get("market", "Otro")
+                    if market not in market_counters:
+                        market_counters[market] = {"picks": 0, "hits": 0}
+                    market_counters[market]["picks"] += 1
+                    
+                    if league not in league_counters:
+                        league_counters[league] = {"picks": 0, "hits": 0}
+                    league_counters[league]["picks"] += 1
+                    
+                    for t in teams:
+                        if t not in team_counters:
+                            team_counters[t] = {"picks": 0, "hits": 0}
+                        team_counters[t]["picks"] += 1
+
                     if has_result:
                         success = _check_pick_success(pick, results_dict)
                         if success:
                             total_hits += 1
                             sport_stats[sport]["hits"] += 1
-            except:
+                            market_counters[market]["hits"] += 1
+                            league_counters[league]["hits"] += 1
+                            for t in teams:
+                                team_counters[t]["hits"] += 1
+                            total_winning_odds += odds
+                            winning_picks_count += 1
+            except Exception as e:
+                print(f"Error in global stats loop: {e}")
                 continue
                 
     accuracy = (total_hits / total_picks * 100) if total_picks > 0 else 0.0
+    avg_odds = (total_odds / total_picks) if total_picks > 0 else 0.0
+    avg_winning_odds = (total_winning_odds / winning_picks_count) if winning_picks_count > 0 else 0.0
     
     # Calculate per-sport accuracy
     for s in sport_stats:
         p = sport_stats[s]["picks"]
-        h = sport_stats[s]["hits"]
-        sport_stats[s]["accuracy"] = (h / p * 100) if p > 0 else 0.0
+        hits = sport_stats[s]["hits"]
+        sport_stats[s]["accuracy"] = (hits / p * 100) if p > 0 else 0.0
         
+    # Process market, league, team stats
+    def to_stat_list(counters, min_picks=1):
+        result = []
+        for name, data in counters.items():
+            if data["picks"] >= min_picks:
+                acc = (data["hits"] / data["picks"] * 100)
+                result.append({
+                    "name": name,
+                    "picks": data["picks"],
+                    "hits": data["hits"],
+                    "accuracy": acc
+                })
+        return result
+
+    all_markets = to_stat_list(market_counters)
+    all_leagues = to_stat_list(league_counters, min_picks=2)
+    all_teams = to_stat_list(team_counters, min_picks=2)
+    
+    # Sort and slice
+    best_markets = sorted(all_markets, key=lambda x: x["accuracy"], reverse=True)[:5]
+    worst_markets = sorted(all_markets, key=lambda x: x["accuracy"])[:5]
+    best_leagues = sorted(all_leagues, key=lambda x: x["accuracy"], reverse=True)[:5]
+    best_teams = sorted(all_teams, key=lambda x: x["accuracy"], reverse=True)[:10]
+    
     return {
         "total_matches": total_matches,
         "total_matches_with_results": matches_with_results,
         "total_picks": total_picks,
         "total_hits": total_hits,
         "global_accuracy": accuracy,
-        "sport_stats": sport_stats
+        "sport_stats": sport_stats,
+        "avg_odds": avg_odds,
+        "avg_winning_odds": avg_winning_odds,
+        "best_markets": best_markets,
+        "worst_markets": worst_markets,
+        "best_leagues": best_leagues,
+        "best_teams": best_teams
     }
 
 @app.get("/api/v1/stats/picks", response_model=list[PickStat], tags=["Stats"])
@@ -721,7 +797,8 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
     a_y = res.get("final_yellow_cards_away") or 0
     h_r = res.get("final_red_cards_home") or 0
     a_r = res.get("final_red_cards_away") or 0
-    total_cards = h_y + a_y + h_r + a_r # Simple sum
+    # Business rule: Red card counts as 2 cards (3 yellow + 1 red = 5 cards)
+    total_cards = (h_y + a_y) + ((h_r + a_r) * 2)
     if "tarjetas" in sel or "cards" in sel:
         if "over" in sel:
             line = _extract_line(sel, "over")
@@ -779,25 +856,26 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) 
             out.has_picks = False
             return out
             
-        # Solo consideramos picks "publicables" o marcados como valor
-        publishable_picks = [p for p in picks if p.get("is_publishable", p.get("is_value", False))]
+        publishable_picks = [p for p in picks if p.get("is_value")]
         out.has_picks = len(publishable_picks) > 0
         
-        if out.has_picks and h.final_score_home is not None:
-            res_dict = {
-                "final_score_home": h.final_score_home,
-                "final_score_away": h.final_score_away,
-                "final_corners_home": h.final_corners_home,
-                "final_corners_away": h.final_corners_away,
-                "final_yellow_cards_home": h.final_yellow_cards_home,
-                "final_yellow_cards_away": h.final_yellow_cards_away,
-                "final_red_cards_home": h.final_red_cards_home,
-                "final_red_cards_away": h.final_red_cards_away,
-                "final_shots_home": h.final_shots_home,
-                "final_shots_away": h.final_shots_away,
-                "final_shots_on_target_home": h.final_shots_on_target_home,
-                "final_shots_on_target_away": h.final_shots_on_target_away,
-            }
+        # Calculate summary if results exist
+        res_dict = {
+            "final_score_home": h.final_score_home,
+            "final_score_away": h.final_score_away,
+            "final_corners_home": h.final_corners_home,
+            "final_corners_away": h.final_corners_away,
+            "final_yellow_cards_home": h.final_yellow_cards_home,
+            "final_yellow_cards_away": h.final_yellow_cards_away,
+            "final_red_cards_home": h.final_red_cards_home,
+            "final_red_cards_away": h.final_red_cards_away,
+            "final_shots_home": h.final_shots_home,
+            "final_shots_away": h.final_shots_away,
+            "final_shots_on_target_home": h.final_shots_on_target_home,
+            "final_shots_on_target_away": h.final_shots_on_target_away,
+        }
+        
+        if res_dict.get("final_score_home") is not None:
             hits = 0
             total = 0
             for p in publishable_picks:
@@ -808,6 +886,29 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) 
                         hits += 1
             if total > 0:
                 out.picks_hits_summary = f"{hits}/{total}"
+
+            # Inject success into compare_response_snapshot for individual pick visualization
+            if out.compare_response_snapshot:
+                # Ensure it's a dict
+                if isinstance(out.compare_response_snapshot, str):
+                    try:
+                        out.compare_response_snapshot = json.loads(out.compare_response_snapshot)
+                    except:
+                        pass
+                
+                if isinstance(out.compare_response_snapshot, dict):
+                    # 1. Main picks list (used by renderMultiLineCards)
+                    if "values" in out.compare_response_snapshot:
+                        for v_pick in out.compare_response_snapshot["values"]:
+                            v_pick["success"] = _check_pick_success(v_pick, res_dict)
+                    
+                    # 2. Market picks (used by other components if any)
+                    if "market_picks" in out.compare_response_snapshot:
+                        for market in out.compare_response_snapshot["market_picks"].values():
+                            if "picks" in market:
+                                for p in market["picks"]:
+                                    p["success"] = _check_pick_success(p, res_dict)
+                            
     except Exception as e:
         print(f"Error populating history extra fields: {e}")
         out.has_picks = False

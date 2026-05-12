@@ -157,6 +157,67 @@ body {
   box-shadow: 0 0 15px var(--accent-glow);
 }
 
+/* ── Modal Tabs ────────────────────────────────────────────────── */
+.tab-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  padding: 0.6rem 1.2rem;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: var(--transition);
+  border-bottom: 2px solid transparent;
+}
+.tab-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.05);
+}
+.tab-btn.active {
+  color: var(--accent-light);
+  border-bottom: 2px solid var(--accent);
+}
+
+.analytics-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.analytics-item {
+  background: rgba(255, 255, 255, 0.03);
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  transition: var(--transition);
+}
+.analytics-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(255, 255, 255, 0.1);
+  transform: translateX(4px);
+}
+.analytics-item__main {
+  display: flex;
+  flex-direction: column;
+}
+.analytics-item__name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+}
+.analytics-item__stat {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  margin-top: 0.2rem;
+}
+.analytics-item__acc {
+  font-weight: 800;
+  font-size: 1.1rem;
+  color: var(--accent-light);
+}
+
 /* ── Main Layout ──────────────────────────────────────────────── */
 .main {
   max-width: 1500px;

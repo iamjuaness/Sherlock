@@ -111,11 +111,10 @@ function renderMultiLineCards(values) {
   grid.innerHTML = "";
 
   // ── 1. Evaluar picks (Sincronizado con Backend y LLM) ──
-  // El backend ya calculó is_value, strategic_score y quality_score usando filtros de seguridad
   const filtered = Array.isArray(values)
     ? values
         .filter((v) => v.selection && v.odds != null)
-        .filter((v) => v.is_value === true) // El backend ya aplicó _rate_pick_quality
+        .filter((v) => v.is_value === true)
         .sort((a, b) => {
           const dqA = a.data_quality_score ?? 0;
           const dqB = b.data_quality_score ?? 0;
@@ -144,7 +143,6 @@ function renderMultiLineCards(values) {
     let mod = "neutral";
     let badgeText = "";
 
-    // ── Etiquetas Estratégicas y Calidad (Sincronizado) ──
     if (v.is_publishable) {
       mod = "strong";
       badgeText = "🎯 PROFESIONAL";
@@ -157,10 +155,22 @@ function renderMultiLineCards(values) {
       v.data_quality_score != null ? Math.round(v.data_quality_score) : null;
     const confTier = v.market_confidence_tier || "N/A";
 
+    // Success indicator
+    let successHtml = "";
+    if (v.success === true) {
+      successHtml =
+        '<span style="color: #22c55e; margin-left: 8px; font-weight: 800; font-size: 0.75rem;">✅</span>';
+    } else if (v.success === false) {
+      successHtml =
+        '<span style="color: #ef4444; margin-left: 8px; font-weight: 800; font-size: 0.75rem;">❌</span>';
+    }
+
     const el = document.createElement("div");
     el.className = `value-line-card value-line-card--${mod}`;
     el.innerHTML = `
-      <div class="value-line-card__market" title="${v.selection}">${v.selection}</div>
+      <div class="value-line-card__market" title="${v.selection}">
+        ${v.selection}${successHtml}
+      </div>
       <div class="value-line-card__row">
         <span>Confianza Datos</span>
         <span style="color: ${dqScore > 70 ? "var(--color-success)" : dqScore > 40 ? "var(--color-warning)" : "var(--color-error)"}">${dqScore ?? "—"}% (${confTier})</span>
@@ -687,11 +697,13 @@ function toggleHistoryModal() {
 
 // ── Cargar y pintar la lista del historial ─────────────────────
 async function loadHistory() {
-  const sport = document.getElementById("history-sport-filter")?.value || "";
+  const sportSelect = document.getElementById("history-sport-filter");
+  const sport = sportSelect ? sportSelect.value : "";
   const dateFrom = document.getElementById("history-date-from")?.value || "";
   const dateTo = document.getElementById("history-date-to")?.value || "";
 
   const list = document.getElementById("history-list");
+  if (!list) return;
   list.innerHTML = "<tr><td colspan='5'>Cargando historial...</td></tr>";
 
   try {
@@ -720,6 +732,7 @@ async function loadHistory() {
 
 function renderHistoryList(entries) {
   const list = document.getElementById("history-list");
+  if (!list) return;
   list.innerHTML = entries
     .map((e) => {
       let accuracy = "—";
@@ -739,13 +752,20 @@ function renderHistoryList(entries) {
             ? "warning"
             : "error";
 
+      let statusDot = "";
+      if (e.accuracy_percentage != null) {
+        if (e.accuracy_percentage >= 70) statusDot = "🟢";
+        else if (e.accuracy_percentage >= 30) statusDot = "🟡";
+        else statusDot = "🔴";
+      }
+
       return `
       <tr>
         <td>${new Date(e.match_date || e.date).toLocaleDateString()}</td>
         <td>${e.sport.toUpperCase()}</td>
         <td style="text-align: left;">
           ${e.has_picks ? '<span title="Tiene Picks" style="margin-right: 5px; cursor: help;">🎯</span>' : '<span title="Sin Picks" style="margin-right: 5px; opacity: 0.3; cursor: help;">⭕</span>'}
-          ${e.match_title}
+          ${statusDot} ${e.match_title}
         </td>
         <td><span class="badge badge--${accClass}">${accuracy}</span></td>
         <td>
@@ -1989,10 +2009,45 @@ function toggleResultsModal() {
   modal.style.display = modal.style.display === "flex" ? "none" : "flex";
 }
 
-function openResultsModal(id, matchTitle) {
+async function openResultsModal(id, matchTitle) {
   document.getElementById("results-analysis-id").value = id;
   document.getElementById("results-match-info").textContent = matchTitle;
   document.getElementById("results-form").reset();
+
+  try {
+    const resp = await fetch(`/api/v1/analysis/${id}`);
+    if (resp.ok) {
+      const data = await resp.json();
+      // Populate fields if they exist
+      document.getElementById("res-score-h").value =
+        data.final_score_home ?? "";
+      document.getElementById("res-score-a").value =
+        data.final_score_away ?? "";
+      document.getElementById("res-corners-h").value =
+        data.final_corners_home ?? "";
+      document.getElementById("res-corners-a").value =
+        data.final_corners_away ?? "";
+      document.getElementById("res-yellow-h").value =
+        data.final_yellow_cards_home ?? "";
+      document.getElementById("res-yellow-a").value =
+        data.final_yellow_cards_away ?? "";
+      document.getElementById("res-red-h").value =
+        data.final_red_cards_home ?? "";
+      document.getElementById("res-red-a").value =
+        data.final_red_cards_away ?? "";
+      document.getElementById("res-shots-h").value =
+        data.final_shots_home ?? "";
+      document.getElementById("res-shots-a").value =
+        data.final_shots_away ?? "";
+      document.getElementById("res-shots-target-h").value =
+        data.final_shots_on_target_home ?? "";
+      document.getElementById("res-shots-target-a").value =
+        data.final_shots_on_target_away ?? "";
+    }
+  } catch (err) {
+    console.error("Error loading results for editing:", err);
+  }
+
   toggleResultsModal();
 }
 
@@ -2011,6 +2066,8 @@ async function saveFinalResults(event) {
     final_red_cards_away: toNullableNumber("res-red-a"),
     final_shots_home: toNullableNumber("res-shots-h"),
     final_shots_away: toNullableNumber("res-shots-a"),
+    final_shots_on_target_home: toNullableNumber("res-shots-target-h"),
+    final_shots_on_target_away: toNullableNumber("res-shots-target-a"),
   };
 
   try {
@@ -2047,12 +2104,25 @@ async function toggleStatsModal() {
   }
 }
 
+function switchStatsTab(tabId) {
+  document
+    .querySelectorAll(".stats-tab-content")
+    .forEach((c) => (c.style.display = "none"));
+  document
+    .querySelectorAll(".modal-tabs .tab-btn")
+    .forEach((b) => b.classList.remove("active"));
+
+  document.getElementById(`stats-tab-${tabId}`).style.display = "block";
+  document.getElementById(`tab-btn-${tabId}`).classList.add("active");
+}
+
 async function loadGlobalStats() {
   try {
     const res = await fetch("/api/v1/stats/global");
     if (!res.ok) throw new Error("Error cargando estadísticas");
     const data = await res.json();
 
+    // Tab General
     document.getElementById("stat-total-picks").textContent = data.total_picks;
     document.getElementById("stat-total-hits").textContent = data.total_hits;
     document.getElementById("stat-total-misses").textContent =
@@ -2083,6 +2153,39 @@ async function loadGlobalStats() {
       `;
       container.appendChild(chip);
     });
+
+    // Tab Advanced
+    document.getElementById("stat-avg-odds").textContent =
+      data.avg_odds.toFixed(2);
+    document.getElementById("stat-avg-winning-odds").textContent =
+      data.avg_winning_odds.toFixed(2);
+
+    const renderAnalytics = (containerId, items) => {
+      const cont = document.getElementById(containerId);
+      if (!cont) return;
+      cont.innerHTML =
+        items.length === 0
+          ? '<div style="opacity: 0.5; font-size: 0.8rem; padding: 1rem;">No hay datos suficientes</div>'
+          : "";
+
+      items.forEach((item) => {
+        const el = document.createElement("div");
+        el.className = "analytics-item";
+        el.innerHTML = `
+            <div class="analytics-item__main">
+                <span class="analytics-item__name">${item.name}</span>
+                <span class="analytics-item__stat">${item.hits} aciertos de ${item.picks} picks</span>
+            </div>
+            <span class="analytics-item__acc">${item.accuracy.toFixed(0)}%</span>
+        `;
+        cont.appendChild(el);
+      });
+    };
+
+    renderAnalytics("best-markets-container", data.best_markets);
+    renderAnalytics("worst-markets-container", data.worst_markets);
+    renderAnalytics("best-leagues-container", data.best_leagues);
+    renderAnalytics("best-teams-container", data.best_teams);
   } catch (e) {
     showError(e.message);
   }

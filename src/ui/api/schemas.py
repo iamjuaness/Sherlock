@@ -141,6 +141,12 @@ class AnalysisHistoryOut(BaseModel):
 
     class Config:
         from_attributes = True
+class StatItem(BaseModel):
+    name: str
+    picks: int
+    hits: int
+    accuracy: float
+
 class GlobalStatsOut(BaseModel):
     total_matches: int
     total_matches_with_results: int
@@ -148,6 +154,12 @@ class GlobalStatsOut(BaseModel):
     total_hits: int
     global_accuracy: float
     sport_stats: dict[str, Any]
+    avg_odds: float = 0.0
+    avg_winning_odds: float = 0.0
+    best_markets: list[StatItem] = []
+    worst_markets: list[StatItem] = []
+    best_leagues: list[StatItem] = []
+    best_teams: list[StatItem] = []
 
 class PickStat(BaseModel):
     match_id: str

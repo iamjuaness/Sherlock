@@ -2840,13 +2840,13 @@
             placeholder="Buscar equipo o competencia..."
             oninput="filterHistoryUI()"
             class="input"
-            style="flex: 2; min-width: 200px"
+            style="flex: 1.5; min-width: 150px"
           />
           <select
             id="history-sport-filter"
             onchange="loadHistory()"
             class="input"
-            style="flex: 1"
+            style="flex: 1; min-width: 120px"
           >
             <option value="">Todos los deportes</option>
             <option value="football">Fútbol</option>
@@ -2859,7 +2859,7 @@
               align-items: center;
               gap: 0.5rem;
               flex: 2;
-              min-width: 300px;
+              min-width: 260px;
             "
           >
             <span style="font-size: 0.85rem; white-space: nowrap"
@@ -2870,7 +2870,7 @@
               id="history-date-from"
               onchange="loadHistory()"
               class="input"
-              style="font-size: 0.8rem"
+              style="font-size: 0.8rem; flex: 1; min-width: 0; padding: 0.4rem"
             />
             <span>-</span>
             <input
@@ -2878,7 +2878,7 @@
               id="history-date-to"
               onchange="loadHistory()"
               class="input"
-              style="font-size: 0.8rem"
+              style="font-size: 0.8rem; flex: 1; min-width: 0; padding: 0.4rem"
             />
           </div>
         </div>
@@ -2914,170 +2914,306 @@
           </button>
         </div>
         <div class="modal__body">
-          <!-- Summary Cards -->
+          <!-- Tab Navigation -->
           <div
-            class="stats-grid"
+            class="modal-tabs"
             style="
-              display: grid;
-              grid-template-columns: repeat(4, 1fr);
+              display: flex;
               gap: 1rem;
-              margin-bottom: 2rem;
+              margin-bottom: 1.5rem;
+              border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+              padding-bottom: 0.5rem;
             "
           >
-            <div
-              class="stat-card"
-              style="
-                background: rgba(99, 102, 241, 0.1);
-                padding: 1rem;
-                border-radius: 12px;
-                text-align: center;
-                border: 1px solid rgba(99, 102, 241, 0.2);
-              "
+            <button
+              id="tab-btn-general"
+              class="tab-btn active"
+              onclick="switchStatsTab('general')"
             >
-              <small
-                style="
-                  color: var(--text-dim);
-                  display: block;
-                  margin-bottom: 0.5rem;
-                "
-                >Total Picks</small
-              >
-              <div
-                id="stat-total-picks"
-                style="
-                  font-size: 1.5rem;
-                  font-weight: 700;
-                  color: var(--accent);
-                "
-              >
-                0
-              </div>
-            </div>
-            <div
-              class="stat-card"
-              style="
-                background: rgba(34, 197, 94, 0.1);
-                padding: 1rem;
-                border-radius: 12px;
-                text-align: center;
-                border: 1px solid rgba(34, 197, 94, 0.2);
-              "
+              Resumen General
+            </button>
+            <button
+              id="tab-btn-advanced"
+              class="tab-btn"
+              onclick="switchStatsTab('advanced')"
             >
-              <small
-                style="
-                  color: var(--text-dim);
-                  display: block;
-                  margin-bottom: 0.5rem;
-                "
-                >Aciertos (Hits)</small
-              >
-              <div
-                id="stat-total-hits"
-                style="font-size: 1.5rem; font-weight: 700; color: #22c55e"
-              >
-                0
-              </div>
-            </div>
-            <div
-              class="stat-card"
-              style="
-                background: rgba(239, 68, 68, 0.1);
-                padding: 1rem;
-                border-radius: 12px;
-                text-align: center;
-                border: 1px solid rgba(239, 68, 68, 0.2);
-              "
-            >
-              <small
-                style="
-                  color: var(--text-dim);
-                  display: block;
-                  margin-bottom: 0.5rem;
-                "
-                >Fallos (Misses)</small
-              >
-              <div
-                id="stat-total-misses"
-                style="font-size: 1.5rem; font-weight: 700; color: #ef4444"
-              >
-                0
-              </div>
-            </div>
-            <div
-              class="stat-card"
-              style="
-                background: rgba(168, 85, 247, 0.1);
-                padding: 1rem;
-                border-radius: 12px;
-                text-align: center;
-                border: 1px solid rgba(168, 85, 247, 0.2);
-              "
-            >
-              <small
-                style="
-                  color: var(--text-dim);
-                  display: block;
-                  margin-bottom: 0.5rem;
-                "
-                >Precisión Global</small
-              >
-              <div
-                id="stat-global-accuracy"
-                style="font-size: 1.5rem; font-weight: 700; color: #a855f7"
-              >
-                0%
-              </div>
-            </div>
+              Análisis Detallado
+            </button>
           </div>
 
-          <div style="margin-bottom: 1.5rem">
-            <h4>📊 Desglose por Deporte</h4>
+          <!-- Tab: General -->
+          <div id="stats-tab-general" class="stats-tab-content">
+            <!-- Summary Cards -->
             <div
-              id="sport-stats-container"
+              class="stats-grid"
               style="
-                display: flex;
+                display: grid;
+                grid-template-columns: repeat(4, 1fr);
                 gap: 1rem;
-                flex-wrap: wrap;
-                margin-top: 0.5rem;
+                margin-bottom: 2rem;
               "
             >
-              <!-- Sport chips will be added here -->
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(99, 102, 241, 0.1);
+                  padding: 1rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(99, 102, 241, 0.2);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Total Picks</small
+                >
+                <div
+                  id="stat-total-picks"
+                  style="
+                    font-size: 1.5rem;
+                    font-weight: 700;
+                    color: var(--accent);
+                  "
+                >
+                  0
+                </div>
+              </div>
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(34, 197, 94, 0.1);
+                  padding: 1rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(34, 197, 94, 0.2);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Aciertos (Hits)</small
+                >
+                <div
+                  id="stat-total-hits"
+                  style="font-size: 1.5rem; font-weight: 700; color: #22c55e"
+                >
+                  0
+                </div>
+              </div>
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(239, 68, 68, 0.1);
+                  padding: 1rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(239, 68, 68, 0.2);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Fallos (Misses)</small
+                >
+                <div
+                  id="stat-total-misses"
+                  style="font-size: 1.5rem; font-weight: 700; color: #ef4444"
+                >
+                  0
+                </div>
+              </div>
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(168, 85, 247, 0.1);
+                  padding: 1rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(168, 85, 247, 0.2);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Precisión Global</small
+                >
+                <div
+                  id="stat-global-accuracy"
+                  style="font-size: 1.5rem; font-weight: 700; color: #a855f7"
+                >
+                  0%
+                </div>
+              </div>
+            </div>
+
+            <div style="margin-bottom: 1.5rem">
+              <h4>📊 Desglose por Deporte</h4>
+              <div
+                id="sport-stats-container"
+                style="
+                  display: flex;
+                  gap: 1rem;
+                  flex-wrap: wrap;
+                  margin-top: 0.5rem;
+                "
+              >
+                <!-- Sport chips will be added here -->
+              </div>
+            </div>
+
+            <hr
+              style="
+                border: none;
+                border-top: 1px solid var(--border);
+                margin: 1.5rem 0;
+              "
+            />
+
+            <h4>📋 Historial Detallado de Picks</h4>
+            <div style="max-height: 400px; overflow-y: auto; margin-top: 1rem">
+              <table
+                class="table"
+                style="width: 100%; border-collapse: collapse"
+              >
+                <thead
+                  style="
+                    position: sticky;
+                    top: 0;
+                    background: var(--bg-card);
+                    z-index: 1;
+                  "
+                >
+                  <tr>
+                    <th style="text-align: left; padding: 0.75rem">Fecha</th>
+                    <th style="text-align: left; padding: 0.75rem">Partido</th>
+                    <th style="text-align: left; padding: 0.75rem">Pick</th>
+                    <th style="text-align: center; padding: 0.75rem">Cuota</th>
+                    <th style="text-align: center; padding: 0.75rem">
+                      Resultado
+                    </th>
+                  </tr>
+                </thead>
+                <tbody id="picks-stats-list">
+                  <!-- Picks will be added here -->
+                </tbody>
+              </table>
             </div>
           </div>
 
-          <hr
-            style="
-              border: none;
-              border-top: 1px solid var(--border);
-              margin: 1.5rem 0;
-            "
-          />
-
-          <h4>📋 Historial Detallado de Picks</h4>
-          <div style="max-height: 400px; overflow-y: auto; margin-top: 1rem">
-            <table class="table" style="width: 100%; border-collapse: collapse">
-              <thead
+          <!-- Tab: Advanced Analytics -->
+          <div
+            id="stats-tab-advanced"
+            class="stats-tab-content"
+            style="display: none"
+          >
+            <!-- Odds Metrics -->
+            <div
+              class="stats-grid"
+              style="
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+                margin-bottom: 2rem;
+              "
+            >
+              <div
+                class="stat-card"
                 style="
-                  position: sticky;
-                  top: 0;
-                  background: var(--bg-card);
-                  z-index: 1;
+                  background: rgba(255, 255, 255, 0.05);
+                  padding: 1.5rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(255, 255, 255, 0.1);
                 "
               >
-                <tr>
-                  <th style="text-align: left; padding: 0.75rem">Fecha</th>
-                  <th style="text-align: left; padding: 0.75rem">Partido</th>
-                  <th style="text-align: left; padding: 0.75rem">Pick</th>
-                  <th style="text-align: center; padding: 0.75rem">Cuota</th>
-                  <th style="text-align: center; padding: 0.75rem">
-                    Resultado
-                  </th>
-                </tr>
-              </thead>
-              <tbody id="picks-stats-list">
-                <!-- Picks will be added here -->
-              </tbody>
-            </table>
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Cuota Promedio (Total)</small
+                >
+                <div
+                  id="stat-avg-odds"
+                  style="
+                    font-size: 2rem;
+                    font-weight: 700;
+                    color: var(--accent);
+                  "
+                >
+                  0.00
+                </div>
+              </div>
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(34, 197, 94, 0.05);
+                  padding: 1.5rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(34, 197, 94, 0.1);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Cuota Promedio (Ganados)</small
+                >
+                <div
+                  id="stat-avg-winning-odds"
+                  style="font-size: 2rem; font-weight: 700; color: #22c55e"
+                >
+                  0.00
+                </div>
+              </div>
+            </div>
+
+            <div
+              style="
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 2rem;
+              "
+            >
+              <!-- Markets -->
+              <div>
+                <h4 style="margin-bottom: 1rem">🏆 Mejores Mercados</h4>
+                <div id="best-markets-container" class="analytics-list"></div>
+
+                <h4 style="margin-bottom: 1rem; margin-top: 2rem">
+                  📉 Peores Mercados
+                </h4>
+                <div id="worst-markets-container" class="analytics-list"></div>
+              </div>
+
+              <!-- Leagues and Teams -->
+              <div>
+                <h4 style="margin-bottom: 1rem">🌍 Mejores Ligas</h4>
+                <div id="best-leagues-container" class="analytics-list"></div>
+
+                <h4 style="margin-bottom: 1rem; margin-top: 2rem">
+                  ⚽ Mejores Equipos
+                </h4>
+                <div id="best-teams-container" class="analytics-list"></div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -3214,6 +3350,37 @@
                   min="0"
                 />
               </div>
+              <div class="form-group">
+                <label>🎯 Tiros a Puerta Local</label>
+                <input
+                  type="number"
+                  id="res-shots-target-h"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🎯 Tiros a Puerta Visitante</label>
+                <input
+                  type="number"
+                  id="res-shots-target-a"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <p
+                style="
+                  grid-column: span 2;
+                  font-size: 0.8rem;
+                  opacity: 0.7;
+                  margin-top: -0.5rem;
+                  color: var(--text-dim);
+                "
+              >
+                ℹ️ Regla: 1 Amarilla = 1 tarjeta, 1 Roja = 2 tarjetas.
+              </p>
             </div>
             <div style="margin-top: 1.5rem; display: flex; gap: 1rem">
               <button type="submit" class="btn-analyze" style="flex: 2">
