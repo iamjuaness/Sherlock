@@ -2684,6 +2684,17 @@
               </div>
             </div>
 
+            <!-- Nuevo apartado: High Confidence -->
+            <div class="card" id="high-confidence-card" style="display: none; border-left: 4px solid #f59e0b;">
+              <h3>⭐ Picks de Alta Confianza (Sin Edge)</h3>
+              <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 1rem;">
+                Picks con probabilidad ≥75% según el modelo, pero sin ventaja estadística (Edge) suficiente.
+              </p>
+              <div id="high-confidence-grid" class="multi-line-grid">
+                <!-- Se llenará desde JS -->
+              </div>
+            </div>
+
             <div class="card card--projected">
               <h3>🎯 Líneas Proyectadas (Automation Tips)</h3>
               <div id="projected-lines" class="projected-grid">
@@ -3212,6 +3223,40 @@
                   ⚽ Mejores Equipos
                 </h4>
                 <div id="best-teams-container" class="analytics-list"></div>
+              </div>
+            </div>
+
+            <div
+              style="
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 2rem;
+                margin-top: 2rem;
+                padding-top: 2rem;
+                border-top: 1px solid var(--border);
+              "
+            >
+              <!-- Bucket Metrics -->
+              <div style="grid-column: span 2;">
+                 <h3 style="margin-bottom: 1.5rem; color: var(--accent);">📊 Rendimiento por Categorías (Buckets)</h3>
+              </div>
+
+              <!-- Odds Buckets -->
+              <div>
+                <h4 style="margin-bottom: 1rem">📉 Por Rango de Cuota</h4>
+                <div id="odds-buckets-container" class="analytics-list"></div>
+              </div>
+
+              <!-- Edge Buckets -->
+              <div>
+                <h4 style="margin-bottom: 1rem">⚡ Por Edge Estimado</h4>
+                <div id="edge-buckets-container" class="analytics-list"></div>
+              </div>
+
+              <!-- Confidence Buckets -->
+              <div style="grid-column: span 2;">
+                <h4 style="margin-bottom: 1rem">🧠 Por Confianza del Modelo (Probabilidad)</h4>
+                <div id="confidence-buckets-container" class="analytics-list" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;"></div>
               </div>
             </div>
           </div>

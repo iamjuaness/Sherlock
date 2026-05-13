@@ -297,19 +297,61 @@ def _get_or_create_team(db: Session, team_obj: object) -> str:
 # ---------------------------------------------------------------------------
 
 
+async def _enrich_with_results(sport: Sport, home: str, away: str, response: CompareResponse, db: Session):
+    """Busca si el partido ya tiene resultados en la BD y marca acierto/fallo en el vuelo."""
+    # Buscar el análisis más reciente para este partido que tenga resultados
+    history = (
+        db.query(AnalysisHistory)
+        .filter(
+            AnalysisHistory.sport == sport,
+            AnalysisHistory.match_title.like(f"%{home}%"),
+            AnalysisHistory.match_title.like(f"%{away}%"),
+            AnalysisHistory.final_score_home != None
+        )
+        .order_by(AnalysisHistory.date.desc())
+        .first()
+    )
+    
+    if not history:
+        return response
+        
+    res_dict = {
+        "final_score_home": history.final_score_home,
+        "final_score_away": history.final_score_away,
+        "final_corners_home": history.final_corners_home,
+        "final_corners_away": history.final_corners_away,
+        "final_yellow_cards_home": history.final_yellow_cards_home,
+        "final_yellow_cards_away": history.final_yellow_cards_away,
+        "final_red_cards_home": history.final_red_cards_home,
+        "final_red_cards_away": history.final_red_cards_away,
+        "final_shots_home": history.final_shots_home,
+        "final_shots_away": history.final_shots_away,
+        "final_shots_on_target_home": history.final_shots_on_target_home,
+        "final_shots_on_target_away": history.final_shots_on_target_away,
+    }
+    
+    # Inyectar éxito en los picks
+    for v in response.values:
+        v.success = _check_pick_success(v.dict() if hasattr(v, 'dict') else v.__dict__, res_dict)
+        
+    return response
+
 @app.post("/api/v1/compare/football", response_model=CompareResponse, tags=["Comparator"])
-async def compare_teams_football(request: FootballCompareRequest) -> CompareResponse:
-    return await compare_football(request)
+async def compare_teams_football(request: FootballCompareRequest, db: Session = Depends(get_db)) -> CompareResponse:
+    res = await compare_football(request)
+    return await _enrich_with_results(Sport.FOOTBALL, request.home.name, request.away.name, res, db)
 
 
 @app.post("/api/v1/compare/nba", response_model=CompareResponse, tags=["Comparator"])
-async def compare_teams_nba(request: NBACompareRequest) -> CompareResponse:
-    return await compare_nba(request)
+async def compare_teams_nba(request: NBACompareRequest, db: Session = Depends(get_db)) -> CompareResponse:
+    res = await compare_nba(request)
+    return await _enrich_with_results(Sport.NBA, request.home.name, request.away.name, res, db)
 
 
 @app.post("/api/v1/compare/tennis", response_model=CompareResponse, tags=["Comparator"])
-async def compare_players_tennis(request: TennisCompareRequest) -> CompareResponse:
-    return await compare_tennis(request)
+async def compare_players_tennis(request: TennisCompareRequest, db: Session = Depends(get_db)) -> CompareResponse:
+    res = await compare_tennis(request)
+    return await _enrich_with_results(Sport.TENNIS, request.player1.name, request.player2.name, res, db)
 
 # ---------------------------------------------------------------------------
 # Comparator LLM Streaming (SSE)
@@ -511,8 +553,8 @@ def update_analysis_results(
                 # or just all generated picks if preferred. 
                 # User said: "(picks acertados / total picks generados) * 100"
                 for pick in picks:
-                    # Filter: Only picks shown to the user (is_publishable or is_value)
-                    if not pick.get("is_publishable", pick.get("is_value", False)):
+                    # Filter: Only picks shown to the user (is_publishable, is_value or is_high_confidence)
+                    if not (pick.get("is_publishable", pick.get("is_value", False)) or pick.get("is_high_confidence", False)):
                         continue
                         
                     success = _check_pick_success(pick, results_dict)
@@ -550,6 +592,15 @@ def get_global_stats(db: Session = Depends(get_db)):
     market_counters = {}
     league_counters = {}
     team_counters = {}
+
+    # Buckets configuration
+    odds_buckets_cfg = [(1.0, 1.5, "1.0-1.5"), (1.5, 2.0, "1.5-2.0"), (2.0, 3.0, "2.0-3.0"), (3.0, 1000.0, ">3.0")]
+    edge_buckets_cfg = [(-100.0, 5.0, "<5%"), (5.0, 10.0, "5-10%"), (10.0, 15.0, "10-15%"), (15.0, 1000.0, ">15%")]
+    conf_buckets_cfg = [(0.0, 60.0, "<60%"), (60.0, 70.0, "60-70%"), (70.0, 80.0, "70-80%"), (80.0, 100.1, ">80%")]
+
+    odds_b_stats = {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in odds_buckets_cfg}
+    edge_b_stats = {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in edge_buckets_cfg}
+    conf_b_stats = {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in conf_buckets_cfg}
     
     for h in history:
         has_result = h.final_score_home is not None
@@ -590,13 +641,14 @@ def get_global_stats(db: Session = Depends(get_db)):
                 
                 # Extract team info
                 teams = []
-                if " vs " in h.match_title:
-                    teams = [t.strip() for t in h.match_title.split(" vs ")]
-                elif " - " in h.match_title:
-                    teams = [t.strip() for t in h.match_title.split(" - ")]
+                if h.match_title:
+                    if " vs " in h.match_title:
+                        teams = [t.strip() for t in h.match_title.split(" vs ")]
+                    elif " - " in h.match_title:
+                        teams = [t.strip() for t in h.match_title.split(" - ")]
 
                 for pick in picks:
-                    if not pick.get("is_publishable", pick.get("is_value", False)):
+                    if not (pick.get("is_publishable", pick.get("is_value", False)) or pick.get("is_high_confidence", False)):
                         continue
 
                     total_picks += 1
@@ -619,6 +671,8 @@ def get_global_stats(db: Session = Depends(get_db)):
                             team_counters[t] = {"picks": 0, "hits": 0}
                         team_counters[t]["picks"] += 1
 
+                    # Success and resolution
+                    success = False
                     if has_result:
                         success = _check_pick_success(pick, results_dict)
                         if success:
@@ -630,6 +684,38 @@ def get_global_stats(db: Session = Depends(get_db)):
                                 team_counters[t]["hits"] += 1
                             total_winning_odds += odds
                             winning_picks_count += 1
+
+                    # Bucketing logic
+                    edge = float(pick.get("edge", 0.0))
+                    conf = float(pick.get("model_prob", 0.0))
+
+                    for low, high, label in odds_buckets_cfg:
+                        if low <= odds < high:
+                            odds_b_stats[label]["count"] += 1
+                            odds_b_stats[label]["total_odds"] += odds
+                            if has_result:
+                                odds_b_stats[label]["resolved"] += 1
+                                if success: odds_b_stats[label]["hits"] += 1
+                            break
+
+                    for low, high, label in edge_buckets_cfg:
+                        if low <= edge < high:
+                            edge_b_stats[label]["count"] += 1
+                            edge_b_stats[label]["total_odds"] += odds
+                            if has_result:
+                                edge_b_stats[label]["resolved"] += 1
+                                if success: edge_b_stats[label]["hits"] += 1
+                            break
+
+                    for low, high, label in conf_buckets_cfg:
+                        if low <= conf < high:
+                            conf_b_stats[label]["count"] += 1
+                            conf_b_stats[label]["total_odds"] += odds
+                            if has_result:
+                                conf_b_stats[label]["resolved"] += 1
+                                if success: conf_b_stats[label]["hits"] += 1
+                            break
+
             except Exception as e:
                 print(f"Error in global stats loop: {e}")
                 continue
@@ -658,6 +744,20 @@ def get_global_stats(db: Session = Depends(get_db)):
                 })
         return result
 
+    # Helper for buckets to list
+    def bucket_to_list(stats_map):
+        res = []
+        for label, data in stats_map.items():
+            avg_o = (data["total_odds"] / data["count"]) if data["count"] > 0 else 0.0
+            acc = (data["hits"] / data["resolved"] * 100) if data["resolved"] > 0 else 0.0
+            res.append({
+                "bucket": label,
+                "count": data["count"],
+                "avg_odds": round(avg_o, 2),
+                "accuracy": round(acc, 1)
+            })
+        return res
+
     all_markets = to_stat_list(market_counters)
     all_leagues = to_stat_list(league_counters, min_picks=2)
     all_teams = to_stat_list(team_counters, min_picks=2)
@@ -680,7 +780,10 @@ def get_global_stats(db: Session = Depends(get_db)):
         "best_markets": best_markets,
         "worst_markets": worst_markets,
         "best_leagues": best_leagues,
-        "best_teams": best_teams
+        "best_teams": best_teams,
+        "odds_buckets": bucket_to_list(odds_b_stats),
+        "edge_buckets": bucket_to_list(edge_b_stats),
+        "confidence_buckets": bucket_to_list(conf_b_stats)
     }
 
 @app.get("/api/v1/stats/picks", response_model=list[PickStat], tags=["Stats"])
@@ -723,8 +826,8 @@ def get_all_picks(
             has_result = h.final_score_home is not None
             
             for pick in picks:
-                # Filter: Only picks shown to the user
-                if not pick.get("is_publishable", pick.get("is_value", False)):
+                # Filter: Only picks shown to the user (is_publishable, is_value or is_high_confidence)
+                if not (pick.get("is_publishable", pick.get("is_value", False)) or pick.get("is_high_confidence", False)):
                     continue
 
                 success = None
@@ -741,7 +844,8 @@ def get_all_picks(
                     "line": pick.get("line"),
                     "odds": pick.get("odds", 0.0),
                     "success": success,
-                    "is_value": pick.get("is_value", False)
+                    "is_value": pick.get("is_value", False),
+                    "is_high_confidence": pick.get("is_high_confidence", False)
                 })
         except:
             continue
@@ -756,7 +860,7 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
     h_score = res.get("final_score_home")
     a_score = res.get("final_score_away")
     
-    # 1X2
+    # 1X2 / Winner (Common for all sports)
     if sel == "local":
         if h_score is not None and a_score is not None: return h_score > a_score
     if sel == "empate":
@@ -764,6 +868,16 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
     if sel == "visitante":
         if h_score is not None and a_score is not None: return a_score > h_score
         
+    # Points / Total Score (NBA / Tennis Games / etc)
+    if "puntos" in sel or "points" in sel or "juegos" in sel or "games" in sel:
+        total_p = (h_score + a_score) if (h_score is not None and a_score is not None) else None
+        if "over" in sel:
+            line = _extract_line(sel, "over")
+            if line is not None and total_p is not None: return total_p > line
+        if "under" in sel:
+            line = _extract_line(sel, "under")
+            if line is not None and total_p is not None: return total_p < line
+
     # BTTS
     if "btts sí" in sel or "btts yes" in sel:
         if h_score is not None and a_score is not None: return h_score > 0 and a_score > 0
@@ -797,7 +911,6 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
     a_y = res.get("final_yellow_cards_away") or 0
     h_r = res.get("final_red_cards_home") or 0
     a_r = res.get("final_red_cards_away") or 0
-    # Business rule: Red card counts as 2 cards (3 yellow + 1 red = 5 cards)
     total_cards = (h_y + a_y) + ((h_r + a_r) * 2)
     if "tarjetas" in sel or "cards" in sel:
         if "over" in sel:
@@ -856,8 +969,9 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) 
             out.has_picks = False
             return out
             
-        publishable_picks = [p for p in picks if p.get("is_value")]
-        out.has_picks = len(publishable_picks) > 0
+        # Se consideran picks válidos los de Valor O los de Alta Confianza
+        relevant_picks = [p for p in picks if p.get("is_value") or p.get("is_high_confidence")]
+        out.has_picks = len(relevant_picks) > 0
         
         # Calculate summary if results exist
         res_dict = {
@@ -878,7 +992,7 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) 
         if res_dict.get("final_score_home") is not None:
             hits = 0
             total = 0
-            for p in publishable_picks:
+            for p in relevant_picks:
                 success = _check_pick_success(p, res_dict)
                 if success is not None:
                     total += 1

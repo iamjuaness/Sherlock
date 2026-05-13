@@ -107,33 +107,40 @@ function showError(msg) {
 function renderMultiLineCards(values) {
   const grid = document.getElementById("multi-line-grid");
   const card = document.getElementById("multi-line-card");
-  if (!grid) return;
-  grid.innerHTML = "";
+  const hcGrid = document.getElementById("high-confidence-grid");
+  const hcCard = document.getElementById("high-confidence-card");
 
-  // ── 1. Evaluar picks (Sincronizado con Backend y LLM) ──
-  const filtered = Array.isArray(values)
-    ? values
-        .filter((v) => v.selection && v.odds != null)
-        .filter((v) => v.is_value === true)
-        .sort((a, b) => {
-          const dqA = a.data_quality_score ?? 0;
-          const dqB = b.data_quality_score ?? 0;
-          if (dqB !== dqA) {
-            return dqB - dqA;
-          }
-          return (b.model_prob ?? 0) - (a.model_prob ?? 0);
-        })
-    : [];
+  if (grid) grid.innerHTML = "";
+  if (hcGrid) hcGrid.innerHTML = "";
 
-  if (!card) {
-  } else if (filtered.length === 0) {
-    card.style.display = "none";
+  if (!Array.isArray(values)) {
+    if (card) card.style.display = "none";
+    if (hcCard) hcCard.style.display = "none";
     return;
-  } else {
-    card.style.display = "block";
   }
 
-  filtered.forEach((v) => {
+  // ── 1. Evaluar picks (Sincronizado con Backend) ──
+  const valuePicks = values
+    .filter((v) => v.selection && v.odds != null)
+    .filter((v) => v.is_value === true)
+    .sort((a, b) => {
+      const dqA = a.data_quality_score ?? 0;
+      const dqB = b.data_quality_score ?? 0;
+      if (dqB !== dqA) return dqB - dqA;
+      return (b.model_prob ?? 0) - (a.model_prob ?? 0);
+    });
+
+  const hcPicks = values
+    .filter((v) => v.selection && v.odds != null)
+    .filter((v) => v.is_high_confidence === true)
+    .sort((a, b) => (b.model_prob ?? 0) - (a.model_prob ?? 0));
+
+  // Control de visibilidad
+  if (card) card.style.display = valuePicks.length > 0 ? "block" : "none";
+  if (hcCard) hcCard.style.display = hcPicks.length > 0 ? "block" : "none";
+
+  // Función auxiliar de renderizado de item
+  const renderItem = (v, targetGrid) => {
     const edgeVal = Number(v.edge ?? 0);
     const probText = Number(v.model_prob ?? 0).toFixed(1) + "%";
     const oddsText = Number(v.odds).toFixed(2);
@@ -146,7 +153,10 @@ function renderMultiLineCards(values) {
     if (v.is_publishable) {
       mod = "strong";
       badgeText = "🎯 PROFESIONAL";
-    } else if (edgeVal > 0) {
+    } else if (v.is_high_confidence) {
+      mod = "high"; // Use new high style
+      badgeText = "⭐ ALTA CONF.";
+    } else if (v.is_value) {
       mod = "value";
       badgeText = "⚖️ VALOR";
     }
@@ -157,19 +167,21 @@ function renderMultiLineCards(values) {
 
     // Success indicator
     let successHtml = "";
+    let statusClass = "";
     if (v.success === true) {
-      successHtml =
-        '<span style="color: #22c55e; margin-left: 8px; font-weight: 800; font-size: 0.75rem;">✅</span>';
+      successHtml = '<div class="value-line-card__success-marker">✅</div>';
+      statusClass = "value-line-card--success";
     } else if (v.success === false) {
-      successHtml =
-        '<span style="color: #ef4444; margin-left: 8px; font-weight: 800; font-size: 0.75rem;">❌</span>';
+      successHtml = '<div class="value-line-card__success-marker">❌</div>';
+      statusClass = "value-line-card--fail";
     }
 
     const el = document.createElement("div");
-    el.className = `value-line-card value-line-card--${mod}`;
+    el.className = `value-line-card value-line-card--${mod} ${statusClass}`;
     el.innerHTML = `
+      ${successHtml}
       <div class="value-line-card__market" title="${v.selection}">
-        ${v.selection}${successHtml}
+        ${v.selection}
       </div>
       <div class="value-line-card__row">
         <span>Confianza Datos</span>
@@ -188,8 +200,24 @@ function renderMultiLineCards(values) {
       </div>
       <span class="value-line-card__badge badge--${mod}">${badgeText}</span>
     `;
-    grid.appendChild(el);
-  });
+    targetGrid.appendChild(el);
+  };
+
+  valuePicks.forEach((v) => renderItem(v, grid));
+  hcPicks.forEach((v) => renderItem(v, hcGrid));
+}
+
+/**
+ * renderComparison (Tennis specific)
+ * Reutiliza renderResults pero asegura el flow de tennis
+ */
+function renderComparison(data, sport) {
+  if (sport === "tennis") {
+    // Para tennis, simplemente usamos renderResults que ya es genérico
+    // pero nos aseguramos de que el sport sea correcto
+    currentSport = "tennis";
+    renderResults(data);
+  }
 }
 
 function renderResults(data) {
@@ -2186,6 +2214,32 @@ async function loadGlobalStats() {
     renderAnalytics("worst-markets-container", data.worst_markets);
     renderAnalytics("best-leagues-container", data.best_leagues);
     renderAnalytics("best-teams-container", data.best_teams);
+
+    const renderBuckets = (containerId, items) => {
+      const cont = document.getElementById(containerId);
+      if (!cont) return;
+      cont.innerHTML =
+        items.length === 0
+          ? '<div style="opacity: 0.5; font-size: 0.8rem; padding: 1rem;">No hay datos suficientes</div>'
+          : "";
+
+      items.forEach((item) => {
+        const el = document.createElement("div");
+        el.className = "analytics-item";
+        el.innerHTML = `
+            <div class="analytics-item__main">
+                <span class="analytics-item__name">${item.bucket}</span>
+                <span class="analytics-item__stat">Cuota prom: ${item.avg_odds.toFixed(2)} | ${item.count} picks</span>
+            </div>
+            <span class="analytics-item__acc" style="color: ${item.accuracy >= 60 ? "#22c55e" : item.accuracy >= 40 ? "#eab308" : "#ef4444"}">${item.accuracy.toFixed(0)}%</span>
+        `;
+        cont.appendChild(el);
+      });
+    };
+
+    renderBuckets("odds-buckets-container", data.odds_buckets);
+    renderBuckets("edge-buckets-container", data.edge_buckets);
+    renderBuckets("confidence-buckets-container", data.confidence_buckets);
   } catch (e) {
     showError(e.message);
   }

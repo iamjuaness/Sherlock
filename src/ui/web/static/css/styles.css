@@ -896,13 +896,35 @@ body {
   background: rgba(239, 68, 68, 0.04);
 }
 
+.value-line-card--high {
+  border-top: 3px solid #f59e0b;
+  background: rgba(245, 158, 11, 0.03);
+}
+
+.value-line-card--success {
+  border: 1px solid rgba(34, 197, 94, 0.4) !important;
+  box-shadow: 0 0 15px rgba(34, 197, 94, 0.1);
+}
+
+.value-line-card--fail {
+  border: 1px solid rgba(239, 68, 68, 0.4) !important;
+  box-shadow: 0 0 15px rgba(239, 68, 68, 0.1);
+}
+
 .value-line-card__market {
   font-size: 0.8rem;
   font-weight: 700;
   color: var(--text-primary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  /* Eliminamos white-space nowrap para que el icono se vea siempre o permitimos wrap */
+  margin-right: 25px; /* Espacio para el marcador absoluto */
+}
+
+.value-line-card__success-marker {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  font-size: 1rem;
+  z-index: 5;
 }
 .value-line-card__row {
   display: flex;

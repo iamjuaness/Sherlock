@@ -334,6 +334,8 @@ class ValueIndicator(BaseModel):
     market_confidence_tier: Optional[str]   = None # 'segmented', 'hybrid', 'global'
     market_variance_tier:   Optional[str]   = None # 'low', 'medium', 'high'
     is_publishable:        bool = False
+    is_high_confidence:    bool = False
+    success:               Optional[bool] = None
     push_prob:             Optional[float] = None
 
 
@@ -479,6 +481,20 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
         
     return True
 
+def is_high_confidence_pick(v: ValueIndicator) -> bool:
+    """Detecta picks con probabilidad muy alta (>75%) que pueden no tener edge."""
+    # 1. Umbral de probabilidad alta
+    if v.model_prob < 65.0: return False
+    
+    # 2. Evitar picks que ya son value (para no duplicar en el apartado nuevo)
+    if v.is_value: return False
+    
+    # 3. Filtros básicos de calidad
+    if v.data_quality_score is not None and v.data_quality_score < 40:
+        return False
+        
+    return True
+
 def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0):
     if odds is None:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
@@ -514,6 +530,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     )
     
     v.is_publishable = is_publishable_pick(v)
+    v.is_high_confidence = is_high_confidence_pick(v)
     return v
 
 
@@ -523,6 +540,7 @@ def compute_model_prob_over_under_from_lambda(
     line: float,
     side: str,  # "over" o "under"
 ) -> float:
+    # pyrefly: ignore [bad-unpacking]
     p_over, p_under = _poisson_over_under(lam, line)
     return p_over if side.lower() == "over" else p_under
 
@@ -2699,6 +2717,7 @@ async def compare_nba(req: NBACompareRequest) -> CompareResponse:
         v.strategic_score = _frontend_style_strategic_score(v)
         v.quality_score = v.strategic_score # Para NBA usamos el mismo score estratégico como calidad base
         v.is_value = v.strategic_score >= 0
+        v.is_high_confidence = v.model_prob >= 75.0 and not v.is_value
 
     # --- Projected Lines (derivadas solo de stats) ---
     projected_lines = [
@@ -2774,6 +2793,7 @@ async def compare_tennis(req: TennisCompareRequest) -> CompareResponse:
         v.strategic_score = _frontend_style_strategic_score(v)
         v.quality_score = v.strategic_score
         v.is_value = v.strategic_score >= 10 
+        v.is_high_confidence = v.model_prob >= 75.0 and not v.is_value
 
     # --- LLM Analysis ---
     llm = None

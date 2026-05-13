@@ -147,6 +147,12 @@ class StatItem(BaseModel):
     hits: int
     accuracy: float
 
+class BucketStat(BaseModel):
+    bucket: str
+    count: int
+    avg_odds: float
+    accuracy: float
+
 class GlobalStatsOut(BaseModel):
     total_matches: int
     total_matches_with_results: int
@@ -160,6 +166,9 @@ class GlobalStatsOut(BaseModel):
     worst_markets: list[StatItem] = []
     best_leagues: list[StatItem] = []
     best_teams: list[StatItem] = []
+    odds_buckets: list[BucketStat] = []
+    edge_buckets: list[BucketStat] = []
+    confidence_buckets: list[BucketStat] = []
 
 class PickStat(BaseModel):
     match_id: str
@@ -172,3 +181,4 @@ class PickStat(BaseModel):
     odds: float
     success: bool | None
     is_value: bool
+    is_high_confidence: bool = False
