@@ -2892,6 +2892,14 @@
               style="font-size: 0.8rem; flex: 1; min-width: 0; padding: 0.4rem"
             />
           </div>
+          <button 
+            class="btn-preset" 
+            onclick="recalculateAllHistoryAccuracy()" 
+            style="background: rgba(99, 102, 241, 0.2); border: 1px solid var(--accent); white-space: nowrap;"
+            title="Recalcula el acierto de todos los partidos con resultado guardado"
+          >
+            🔄 Recalcular Todo
+          </button>
         </div>
         <div class="modal__body">
           <div id="history-container">
@@ -3112,6 +3120,8 @@
                     <th style="text-align: left; padding: 0.75rem">Partido</th>
                     <th style="text-align: left; padding: 0.75rem">Pick</th>
                     <th style="text-align: center; padding: 0.75rem">Cuota</th>
+                    <th style="text-align: center; padding: 0.75rem">EV (%)</th>
+                    <th style="text-align: center; padding: 0.75rem">Fair Odds</th>
                     <th style="text-align: center; padding: 0.75rem">
                       Resultado
                     </th>

@@ -549,12 +549,11 @@ def update_analysis_results(
                 hits = 0
                 total = 0
                 
-                # We calculate accuracy for all "Value" picks (rating > 0)
-                # or just all generated picks if preferred. 
-                # User said: "(picks acertados / total picks generados) * 100"
+                # Calculate Accuracy
                 for pick in picks:
-                    # Filter: Only picks shown to the user (is_publishable, is_value or is_high_confidence)
-                    if not (pick.get("is_publishable", pick.get("is_value", False)) or pick.get("is_high_confidence", False)):
+                    # Filter: Only "Value" picks are counted for model accuracy stats
+                    # High confidence picks (without edge) are for visual analysis only
+                    if not (pick.get("is_publishable", pick.get("is_value", False))):
                         continue
                         
                     success = _check_pick_success(pick, results_dict)
@@ -572,6 +571,99 @@ def update_analysis_results(
     db.refresh(history)
     out = AnalysisHistoryOut.model_validate(history)
     return _populate_history_extra_fields(history, out)
+
+
+@app.post("/api/v1/analysis/recalculate-all", tags=["Analysis History"])
+async def recalculate_all_accuracy(db: Session = Depends(get_db)):
+    """
+    Re-analiza todos los registros del historial:
+    1. Vuelve a calcular los picks usando el payload original (motor de predicción).
+    2. Actualiza los snapshots y los picks calculados.
+    3. Si hay resultados finales, recalcula el acierto (accuracy_percentage).
+    """
+    history_list = db.query(AnalysisHistory).all()
+    count = 0
+    updated_accuracy_count = 0
+    
+    for history in history_list:
+        try:
+            if not history.payload:
+                continue
+                
+            # Cargar el payload original
+            payload_dict = json.loads(history.payload)
+            sport = history.sport
+            
+            # Re-ejecutar el motor de comparación según el deporte
+            new_response = None
+            try:
+                if sport == Sport.FOOTBALL:
+                    req = FootballCompareRequest(**payload_dict)
+                    new_response = await compare_football(req)
+                elif sport == Sport.NBA or sport == Sport.BASKETBALL:
+                    req = NBACompareRequest(**payload_dict)
+                    new_response = await compare_nba(req)
+                elif sport == Sport.TENNIS:
+                    req = TennisCompareRequest(**payload_dict)
+                    new_response = await compare_tennis(req)
+            except Exception as comp_err:
+                print(f"Error en motor de comparación para {history.id} ({sport}): {comp_err}")
+                continue
+                
+            if new_response:
+                # 1. Actualizar picks_calculados y snapshot
+                picks = [v.model_dump() if hasattr(v, 'model_dump') else v.__dict__ for v in new_response.values]
+                history.picks_calculados = json.dumps(picks)
+                history.compare_response_snapshot = json.dumps(new_response.model_dump() if hasattr(new_response, 'model_dump') else new_response.__dict__)
+                
+                # 2. Si tiene resultados, recalcular acierto
+                if history.final_score_home is not None:
+                    results_dict = {
+                        "final_score_home": history.final_score_home,
+                        "final_score_away": history.final_score_away,
+                        "final_corners_home": history.final_corners_home,
+                        "final_corners_away": history.final_corners_away,
+                        "final_yellow_cards_home": history.final_yellow_cards_home,
+                        "final_yellow_cards_away": history.final_yellow_cards_away,
+                        "final_red_cards_home": history.final_red_cards_home,
+                        "final_red_cards_away": history.final_red_cards_away,
+                        "final_shots_home": history.final_shots_home,
+                        "final_shots_away": history.final_shots_away,
+                        "final_shots_on_target_home": history.final_shots_on_target_home,
+                        "final_shots_on_target_away": history.final_shots_on_target_away,
+                    }
+                    
+                    hits = 0
+                    total = 0
+                    
+                    for pick in picks:
+                        # Filtro: Solo picks de valor cuentan para la estadística oficial
+                        if not (pick.get("is_publishable", pick.get("is_value", False))):
+                            continue
+                            
+                        success = _check_pick_success(pick, results_dict)
+                        if success is not None:
+                            total += 1
+                            if success:
+                                hits += 1
+                    
+                    if total > 0:
+                        history.accuracy_percentage = (hits / total) * 100
+                    else:
+                        history.accuracy_percentage = None
+                    
+                    updated_accuracy_count += 1
+                
+                count += 1
+        except Exception as e:
+            print(f"Error re-analizando registro {history.id}: {e}")
+
+    db.commit()
+    return {
+        "message": f"Se han re-analizado {count} partidos. Se actualizó el acierto en {updated_accuracy_count} de ellos.",
+        "total_reanalyzed": count,
+        "accuracy_updated": updated_accuracy_count
+    }
 
 
 @app.get("/api/v1/stats/global", response_model=GlobalStatsOut, tags=["Stats"])
@@ -648,7 +740,8 @@ def get_global_stats(db: Session = Depends(get_db)):
                         teams = [t.strip() for t in h.match_title.split(" - ")]
 
                 for pick in picks:
-                    if not (pick.get("is_publishable", pick.get("is_value", False)) or pick.get("is_high_confidence", False)):
+                    # Filter: Only "Value" picks are counted for performance stats
+                    if not (pick.get("is_publishable", pick.get("is_value", False))):
                         continue
 
                     total_picks += 1
@@ -686,8 +779,9 @@ def get_global_stats(db: Session = Depends(get_db)):
                             winning_picks_count += 1
 
                     # Bucketing logic
-                    edge = float(pick.get("edge", 0.0))
-                    conf = float(pick.get("model_prob", 0.0))
+                    # Usamos edge_ev para los buckets de valor, convertido a % para mantener compatibilidad con las etiquetas
+                    edge_val = float(pick.get("edge_ev", 0.0)) * 100.0
+                    conf = float(pick.get("calibrated_prob", pick.get("model_prob", 0.0)))
 
                     for low, high, label in odds_buckets_cfg:
                         if low <= odds < high:
@@ -699,7 +793,7 @@ def get_global_stats(db: Session = Depends(get_db)):
                             break
 
                     for low, high, label in edge_buckets_cfg:
-                        if low <= edge < high:
+                        if low <= edge_val < high:
                             edge_b_stats[label]["count"] += 1
                             edge_b_stats[label]["total_odds"] += odds
                             if has_result:
@@ -826,8 +920,8 @@ def get_all_picks(
             has_result = h.final_score_home is not None
             
             for pick in picks:
-                # Filter: Only picks shown to the user (is_publishable, is_value or is_high_confidence)
-                if not (pick.get("is_publishable", pick.get("is_value", False)) or pick.get("is_high_confidence", False)):
+                # Filter: Only "Value" picks are shown in the performance/stats table
+                if not (pick.get("is_publishable", pick.get("is_value", False))):
                     continue
 
                 success = None
@@ -845,8 +939,16 @@ def get_all_picks(
                     "odds": pick.get("odds", 0.0),
                     "success": success,
                     "is_value": pick.get("is_value", False),
-                    "is_high_confidence": pick.get("is_high_confidence", False)
+                    "is_high_confidence": pick.get("is_high_confidence", False),
+                    "calibrated_prob": pick.get("calibrated_prob"),
+                    "edge_ev": pick.get("edge_ev"),
+                    "display_score": pick.get("display_score"),
+                    "fair_odds": pick.get("fair_odds"),
+                    "kelly_fraction": pick.get("kelly_fraction"),
+                    "stat_support": pick.get("stat_support"),
+                    "proj_support": pick.get("proj_support")
                 })
+
         except:
             continue
             
@@ -969,8 +1071,8 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) 
             out.has_picks = False
             return out
             
-        # Se consideran picks válidos los de Valor O los de Alta Confianza
-        relevant_picks = [p for p in picks if p.get("is_value") or p.get("is_high_confidence")]
+        # Solo se consideran para el resumen de acierto los picks de Valor
+        relevant_picks = [p for p in picks if p.get("is_value") or p.get("is_publishable")]
         out.has_picks = len(relevant_picks) > 0
         
         # Calculate summary if results exist

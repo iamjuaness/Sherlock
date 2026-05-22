@@ -182,3 +182,13 @@ class PickStat(BaseModel):
     success: bool | None
     is_value: bool
     is_high_confidence: bool = False
+    
+    # Nuevas métricas quant
+    calibrated_prob: float | None = None
+    edge_ev: float | None = None
+    display_score: float | None = None
+    fair_odds: float | None = None
+    kelly_fraction: float | None = None
+    stat_support: float | None = None
+    proj_support: float | None = None
+

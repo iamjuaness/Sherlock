@@ -822,6 +822,47 @@ function filterHistoryUI() {
   renderHistoryList(filtered);
 }
 
+async function recalculateAllHistoryAccuracy() {
+  if (
+    !confirm(
+      "¿Deseas recalcular la precisión de todos los partidos que tienen resultados registrados? Esto aplicará los nuevos criterios de filtrado a todo el historial.",
+    )
+  )
+    return;
+
+  try {
+    const btn = event.target;
+    const originalText = btn.innerHTML;
+    btn.innerHTML = "⏳ Recalculando...";
+    btn.disabled = true;
+
+    const response = await fetch("/api/v1/analysis/recalculate-all", {
+      method: "POST",
+    });
+
+    if (!response.ok) {
+      throw new Error("Error en el servidor al recalcular.");
+    }
+
+    const data = await response.json();
+    alert(`✅ ¡Hecho! ${data.message}`);
+
+    // Refrescar historial
+    loadHistory();
+    
+    // Si el modal de estadísticas está abierto, también sería bueno actualizarlo
+    if (typeof loadGlobalStats === "function") {
+      loadGlobalStats();
+    }
+
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+  } catch (error) {
+    console.error("Error al recalcular todo:", error);
+    alert("Hubo un error al procesar la solicitud.");
+  }
+}
+
 // ── Eliminar un análisis del historial ─────────────────────────
 async function deleteHistoryEntry(id) {
   if (!confirm("¿Estás seguro de que deseas eliminar este registro?")) return;
@@ -2248,7 +2289,7 @@ async function loadGlobalStats() {
 async function loadDetailedPicks() {
   const tbody = document.getElementById("picks-stats-list");
   tbody.innerHTML =
-    '<tr><td colspan="5" style="text-align: center; padding: 2rem;">Cargando picks...</td></tr>';
+    '<tr><td colspan="7" style="text-align: center; padding: 2rem;">Cargando picks...</td></tr>';
 
   try {
     const res = await fetch("/api/v1/stats/picks?limit=200");
@@ -2258,7 +2299,7 @@ async function loadDetailedPicks() {
     tbody.innerHTML = "";
     if (picks.length === 0) {
       tbody.innerHTML =
-        '<tr><td colspan="5" style="text-align: center; padding: 2rem;">No hay picks registrados aún.</td></tr>';
+        '<tr><td colspan="7" style="text-align: center; padding: 2rem;">No hay picks registrados aún.</td></tr>';
       return;
     }
 
@@ -2278,6 +2319,10 @@ async function loadDetailedPicks() {
         ? '<span title="Value Pick" style="color: var(--accent); margin-right: 4px;">💎</span>'
         : "";
 
+      const evVal = p.edge_ev !== null ? (p.edge_ev * 100).toFixed(1) : "N/A";
+      const fairOdds = p.fair_odds !== null ? p.fair_odds.toFixed(2) : "N/A";
+      const evColor = p.edge_ev > 0.07 ? "#22c55e" : p.edge_ev > 0.02 ? "#eab308" : "#ef4444";
+
       tr.innerHTML = `
         <td style="padding: 0.75rem; font-size: 0.85rem; color: var(--text-dim);">${dateStr}</td>
         <td style="padding: 0.75rem; font-weight: 500;">
@@ -2289,11 +2334,13 @@ async function loadDetailedPicks() {
           <div style="font-size: 0.75rem; opacity: 0.7;">${p.market} ${p.line || ""}</div>
         </td>
         <td style="padding: 0.75rem; text-align: center; font-family: monospace;">${p.odds.toFixed(2)}</td>
+        <td style="padding: 0.75rem; text-align: center; font-family: monospace; color: ${evColor}; font-weight: 600;">${evVal}%</td>
+        <td style="padding: 0.75rem; text-align: center; font-family: monospace; color: var(--text-dim);">${fairOdds}</td>
         <td style="padding: 0.75rem; text-align: center;">${statusBadge}</td>
       `;
       tbody.appendChild(tr);
     });
   } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="5" style="text-align: center; color: var(--error); padding: 2rem;">${e.message}</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--error); padding: 2rem;">${e.message}</td></tr>`;
   }
 }

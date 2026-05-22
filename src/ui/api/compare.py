@@ -318,25 +318,41 @@ class TennisCompareRequest(BaseModel):
 class ValueIndicator(BaseModel):
     selection:    str
     odds:         float | None = None
-    implied_prob: float | None = None
-    model_prob:   float
-    edge:         float = 0.0
+    
+    # Probabilidades
+    model_prob:           float  # Raw Poisson/Bayesian prob
+    calibrated_prob:      Optional[float] = None
+    implied_prob:         Optional[float] = None # 1/odds (raw)
+    implied_prob_no_vig:  Optional[float] = None # Fair market prob
+    
+    # Métricas de Valor
+    edge:         float = 0.0    # Diferencia de prob (legacy/display)
+    edge_ev:      float = 0.0    # Expected Value real: (cal_prob * odds) - 1
+    fair_odds:    Optional[float] = None
+    
+    # Status y Calidad
     is_value:     bool  = False
     rating:       str   = "N/A"
-    # Campos de calidad calculados en backend
     quality_score:   Optional[int] = None
     strategic_score: Optional[int] = None
     stat_support:    Optional[float] = None
     proj_support:    Optional[float] = None
-
-    # Nuevos campos de calidad y seguridad
     data_quality_score:     Optional[float] = None
-    market_confidence_tier: Optional[str]   = None # 'segmented', 'hybrid', 'global'
-    market_variance_tier:   Optional[str]   = None # 'low', 'medium', 'high'
+    
+    # Clasificación de Mercado
+    market_confidence_tier: Optional[str]   = None 
+    market_variance_tier:   Optional[str]   = None 
+    
+    # Flags de Decisión
     is_publishable:        bool = False
     is_high_confidence:    bool = False
     success:               Optional[bool] = None
+    display_score:         Optional[float] = None
     push_prob:             Optional[float] = None
+    
+    # Staking
+    kelly_fraction:        Optional[float] = None
+    sample_size_weight:    Optional[float] = None
 
 
 class StatComparison(BaseModel):
@@ -395,16 +411,63 @@ def _poisson_pmf(lam: float, k: int) -> float:
 
 def _fair_probabilities_from_odds(*odds_list: float | None) -> list[float]:
     """
-    Remueve el overround de un mercado completo y devuelve probs justas (suman 100).
-    Funciona para 1X2, O/U, BTTS, etc.
+    Remueve el overround de un mercado completo usando el Power Method (Shin/Margin Proportional).
+    Este método es superior a la normalización simple porque asigna proporcionalmente 
+    más margen a las cuotas altas (underdogs), corrigiendo parcialmente el FLB.
     """
-    raw = [(1.0 / o) for o in odds_list if o and o > 1.0]
-    total = sum(raw)
-    if total <= 0:
+    valid_odds = [o for o in odds_list if o and o > 1.0]
+    if not valid_odds:
         return [0.0] * len(odds_list)
-    # Normalizar a 100%
-    normalized = [(r / total) * 100.0 for r in raw]
-    return normalized
+    
+    # Cálculo iterativo de k (Power Method)
+    # SUM( (1/odds_i)^k ) = 1
+    k = 1.0
+    raw_probs = [1.0/o for o in valid_odds]
+    
+    # Búsqueda simple de k (Newton-Raphson simplificado o aproximación)
+    for _ in range(10):
+        current_sum = sum(p**k for p in raw_probs)
+        if abs(current_sum - 1.0) < 0.0001:
+            break
+        k = k * (math.log(current_sum) / math.log(sum(raw_probs)) if sum(raw_probs) > 1 else 1)
+
+    normalized = [(p**k) * 100.0 for p in raw_probs]
+    
+    # Mapear de vuelta a la lista original (preservando None)
+    result = []
+    idx = 0
+    for o in odds_list:
+        if o and o > 1.0:
+            result.append(normalized[idx])
+            idx += 1
+        else:
+            result.append(0.0)
+    return result
+
+def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float:
+    """
+    Capa de Calibración Post-Hoc.
+    Implementa una Beta Calibration heurística para corregir la sobreconfianza de Poisson.
+    Penaliza cuotas altas y edges extremos que históricamente rinden mal.
+    """
+    p = raw_prob / 100.0
+    
+    # 1. Ajuste Heurístico de Curvatura (Beta Calibration Proxy)
+    # p_cal = a * p^b / (a * p^b + (1-p)^b)
+    # b < 1 aplana la curva (reduce sobreconfianza en los extremos)
+    b = 0.85 
+    if market_family in {"corners", "cards", "shots"}:
+        b = 0.75 # Más incertidumbre en mercados secundarios
+    
+    calibrated = (p**b) / (p**b + (1-p)**b)
+    
+    # 2. Penalización por cuota (Favorite-Longshot Bias Correction)
+    if odds > 3.0:
+        calibrated *= 0.92 # Los underdogs suelen estar sobreestimados por el modelo
+    elif odds > 2.0:
+        calibrated *= 0.96
+        
+    return calibrated * 100.0
 
 # Y en _value_indicator, pasar el overround del mercado:
 def get_market_confidence_tier(selection: str) -> str:
@@ -446,90 +509,166 @@ def get_data_quality_score(selection: str, h: FootballTeamStats, a: FootballTeam
         
     return max(5.0, base - sample_penalty)
 
+def _calculate_display_score(v: ValueIndicator) -> float:
+    """
+    Calcula un score compuesto para visualización y ranking (0-100).
+    Integra probabilidad, edge, calidad de datos y estabilidad.
+    """
+    if v.calibrated_prob is None or v.edge_ev is None:
+        return 0.0
+        
+    # 1. Probabilidad Calibrada (w=0.4)
+    # Una prob del 100% daría 40 puntos
+    s_prob = v.calibrated_prob * 0.4
+    
+    # 2. Edge EV (w=0.3)
+    # Un edge del 10% (0.10) daría 30 puntos (0.10 * 100 * 3)
+    # Capamos el edge en 15% para el score
+    edge_capped = max(0, min(0.15, v.edge_ev))
+    s_edge = (edge_capped * 100) * 2.0 # w=0.3 aproximado
+    
+    # 3. Calidad de Datos (w=0.1)
+    s_data = (v.data_quality_score or 50.0) * 0.1
+    
+    # 4. Estabilidad Histórica del Segmento (w=0.2)
+    # Por ahora basado en la cuota (las cuotas bajas son más estables)
+    s_stability = 70.0
+    if v.odds:
+        if v.odds < 1.60: s_stability = 90.0
+        elif v.odds > 2.50: s_stability = 40.0
+    
+    final_score = s_prob + s_edge + s_data + (s_stability * 0.2)
+    return round(min(100.0, final_score), 1)
+
 def is_publishable_pick(v: ValueIndicator) -> bool:
-    """Filtro balanceado para determinar si un pick es apto para recomendación profesional."""
-    # 1. Probabilidad mínima absoluta
-    if v.model_prob < 54.0: return False # Restaurado a 54
-    
-    # 2. Edge mínimo real
-    if v.edge < 2.5: return False # Restaurado a 2.5
-    
-    # 3. Calidad de datos mínima
-    if v.data_quality_score is not None and v.data_quality_score < 45: # Restaurado a 45
+    """
+    Filtro profesional equilibrado. 
+    Relajado para permitir visibilidad manteniendo la ventaja estadística.
+    """
+    # 1. Ventana de Cuotas (Gestión de Varianza)
+    # Rango ampliado: 1.40 - 2.50
+    if v.odds is None or v.odds < 1.4 or v.odds > 2.50:
         return False
-        
-    # 4. Reglas específicas por mercado
+
+    # 2. Umbral de Probabilidad Calibrada
     family = _market_family(v.selection)
+    is_binary = family in {"result", "btts", "goals"}
     
-    # Mercados secundarios (Tarjetas, Corners, Tiros)
-    if family in {"cards", "shots", "fouls", "corners"}:
-        # Suavizamos los umbrales para permitir más picks en estos mercados
-        if v.edge < 5.5: return False # Restaurado a 5.5
-        if v.model_prob < 56.0: return False # Restaurado a 56
-        # Si no hay buen respaldo estadístico, descartar
-        if v.stat_support is not None and v.stat_support < 53: # Restaurado a 53
-            return False
-            
-    # 5. Penalización por cuota alta (Riesgo de Ruina)
-    if v.odds is not None:
-        if v.odds > 3.5: return False # Restaurado a 3.5
-        if v.odds > 2.50 and v.edge < 6.5: return False # Restaurado
-        
-    # 6. Score estratégico mínimo
-    if v.strategic_score is not None and v.strategic_score < 40: # Restaurado a 40
+    prob = v.calibrated_prob if v.calibrated_prob is not None else v.model_prob
+    
+    # 60% para binarios, 35% para volátiles
+    if is_binary and prob < 60.0:
+        return False
+    if not is_binary and prob < 35.0:
+        return False
+
+    # 3. Ventana de Edge Utilizable (ROI Esperado)
+    # Bajamos a 2% (0.02) que es el estándar de valor profesional
+    if v.edge_ev < 0.02 or v.edge_ev > 0.20:
+        return False
+
+    # 4. Calidad de Datos
+    if v.data_quality_score is not None and v.data_quality_score < 50:
         return False
         
     return True
+
+
+
+def score_pick_quality(v: ValueIndicator) -> int:
+    """Rankea la calidad del pick de 0 a 100."""
+    if not v.edge_ev: return 0
+    
+    # Componente principal: EV (60%)
+    ev_score = min(v.edge_ev * 200, 60) # 30% EV -> 60 pts
+    
+    # Componente Probabilidad (20%)
+    prob_score = (v.calibrated_prob or v.model_prob) / 5.0
+    
+    # Componente Calidad Datos (20%)
+    dq_score = (v.data_quality_score or 50) / 5.0
+    
+    total = int(ev_score + prob_score + dq_score)
+    return min(max(total, 0), 100)
 
 def is_high_confidence_pick(v: ValueIndicator) -> bool:
-    """Detecta picks con probabilidad muy alta (>75%) que pueden no tener edge."""
-    # 1. Umbral de probabilidad alta
-    if v.model_prob < 65.0: return False
+    """
+    Detecta picks con probabilidad muy alta (>=75%) que NO tienen edge matemático claro (<2%).
+    Estos son los picks 'estrella' (⭐) que son muy probables pero no están bien pagados por la casa.
+    """
+    # 1. Umbral de probabilidad alta (>=75%)
+    if v.model_prob < 75.0:
+        return False
     
-    # 2. Evitar picks que ya son value (para no duplicar en el apartado nuevo)
-    if v.is_value: return False
+    # 2. Restricción de Edge: Solo si NO tiene un edge claro (< 2%)
+    # Si tiene un edge >= 2%, debería ser un pick de valor profesional o descartado.
+    if v.edge_ev >= 0.02:
+        return False
     
     # 3. Filtros básicos de calidad
-    if v.data_quality_score is not None and v.data_quality_score < 40:
+    if v.data_quality_score is not None and v.data_quality_score < 50:
         return False
         
     return True
 
+
+
 def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0):
-    if odds is None:
+    if odds is None or odds <= 1.0:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
         
+    # 1. Calibración Post-Hoc
+    family = _market_family(sel)
+    calibrated_p = apply_calibration(modelp, odds, family)
+    
+    # 2. Mercado y Vig
     raw_implied = (1.0 / odds) * 100.0
-    # El edge se calcula contra la cuota bruta (lo que el usuario ve)
-    edge = modelp - raw_implied
+    # Nota: Aquí idealmente usaríamos implied_prob_no_vig si tuviéramos el mercado completo.
+    # Por ahora aproximamos no-vig asumiendo un margin estándar del 5% si no viene especificado.
+    margin_factor = (overround / 100.0) if overround > 100 else 1.05
+    implied_no_vig = raw_implied / margin_factor
+    
+    # 3. Métricas de Valor
+    edge_prob = calibrated_p - raw_implied
+    ev = (calibrated_p / 100.0 * odds) - 1.0
+    
+    # 4. Kelly Criterion (Fractional Kelly 1/8 para máxima seguridad)
+    kelly = (ev / (odds - 1)) * 0.125 if ev > 0 else 0
     
     # Metadatos de calidad
     conf_tier = get_market_confidence_tier(sel)
     var_tier = get_market_variance_tier(sel)
     dq_score = get_data_quality_score(sel, h, a) if h and a else None
     
-    is_val = edge > 2.0
-    
-    if   edge > 7.0:  rating = "🔥 STRONG VALUE"
-    elif edge > 3.5:  rating = "✅ VALUE"
-    elif edge > 1.5:  rating = "⚖️ MARGINAL"
-    else:             rating = "❌ NO VALUE"
+    # 5. Sistema de Rating Basado en EV
+    if   ev > 0.15:  rating = "🔥 STRONG VALUE"
+    elif ev > 0.07:  rating = "✅ VALUE"
+    elif ev > 0.02:  rating = "⚖️ MARGINAL"
+    else:            rating = "❌ NO VALUE"
     
     v = ValueIndicator(
         selection=sel,
         odds=odds,
-        implied_prob=round(raw_implied, 1),
         model_prob=round(modelp, 1),
+        calibrated_prob=round(calibrated_p, 1),
+        implied_prob=round(raw_implied, 1),
+        implied_prob_no_vig=round(implied_no_vig, 1),
+        fair_odds=round(100.0 / calibrated_p, 2) if calibrated_p > 0 else None,
+        edge=round(edge_prob, 1),
+        edge_ev=round(ev, 3),
         push_prob=round(push_p, 1),
-        edge=round(edge, 1),
-        is_value=is_val,
+        is_value=ev > 0.03, # Umbral de explotación real
         rating=rating,
         data_quality_score=dq_score,
         market_confidence_tier=conf_tier,
-        market_variance_tier=var_tier
+        market_variance_tier=var_tier,
+        kelly_fraction=round(kelly, 4),
+        sample_size_weight=min(1.0, (h.matches_played + a.matches_played) / 30.0) if h and a else 0.5
     )
     
     v.is_publishable = is_publishable_pick(v)
+    v.quality_score = score_pick_quality(v)
+    v.display_score = _calculate_display_score(v)
     v.is_high_confidence = is_high_confidence_pick(v)
     return v
 
