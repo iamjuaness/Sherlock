@@ -6,7 +6,7 @@
     <title>Sherlock – Comparador de Apuestas Deportivas</title>
     <meta
       name="description"
-      content="Compara equipos y detecta value bets en fútbol, NBA y tenis."
+      content="Compara equipos y detecta value bets en fútbol."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
@@ -31,8 +31,6 @@
     <nav class="tabs">
       <div class="tabs__links">
         <button class="tab tab--active" data-sport="football">⚽ Fútbol</button>
-        <button class="tab" data-sport="nba">🏀 NBA</button>
-        <button class="tab" data-sport="tennis">🎾 Tenis</button>
       </div>
       <div style="display: flex; gap: 0.5rem">
         <button class="btn-history" onclick="toggleStatsModal()">
@@ -47,6 +45,42 @@
     <main class="main">
       <!-- ═══ FOOTBALL ═══ -->
       <section class="panel panel--active" id="panel-football">
+        <div
+          id="editing-indicator"
+          style="
+            display: none;
+            align-items: center;
+            justify-content: space-between;
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid rgba(245, 158, 11, 0.3);
+            padding: 0.75rem 1rem;
+            border-radius: 8px;
+            margin: 0 1rem 1.5rem 1rem;
+            color: #f59e0b;
+            font-weight: 500;
+            font-size: 0.9rem;
+          "
+        >
+          <span
+            >📝 Editando registro de historial:
+            <strong id="editing-match-name"></strong
+          ></span>
+          <button
+            type="button"
+            class="btn-preset"
+            style="
+              padding: 0.25rem 0.5rem;
+              font-size: 0.8rem;
+              background: rgba(245, 158, 11, 0.2);
+              border: 1px solid rgba(245, 158, 11, 0.4);
+              color: #f59e0b;
+              cursor: pointer;
+            "
+            onclick="cancelEditing()"
+          >
+            Cancelar Edición
+          </button>
+        </div>
         <div
           class="comparator-header"
           style="
@@ -1041,6 +1075,40 @@
             </div>
           </div>
 
+          <!-- Doble Oportunidad (DC) -->
+          <div class="stats-grid" style="margin-bottom: 1.5rem">
+            <div class="form-group">
+              <label>DC 1X</label>
+              <input
+                type="number"
+                step="0.01"
+                id="fb-odds-dc-1x"
+                class="input"
+                placeholder="Ej: 1.25"
+              />
+            </div>
+            <div class="form-group">
+              <label>DC X2</label>
+              <input
+                type="number"
+                step="0.01"
+                id="fb-odds-dc-x2"
+                class="input"
+                placeholder="Ej: 1.80"
+              />
+            </div>
+            <div class="form-group">
+              <label>DC 12</label>
+              <input
+                type="number"
+                step="0.01"
+                id="fb-odds-dc-12"
+                class="input"
+                placeholder="Ej: 1.30"
+              />
+            </div>
+          </div>
+
           <!-- Tablas multi-línea -->
           <div
             style="
@@ -1651,1016 +1719,6 @@
         </div>
       </section>
 
-      <!-- ═══ NBA ═══ -->
-      <section class="panel" id="panel-nba">
-        <div class="comparator">
-          <div class="comparator__team">
-            <div class="team-header team-header--home">
-              <span class="team-badge">🏠</span>
-              <h2>Local</h2>
-            </div>
-            <div class="form-group">
-              <label>Nombre</label>
-              <input
-                type="text"
-                id="nba-home-name"
-                placeholder="Lakers"
-                class="input"
-              />
-            </div>
-            <div class="stats-grid">
-              <div class="form-group">
-                <label>PTS/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-points"
-                  placeholder="112.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>REB/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-rebounds"
-                  placeholder="44.2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>AST/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-assists"
-                  placeholder="25.3"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>TOV/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-turnovers"
-                  placeholder="13.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>FG %</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-fg"
-                  placeholder="47.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>3PT %</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-3pt"
-                  placeholder="36.2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>FT %</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-ft"
-                  placeholder="78.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>P. Contra</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-points-allowed"
-                  placeholder="110.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Ortg</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-ortg"
-                  placeholder="115.2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Drtg</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-drtg"
-                  placeholder="112.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Robos</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-steals"
-                  placeholder="7.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tapones</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-blocks"
-                  placeholder="5.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Net Rtg</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-netrtg"
-                  placeholder="3.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Ritmo</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-pace"
-                  placeholder="99.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>3PT Int/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-3pt-att"
-                  placeholder="35.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tap. Recibidos</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-home-blocks-allowed"
-                  placeholder="4.5"
-                  class="input"
-                />
-              </div>
-            </div>
-            <div class="record-grid record-grid--2">
-              <div class="form-group">
-                <label>Ganados</label>
-                <input
-                  type="number"
-                  id="nba-home-wins"
-                  placeholder="10"
-                  class="input input--win"
-                />
-              </div>
-              <div class="form-group">
-                <label>Perdidos</label>
-                <input
-                  type="number"
-                  id="nba-home-losses"
-                  placeholder="5"
-                  class="input input--loss"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div class="comparator__vs"><span>VS</span></div>
-
-          <div class="comparator__team">
-            <div class="team-header team-header--away">
-              <span class="team-badge">✈️</span>
-              <h2>Visitante</h2>
-            </div>
-            <div class="form-group">
-              <label>Nombre</label>
-              <input
-                type="text"
-                id="nba-away-name"
-                placeholder="Celtics"
-                class="input"
-              />
-            </div>
-            <div class="stats-grid">
-              <div class="form-group">
-                <label>PTS/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-points"
-                  placeholder="115.8"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>REB/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-rebounds"
-                  placeholder="42.7"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>AST/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-assists"
-                  placeholder="27.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>TOV/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-turnovers"
-                  placeholder="12.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>FG %</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-fg"
-                  placeholder="48.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>3PT %</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-3pt"
-                  placeholder="38.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>FT %</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-ft"
-                  placeholder="80.2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>P. Contra</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-points-allowed"
-                  placeholder="110.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Ortg</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-ortg"
-                  placeholder="115.2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Drtg</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-drtg"
-                  placeholder="112.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Robos</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-steals"
-                  placeholder="7.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tapones</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-blocks"
-                  placeholder="5.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Net Rtg</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-netrtg"
-                  placeholder="3.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Ritmo</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-pace"
-                  placeholder="99.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>3PT Int/G</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-3pt-att"
-                  placeholder="35.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tap. Recibidos</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="nba-away-blocks-allowed"
-                  placeholder="4.5"
-                  class="input"
-                />
-              </div>
-            </div>
-            <div class="record-grid record-grid--2">
-              <div class="form-group">
-                <label>Ganados</label>
-                <input
-                  type="number"
-                  id="nba-away-wins"
-                  placeholder="11"
-                  class="input input--win"
-                />
-              </div>
-              <div class="form-group">
-                <label>Perdidos</label>
-                <input
-                  type="number"
-                  id="nba-away-losses"
-                  placeholder="4"
-                  class="input input--loss"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- NBA Odds & HCA -->
-        <div
-          class="odds-row"
-          style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap"
-        >
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Cuota Local</label>
-            <input
-              type="number"
-              step="0.01"
-              id="nba-odds-home"
-              placeholder="1.90"
-              class="input"
-            />
-          </div>
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Cuota Visitante</label>
-            <input
-              type="number"
-              step="0.01"
-              id="nba-odds-away"
-              placeholder="1.90"
-              class="input"
-            />
-          </div>
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Casa de Apuestas</label>
-            <input
-              type="text"
-              id="nba-bookmaker"
-              placeholder="Bet365"
-              class="input"
-            />
-          </div>
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Ventaja Local (Pts)</label>
-            <input
-              type="number"
-              step="0.5"
-              id="nba-hca"
-              placeholder="3.0"
-              value="3.0"
-              class="input"
-            />
-          </div>
-        </div>
-        <button class="btn-analyze" onclick="analyzeNBA()">
-          🔍 Analizar Comparación
-        </button>
-        <div class="preset-actions">
-          <button class="btn-preset" onclick="saveToDB()">
-            ☁️ Guardar en BD
-          </button>
-          <button class="btn-preset" onclick="saveNBAPreset()">
-            💾 Exportar JSON
-          </button>
-          <label class="btn-preset btn-preset--upload">
-            📂 Cargar JSON
-            <input
-              type="file"
-              id="nba-preset-file"
-              accept="application/json"
-              onchange="loadNBAPreset(event)"
-              hidden
-            />
-          </label>
-        </div>
-      </section>
-
-      <!-- ═══ TENIS ═══ -->
-      <section class="panel" id="panel-tennis">
-        <div class="comparator comparator--tennis">
-          <div class="comparator__team">
-            <div class="team-header team-header--home">
-              <span class="team-badge">🎾</span>
-              <h2>Jugador 1</h2>
-            </div>
-            <div class="form-group">
-              <label>Nombre</label>
-              <input
-                type="text"
-                id="tennis-p1-name"
-                placeholder="Jugador 1"
-                class="input"
-              />
-            </div>
-            <div class="stats-grid stats-grid--tennis">
-              <!-- Perfil -->
-              <div class="form-group">
-                <label>Edad</label>
-                <input
-                  type="number"
-                  id="tennis-p1-age"
-                  placeholder="25"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Altura (cm)</label>
-                <input
-                  type="number"
-                  id="tennis-p1-height"
-                  placeholder="185"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Mano</label>
-                <select id="tennis-p1-hand" class="input">
-                  <option value="Right">Diestro</option>
-                  <option value="Left">Zurdo</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Ranking ATP</label>
-                <input
-                  type="number"
-                  id="tennis-p1-rank"
-                  placeholder="10"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Partidos ganados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-matches-won"
-                  placeholder="25"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Partidos totales</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-total-matches"
-                  placeholder="30"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Torneos ganados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-tournaments-won"
-                  placeholder="2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Torneos jugados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-total-tournaments"
-                  placeholder="10"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% 1er servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p1-first-serve-pct"
-                  placeholder="63.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% puntos 1er servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p1-first-serve-points-won"
-                  placeholder="72.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% 2do servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p1-second-serve-pct"
-                  placeholder="95.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% puntos 2do servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p1-second-serve-points-won"
-                  placeholder="52.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Aces/partido</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p1-aces"
-                  placeholder="7.2"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Dobles faltas/partido</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p1-df"
-                  placeholder="3.1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Break points salvados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-bp-saved"
-                  placeholder="40"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Total BP en contra</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-bp-saved-total"
-                  placeholder="60"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Break points convertidos</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-bp-converted"
-                  placeholder="35"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Total BP a favor</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-bp-converted-total"
-                  placeholder="70"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tiebreaks ganados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-tiebreak-won"
-                  placeholder="8"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tiebreaks totales</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-tiebreak-total"
-                  placeholder="12"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>W Surface</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-surface-won"
-                  placeholder="15"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Total Surface</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p1-surface-total"
-                  placeholder="20"
-                  class="input"
-                />
-              </div>
-            </div>
-          </div>
-
-          <div class="comparator__vs"><span>VS</span></div>
-
-          <div class="comparator__team">
-            <div class="team-header team-header--away">
-              <span class="team-badge">🎾</span>
-              <h2>Jugador 2</h2>
-            </div>
-            <div class="form-group">
-              <label>Nombre</label>
-              <input
-                type="text"
-                id="tennis-p2-name"
-                placeholder="Jugador 2"
-                class="input"
-              />
-            </div>
-            <div class="stats-grid stats-grid--tennis">
-              <!-- Perfil -->
-              <div class="form-group">
-                <label>Edad</label>
-                <input
-                  type="number"
-                  id="tennis-p2-age"
-                  placeholder="28"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Altura (cm)</label>
-                <input
-                  type="number"
-                  id="tennis-p2-height"
-                  placeholder="188"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Mano</label>
-                <select id="tennis-p2-hand" class="input">
-                  <option value="Right">Diestro</option>
-                  <option value="Left">Zurdo</option>
-                </select>
-              </div>
-              <div class="form-group">
-                <label>Ranking ATP</label>
-                <input
-                  type="number"
-                  id="tennis-p2-rank"
-                  placeholder="5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Partidos ganados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-matches-won"
-                  placeholder="22"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Partidos totales</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-total-matches"
-                  placeholder="30"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Torneos ganados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-tournaments-won"
-                  placeholder="1"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Torneos jugados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-total-tournaments"
-                  placeholder="10"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% 1er servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p2-first-serve-pct"
-                  placeholder="61.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% puntos 1er servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p2-first-serve-points-won"
-                  placeholder="70.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% 2do servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p2-second-serve-pct"
-                  placeholder="95.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>% puntos 2do servicio</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p2-second-serve-points-won"
-                  placeholder="50.0"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Aces/partido</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p2-aces"
-                  placeholder="6.5"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Dobles faltas/partido</label>
-                <input
-                  type="number"
-                  step="0.1"
-                  id="tennis-p2-df"
-                  placeholder="3.4"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Break points salvados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-bp-saved"
-                  placeholder="32"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Total BP en contra</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-bp-saved-total"
-                  placeholder="55"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Break points convertidos</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-bp-converted"
-                  placeholder="30"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Total BP a favor</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-bp-converted-total"
-                  placeholder="65"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tiebreaks ganados</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-tiebreak-won"
-                  placeholder="7"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Tiebreaks totales</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-tiebreak-total"
-                  placeholder="12"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>W Surface</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-surface-won"
-                  placeholder="12"
-                  class="input"
-                />
-              </div>
-              <div class="form-group">
-                <label>Total Surface</label>
-                <input
-                  type="number"
-                  step="1"
-                  id="tennis-p2-surface-total"
-                  placeholder="20"
-                  class="input"
-                />
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Tennis Odds & Surface -->
-        <div
-          class="odds-row"
-          style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap"
-        >
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Cuota P1</label>
-            <input
-              type="number"
-              step="0.01"
-              id="tennis-odds-p1"
-              placeholder="1.85"
-              class="input"
-            />
-          </div>
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Cuota P2</label>
-            <input
-              type="number"
-              step="0.01"
-              id="tennis-odds-p2"
-              placeholder="1.85"
-              class="input"
-            />
-          </div>
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Casa de Apuestas</label>
-            <input
-              type="text"
-              id="tennis-bookmaker"
-              placeholder="Pinnacle"
-              class="input"
-            />
-          </div>
-          <div class="form-group" style="flex: 1; min-width: 150px">
-            <label>Superficie</label>
-            <select id="tennis-surface" class="input">
-              <option value="hard">Hard</option>
-              <option value="clay">Clay</option>
-              <option value="grass">Grass</option>
-              <option value="indoor">Indoor</option>
-            </select>
-          </div>
-        </div>
-
-        <button class="btn-analyze" onclick="analyzeTennis()">
-          🔍 Analizar Comparación
-        </button>
-        <div class="preset-actions">
-          <button class="btn-preset" onclick="saveToDB()">
-            ☁️ Guardar en BD
-          </button>
-          <button class="btn-preset" onclick="saveTennisPreset()">
-            💾 Exportar JSON
-          </button>
-          <label class="btn-preset btn-preset--upload">
-            📂 Cargar JSON
-            <input
-              type="file"
-              id="tennis-preset-file"
-              accept="application/json"
-              onchange="loadTennisPreset(event)"
-              hidden
-            />
-          </label>
-        </div>
-      </section>
-
       <!-- ═══ RESULTADOS / SHERLOCK ═══ -->
       <!-- Searching Indicator -->
       <div id="searching-step" class="searching-container">
@@ -2684,11 +1742,44 @@
               </div>
             </div>
 
+            <!-- Nuevo apartado: Underdog -->
+            <div
+              class="card"
+              id="underdog-card"
+              style="display: none; border-left: 4px solid #8b5cf6"
+            >
+              <h3>🦄 Picks Underdog (Altas Cuotas)</h3>
+              <p
+                style="
+                  font-size: 0.8rem;
+                  color: var(--text-dim);
+                  margin-bottom: 1rem;
+                "
+              >
+                Picks con cuota alta (>2.50), ventaja estadística (Edge ≥2%) y
+                calidad de datos aceptable.
+              </p>
+              <div id="underdog-grid" class="multi-line-grid">
+                <!-- Se llenará desde JS -->
+              </div>
+            </div>
+
             <!-- Nuevo apartado: High Confidence -->
-            <div class="card" id="high-confidence-card" style="display: none; border-left: 4px solid #f59e0b;">
+            <div
+              class="card"
+              id="high-confidence-card"
+              style="display: none; border-left: 4px solid #f59e0b"
+            >
               <h3>⭐ Picks de Alta Confianza (Sin Edge)</h3>
-              <p style="font-size: 0.8rem; color: var(--text-dim); margin-bottom: 1rem;">
-                Picks con probabilidad ≥75% según el modelo, pero sin ventaja estadística (Edge) suficiente.
+              <p
+                style="
+                  font-size: 0.8rem;
+                  color: var(--text-dim);
+                  margin-bottom: 1rem;
+                "
+              >
+                Picks con probabilidad ≥75% según el modelo, pero sin ventaja
+                estadística (Edge) suficiente.
               </p>
               <div id="high-confidence-grid" class="multi-line-grid">
                 <!-- Se llenará desde JS -->
@@ -2726,6 +1817,49 @@
                 "
               >
                 <canvas id="prob-chart"></canvas>
+              </div>
+              <!-- Marcador más probable -->
+              <div
+                id="most-probable-score-box"
+                style="
+                  display: none;
+                  margin-top: 1rem;
+                  text-align: center;
+                  padding: 0.75rem;
+                  background: rgba(99, 102, 241, 0.12);
+                  border-radius: 10px;
+                  border: 1px solid rgba(99, 102, 241, 0.25);
+                "
+              >
+                <div
+                  style="
+                    font-size: 0.75rem;
+                    color: var(--text-dim);
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                    margin-bottom: 0.25rem;
+                  "
+                >
+                  🎯 Resultado más probable
+                </div>
+                <div
+                  id="most-probable-score-value"
+                  style="
+                    font-size: 1.6rem;
+                    font-weight: 800;
+                    color: var(--accent);
+                  "
+                >
+                  0 - 0
+                </div>
+                <div
+                  id="most-probable-score-result"
+                  style="
+                    margin-top: 0.35rem;
+                    font-size: 0.8rem;
+                    font-weight: 600;
+                  "
+                ></div>
               </div>
             </div>
 
@@ -2861,8 +1995,6 @@
           >
             <option value="">Todos los deportes</option>
             <option value="football">Fútbol</option>
-            <option value="basketball">NBA</option>
-            <option value="tennis">Tenis</option>
           </select>
           <div
             style="
@@ -2892,10 +2024,14 @@
               style="font-size: 0.8rem; flex: 1; min-width: 0; padding: 0.4rem"
             />
           </div>
-          <button 
-            class="btn-preset" 
-            onclick="recalculateAllHistoryAccuracy()" 
-            style="background: rgba(99, 102, 241, 0.2); border: 1px solid var(--accent); white-space: nowrap;"
+          <button
+            class="btn-preset"
+            onclick="recalculateAllHistoryAccuracy()"
+            style="
+              background: rgba(99, 102, 241, 0.2);
+              border: 1px solid var(--accent);
+              white-space: nowrap;
+            "
             title="Recalcula el acierto de todos los partidos con resultado guardado"
           >
             🔄 Recalcular Todo
@@ -2908,7 +2044,7 @@
               <thead>
                 <tr>
                   <th>Fecha</th>
-                  <th>Deporte</th>
+                  <th>Competición</th>
                   <th>Encuentro</th>
                   <th>Acierto</th>
                   <th>Acción</th>
@@ -2952,22 +2088,85 @@
               Resumen General
             </button>
             <button
+              id="tab-btn-picks"
+              class="tab-btn"
+              onclick="switchStatsTab('picks')"
+            >
+              Historial de Picks
+            </button>
+            <button
               id="tab-btn-advanced"
               class="tab-btn"
               onclick="switchStatsTab('advanced')"
             >
               Análisis Detallado
             </button>
+            <button
+              id="tab-btn-leagues-markets"
+              class="tab-btn"
+              onclick="switchStatsTab('leagues-markets')"
+            >
+              Ligas y Mercados
+            </button>
           </div>
 
           <!-- Tab: General -->
           <div id="stats-tab-general" class="stats-tab-content">
+            <!-- Category Selector -->
+            <div
+              class="category-selector-container"
+              style="
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+                background: rgba(255, 255, 255, 0.03);
+                padding: 0.5rem 1rem;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+              "
+            >
+              <span
+                style="
+                  font-size: 0.9rem;
+                  color: var(--text-dim);
+                  font-weight: 500;
+                "
+                >Categoría:</span
+              >
+              <div style="display: flex; gap: 0.5rem">
+                <button
+                  class="tab-btn active"
+                  data-category="professional"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('professional')"
+                >
+                  💼 Profesional
+                </button>
+                <button
+                  class="tab-btn"
+                  data-category="underdog"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('underdog')"
+                >
+                  🦄 Underdog
+                </button>
+                <button
+                  class="tab-btn"
+                  data-category="high_confidence"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('high_confidence')"
+                >
+                  ⭐ Confianza sin Edge
+                </button>
+              </div>
+            </div>
             <!-- Summary Cards -->
             <div
               class="stats-grid"
               style="
                 display: grid;
-                grid-template-columns: repeat(4, 1fr);
+                grid-template-columns: repeat(5, 1fr);
                 gap: 1rem;
                 margin-bottom: 2rem;
               "
@@ -3076,33 +2275,103 @@
                   0%
                 </div>
               </div>
-            </div>
-
-            <div style="margin-bottom: 1.5rem">
-              <h4>📊 Desglose por Deporte</h4>
               <div
-                id="sport-stats-container"
+                class="stat-card"
                 style="
-                  display: flex;
-                  gap: 1rem;
-                  flex-wrap: wrap;
-                  margin-top: 0.5rem;
+                  background: rgba(234, 179, 8, 0.1);
+                  padding: 1rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(234, 179, 8, 0.2);
                 "
               >
-                <!-- Sport chips will be added here -->
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >En Espera</small
+                >
+                <div
+                  id="stat-total-pending"
+                  style="font-size: 1.5rem; font-weight: 700; color: #eab308"
+                >
+                  0
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Picks History -->
+          <div
+            id="stats-tab-picks"
+            class="stats-tab-content"
+            style="display: none"
+          >
+            <div
+              class="picks-filters"
+              style="
+                display: flex;
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+                background: rgba(255, 255, 255, 0.03);
+                padding: 0.75rem 1rem;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                align-items: center;
+                flex-wrap: wrap;
+              "
+            >
+              <div style="display: flex; align-items: center; gap: 0.5rem">
+                <span style="font-size: 0.9rem; color: var(--text-dim)"
+                  >Categoría:</span
+                >
+                <select
+                  id="pick-filter-category"
+                  onchange="filterDetailedPicksUI()"
+                  class="input"
+                  style="
+                    padding: 0.25rem 0.5rem;
+                    font-size: 0.85rem;
+                    width: 160px;
+                    height: auto;
+                    background: var(--bg-card);
+                  "
+                >
+                  <option value="all">Todas</option>
+                  <option value="professional">💼 Profesional</option>
+                  <option value="underdog">🦄 Underdog</option>
+                  <option value="high_confidence">⭐ Alta Confianza</option>
+                </select>
+              </div>
+
+              <div style="display: flex; align-items: center; gap: 0.5rem">
+                <span style="font-size: 0.9rem; color: var(--text-dim)"
+                  >Resultado:</span
+                >
+                <select
+                  id="pick-filter-result"
+                  onchange="filterDetailedPicksUI()"
+                  class="input"
+                  style="
+                    padding: 0.25rem 0.5rem;
+                    font-size: 0.85rem;
+                    width: 160px;
+                    height: auto;
+                    background: var(--bg-card);
+                  "
+                >
+                  <option value="all">Todos</option>
+                  <option value="hit">✅ Aciertos (Hits)</option>
+                  <option value="miss">❌ Fallos (Misses)</option>
+                  <option value="void">↩️ Push / Nulo (Void)</option>
+                  <option value="pending">⏳ En Espera (Pendientes)</option>
+                </select>
               </div>
             </div>
 
-            <hr
-              style="
-                border: none;
-                border-top: 1px solid var(--border);
-                margin: 1.5rem 0;
-              "
-            />
-
-            <h4>📋 Historial Detallado de Picks</h4>
-            <div style="max-height: 400px; overflow-y: auto; margin-top: 1rem">
+            <div style="max-height: 500px; overflow-y: auto">
               <table
                 class="table"
                 style="width: 100%; border-collapse: collapse"
@@ -3117,11 +2386,16 @@
                 >
                   <tr>
                     <th style="text-align: left; padding: 0.75rem">Fecha</th>
+                    <th style="text-align: left; padding: 0.75rem">
+                      Categoría
+                    </th>
                     <th style="text-align: left; padding: 0.75rem">Partido</th>
                     <th style="text-align: left; padding: 0.75rem">Pick</th>
                     <th style="text-align: center; padding: 0.75rem">Cuota</th>
                     <th style="text-align: center; padding: 0.75rem">EV (%)</th>
-                    <th style="text-align: center; padding: 0.75rem">Fair Odds</th>
+                    <th style="text-align: center; padding: 0.75rem">
+                      Fair Odds
+                    </th>
                     <th style="text-align: center; padding: 0.75rem">
                       Resultado
                     </th>
@@ -3140,6 +2414,55 @@
             class="stats-tab-content"
             style="display: none"
           >
+            <!-- Category Selector -->
+            <div
+              class="category-selector-container"
+              style="
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+                background: rgba(255, 255, 255, 0.03);
+                padding: 0.5rem 1rem;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+              "
+            >
+              <span
+                style="
+                  font-size: 0.9rem;
+                  color: var(--text-dim);
+                  font-weight: 500;
+                "
+                >Categoría:</span
+              >
+              <div style="display: flex; gap: 0.5rem">
+                <button
+                  class="tab-btn active"
+                  data-category="professional"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('professional')"
+                >
+                  💼 Profesional
+                </button>
+                <button
+                  class="tab-btn"
+                  data-category="underdog"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('underdog')"
+                >
+                  🦄 Underdog
+                </button>
+                <button
+                  class="tab-btn"
+                  data-category="high_confidence"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('high_confidence')"
+                >
+                  ⭐ Confianza sin Edge
+                </button>
+              </div>
+            </div>
             <!-- Odds Metrics -->
             <div
               class="stats-grid"
@@ -3147,7 +2470,7 @@
                 display: grid;
                 grid-template-columns: repeat(2, 1fr);
                 gap: 1rem;
-                margin-bottom: 2rem;
+                margin-bottom: 1.5rem;
               "
             >
               <div
@@ -3206,33 +2529,115 @@
               </div>
             </div>
 
+            <!-- New Metrics Row: Acierto, Yield, ROI -->
             <div
+              class="stats-grid"
               style="
                 display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 2rem;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 1rem;
+                margin-bottom: 2rem;
               "
             >
-              <!-- Markets -->
-              <div>
-                <h4 style="margin-bottom: 1rem">🏆 Mejores Mercados</h4>
-                <div id="best-markets-container" class="analytics-list"></div>
-
-                <h4 style="margin-bottom: 1rem; margin-top: 2rem">
-                  📉 Peores Mercados
-                </h4>
-                <div id="worst-markets-container" class="analytics-list"></div>
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(168, 85, 247, 0.05);
+                  padding: 1.25rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(168, 85, 247, 0.1);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Acierto Categoría</small
+                >
+                <div
+                  id="stat-category-accuracy"
+                  style="font-size: 1.75rem; font-weight: 700; color: #a855f7"
+                >
+                  0%
+                </div>
               </div>
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(59, 130, 246, 0.05);
+                  padding: 1.25rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(59, 130, 246, 0.1);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Yield</small
+                >
+                <div
+                  id="stat-yield"
+                  style="font-size: 1.75rem; font-weight: 700; color: #3b82f6"
+                >
+                  0.0%
+                </div>
+              </div>
+              <div
+                class="stat-card"
+                style="
+                  background: rgba(234, 179, 8, 0.05);
+                  padding: 1.25rem;
+                  border-radius: 12px;
+                  text-align: center;
+                  border: 1px solid rgba(234, 179, 8, 0.1);
+                "
+              >
+                <small
+                  style="
+                    color: var(--text-dim);
+                    display: block;
+                    margin-bottom: 0.5rem;
+                  "
+                  >Beneficio Neto (ROI)</small
+                >
+                <div
+                  id="stat-roi"
+                  style="font-size: 1.75rem; font-weight: 700; color: #eab308"
+                >
+                  0.00 u
+                </div>
+              </div>
+            </div>
 
-              <!-- Leagues and Teams -->
-              <div>
-                <h4 style="margin-bottom: 1rem">🌍 Mejores Ligas</h4>
-                <div id="best-leagues-container" class="analytics-list"></div>
-
-                <h4 style="margin-bottom: 1rem; margin-top: 2rem">
-                  ⚽ Mejores Equipos
-                </h4>
-                <div id="best-teams-container" class="analytics-list"></div>
+            <!-- Profit Chart Row -->
+            <div
+              style="
+                background: rgba(255, 255, 255, 0.02);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 12px;
+                padding: 1.5rem;
+                margin-bottom: 2rem;
+              "
+            >
+              <h4
+                style="
+                  margin-bottom: 1rem;
+                  display: flex;
+                  align-items: center;
+                  gap: 0.5rem;
+                "
+              >
+                📈 Gráfica de Profit (Evolución Diaria)
+              </h4>
+              <div style="width: 100%; height: 250px; position: relative">
+                <canvas id="profit-chart"></canvas>
               </div>
             </div>
 
@@ -3247,8 +2652,10 @@
               "
             >
               <!-- Bucket Metrics -->
-              <div style="grid-column: span 2;">
-                 <h3 style="margin-bottom: 1.5rem; color: var(--accent);">📊 Rendimiento por Categorías (Buckets)</h3>
+              <div style="grid-column: span 2">
+                <h3 style="margin-bottom: 1.5rem; color: var(--accent)">
+                  📊 Rendimiento por Categorías (Buckets)
+                </h3>
               </div>
 
               <!-- Odds Buckets -->
@@ -3264,9 +2671,124 @@
               </div>
 
               <!-- Confidence Buckets -->
-              <div style="grid-column: span 2;">
-                <h4 style="margin-bottom: 1rem">🧠 Por Confianza del Modelo (Probabilidad)</h4>
-                <div id="confidence-buckets-container" class="analytics-list" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem;"></div>
+              <div style="grid-column: span 2">
+                <h4 style="margin-bottom: 1rem">
+                  🧠 Por Confianza del Modelo (Probabilidad)
+                </h4>
+                <div
+                  id="confidence-buckets-container"
+                  class="analytics-list"
+                  style="
+                    display: grid;
+                    grid-template-columns: repeat(2, 1fr);
+                    gap: 1rem;
+                  "
+                ></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab: Leagues & Markets Analytics -->
+          <div
+            id="stats-tab-leagues-markets"
+            class="stats-tab-content"
+            style="display: none"
+          >
+            <!-- Category Selector -->
+            <div
+              class="category-selector-container"
+              style="
+                display: flex;
+                align-items: center;
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+                background: rgba(255, 255, 255, 0.03);
+                padding: 0.5rem 1rem;
+                border-radius: 8px;
+                border: 1px solid rgba(255, 255, 255, 0.05);
+              "
+            >
+              <span
+                style="
+                  font-size: 0.9rem;
+                  color: var(--text-dim);
+                  font-weight: 500;
+                "
+                >Categoría:</span
+              >
+              <div style="display: flex; gap: 0.5rem">
+                <button
+                  class="tab-btn active"
+                  data-category="professional"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('professional')"
+                >
+                  💼 Profesional
+                </button>
+                <button
+                  class="tab-btn"
+                  data-category="underdog"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('underdog')"
+                >
+                  🦄 Underdog
+                </button>
+                <button
+                  class="tab-btn"
+                  data-category="high_confidence"
+                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
+                  onclick="switchStatsCategory('high_confidence')"
+                >
+                  ⭐ Confianza sin Edge
+                </button>
+              </div>
+            </div>
+
+            <div
+              style="
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 2rem;
+              "
+            >
+              <!-- Markets -->
+              <div>
+                <h4 style="margin-bottom: 1rem">🏆 Mercados</h4>
+                <div
+                  id="best-markets-container"
+                  class="analytics-list"
+                  style="
+                    max-height: 400px;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                  "
+                ></div>
+              </div>
+
+              <!-- Leagues and Teams -->
+              <div>
+                <h4 style="margin-bottom: 1rem">🌍 Ligas</h4>
+                <div
+                  id="best-leagues-container"
+                  class="analytics-list"
+                  style="
+                    max-height: 200px;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                    margin-bottom: 2rem;
+                  "
+                ></div>
+
+                <h4 style="margin-bottom: 1rem">⚽ Mejores Equipos</h4>
+                <div
+                  id="best-teams-container"
+                  class="analytics-list"
+                  style="
+                    max-height: 200px;
+                    overflow-y: auto;
+                    overflow-x: hidden;
+                  "
+                ></div>
               </div>
             </div>
           </div>
@@ -3420,6 +2942,46 @@
                 <input
                   type="number"
                   id="res-shots-target-a"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🦵 Faltas Local</label>
+                <input
+                  type="number"
+                  id="res-fouls-h"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🦵 Faltas Visitante</label>
+                <input
+                  type="number"
+                  id="res-fouls-a"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🚩 Offsides Local</label>
+                <input
+                  type="number"
+                  id="res-offsides-h"
+                  class="input"
+                  placeholder="0"
+                  min="0"
+                />
+              </div>
+              <div class="form-group">
+                <label>🚩 Offsides Visitante</label>
+                <input
+                  type="number"
+                  id="res-offsides-a"
                   class="input"
                   placeholder="0"
                   min="0"

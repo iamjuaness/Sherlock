@@ -21,7 +21,6 @@ from src.core.domain import (
     Sport,
     StatLinePlayer,
     StatLineTeam,
-    Surface,
     Team,
 )
 from src.datasources.base import DataSourceAdapter
@@ -32,22 +31,6 @@ SOURCE_NAME = "manual"
 
 # Required columns for match import
 REQUIRED_COLUMNS = {"sport", "competition", "date", "home_team", "away_team"}
-
-# Optional columns
-OPTIONAL_COLUMNS = {
-    "home_score",
-    "away_score",
-    "venue",
-    "round",
-    "surface",
-    "odds_home",
-    "odds_draw",
-    "odds_away",
-    "over_under_line",
-    "over_odds",
-    "under_odds",
-    "bookmaker",
-}
 
 
 class ManualLoaderAdapter(DataSourceAdapter):
@@ -87,11 +70,6 @@ class ManualLoaderAdapter(DataSourceAdapter):
             "soccer": Sport.FOOTBALL,
             "fútbol": Sport.FOOTBALL,
             "futbol": Sport.FOOTBALL,
-            "basketball": Sport.BASKETBALL,
-            "nba": Sport.BASKETBALL,
-            "basket": Sport.BASKETBALL,
-            "tennis": Sport.TENNIS,
-            "tenis": Sport.TENNIS,
         }
         return mapping.get(value.strip().lower(), Sport.FOOTBALL)
 
@@ -158,13 +136,6 @@ class ManualLoaderAdapter(DataSourceAdapter):
                 source=SOURCE_NAME,
             )
 
-            surface = None
-            if "surface" in row and pd.notna(row.get("surface")):
-                try:
-                    surface = Surface(str(row["surface"]).lower())
-                except ValueError:
-                    surface = Surface.UNKNOWN
-
             match = Match(
                 sport=sport,
                 date=match_date,
@@ -172,7 +143,6 @@ class ManualLoaderAdapter(DataSourceAdapter):
                 away_score=_safe_int(row.get("away_score")),
                 venue=str(row.get("venue", "")) if pd.notna(row.get("venue")) else None,
                 round=str(row.get("round", "")) if pd.notna(row.get("round")) else None,
-                surface=surface,
                 source=SOURCE_NAME,
             )
             match._home_team_obj = home_team  # type: ignore[attr-defined]
@@ -240,16 +210,6 @@ class ManualLoaderAdapter(DataSourceAdapter):
     # ------------------------------------------------------------------
     # Stats (not available from manual files by default)
     # ------------------------------------------------------------------
-
-    async def fetch_team_stats(
-        self, match_id: str | None = None, **kwargs: Any
-    ) -> list[StatLineTeam]:
-        return []
-
-    async def fetch_player_stats(
-        self, match_id: str | None = None, **kwargs: Any
-    ) -> list[StatLinePlayer]:
-        return []
 
 
 def _safe_int(value: Any) -> int | None:

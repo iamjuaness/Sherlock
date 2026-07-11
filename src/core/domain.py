@@ -8,19 +8,20 @@ from __future__ import annotations
 
 import enum
 import uuid
+
 from datetime import date, datetime
 
 from sqlalchemy import (
-    Boolean,
     Column,
     DateTime,
     Enum,
     Float,
     ForeignKey,
-    Integer,
     String,
-    Text,
     UniqueConstraint,
+    Integer,
+    Boolean,
+    Text,
 )
 from sqlalchemy.orm import relationship
 
@@ -34,25 +35,11 @@ from src.core.database import Base
 
 class Sport(str, enum.Enum):
     FOOTBALL = "football"
-    NBA = "nba"
-    BASKETBALL = "basketball"
-    TENNIS = "tennis"
-
 
 class MarketType(str, enum.Enum):
     MONEYLINE = "moneyline"
     OVER_UNDER = "over_under"
     HANDICAP = "handicap"
-
-
-class Surface(str, enum.Enum):
-    """Tennis court surface."""
-
-    HARD = "hard"
-    CLAY = "clay"
-    GRASS = "grass"
-    INDOOR = "indoor"
-    UNKNOWN = "unknown"
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +80,7 @@ class Competition(Base):
 
 
 class Team(Base):
-    """Team (football/basketball) or player-as-team for tennis."""
+    """Team (football) or player-as-team."""
 
     __tablename__ = "teams"
 
@@ -152,9 +139,6 @@ class Match(Base):
     status = Column(String(30), nullable=True, default="scheduled")
     venue = Column(String(200), nullable=True)
     round = Column(String(50), nullable=True)
-
-    # Tennis-specific
-    surface = Column(Enum(Surface), nullable=True)
 
     external_id = Column(String(100), nullable=True)
     source = Column(String(50), nullable=True)
@@ -223,14 +207,6 @@ class StatLineTeam(Base):
     passes = Column(Integer, nullable=True)
     passes_accurate = Column(Integer, nullable=True)
 
-    # Basketball-specific
-    rebounds = Column(Integer, nullable=True)
-    assists = Column(Integer, nullable=True)
-    turnovers = Column(Integer, nullable=True)
-    field_goal_pct = Column(Float, nullable=True)
-    three_point_pct = Column(Float, nullable=True)
-    free_throw_pct = Column(Float, nullable=True)
-
     match = relationship("Match", back_populates="stat_lines_team")
     team = relationship("Team")
 
@@ -261,12 +237,6 @@ class StatLinePlayer(Base):
     blocks = Column(Integer, nullable=True)
     turnovers = Column(Integer, nullable=True)
     field_goal_pct = Column(Float, nullable=True)
-
-    # Tennis-specific
-    aces = Column(Integer, nullable=True)
-    double_faults = Column(Integer, nullable=True)
-    first_serve_pct = Column(Float, nullable=True)
-    break_points_won = Column(Integer, nullable=True)
 
     match = relationship("Match", back_populates="stat_lines_player")
     player = relationship("Player")
@@ -313,6 +283,10 @@ class AnalysisHistory(Base):
     final_shots_away = Column(Integer, nullable=True)
     final_shots_on_target_home = Column(Integer, nullable=True)
     final_shots_on_target_away = Column(Integer, nullable=True)
+    final_fouls_home = Column(Integer, nullable=True)
+    final_fouls_away = Column(Integer, nullable=True)
+    final_offsides_home = Column(Integer, nullable=True)
+    final_offsides_away = Column(Integer, nullable=True)
     accuracy_percentage = Column(Float, nullable=True)
 
     def __repr__(self) -> str:

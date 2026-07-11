@@ -1,7 +1,7 @@
 [project]
 name = "sherlock"
 version = "0.1.0"
-description = "Multi-sport analytics platform for football, NBA, and tennis with betting market analysis"
+description = "Multi-sport analytics platform for football with betting market analysis"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [

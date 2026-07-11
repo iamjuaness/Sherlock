@@ -79,6 +79,65 @@ let radarChart = null;
 let barChart = null;
 let probChart = null;
 let currentResults = null;
+let loadedHistoryEntryId = null;
+let loadedHistoryEntryDate = null;
+
+// ── Prefill polling (for browser extension integration) ─────────
+(function startPrefillPolling() {
+  const POLL_INTERVAL = 2500; // ms
+  let _prefillTimer = null;
+
+  async function checkPrefill() {
+    try {
+      const res = await fetch("/api/v1/prefill");
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data.pending && data.payload) {
+        const payload = data.payload;
+        const sport = payload.sport || "football";
+
+        // Show notification banner
+        showPrefillBanner(sport, payload);
+
+        // Fill in the form
+        populateAppForm(sport, payload);
+      }
+    } catch (_) {
+      /* silently ignore network errors */
+    }
+    _prefillTimer = setTimeout(checkPrefill, POLL_INTERVAL);
+  }
+
+  function showPrefillBanner(sport, payload) {
+    let existing = document.getElementById("prefill-banner");
+    if (existing) existing.remove();
+
+    const home = payload?.home?.name || "";
+    const away = payload?.away?.name || "";
+    const banner = document.createElement("div");
+    banner.id = "prefill-banner";
+    banner.style.cssText = `
+      position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
+      background: linear-gradient(135deg, #10b981, #059669);
+      color: #fff; padding: 0.9rem 1.4rem; border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(16,185,129,0.35);
+      font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 0.75rem;
+      animation: slideInRight 0.35s ease;
+    `;
+    banner.innerHTML = `
+      <span style="font-size:1.4rem">📥</span>
+      <div>
+        <div>Datos cargados desde extensión</div>
+        ${home && away ? `<div style="font-size:0.78rem; font-weight:400; opacity:0.9; margin-top:2px">${home} vs ${away}</div>` : ""}
+      </div>
+      <button onclick="this.parentElement.remove()" style="background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;margin-left:0.5rem;">✕</button>
+    `;
+    document.body.appendChild(banner);
+    setTimeout(() => banner && banner.remove(), 6000);
+  }
+
+  _prefillTimer = setTimeout(checkPrefill, 1500);
+})();
 
 // ── Helpers ──────────────────────────────────────────────────────
 function val(id) {
@@ -107,14 +166,18 @@ function showError(msg) {
 function renderMultiLineCards(values) {
   const grid = document.getElementById("multi-line-grid");
   const card = document.getElementById("multi-line-card");
+  const underdogGrid = document.getElementById("underdog-grid");
+  const underdogCard = document.getElementById("underdog-card");
   const hcGrid = document.getElementById("high-confidence-grid");
   const hcCard = document.getElementById("high-confidence-card");
 
   if (grid) grid.innerHTML = "";
+  if (underdogGrid) underdogGrid.innerHTML = "";
   if (hcGrid) hcGrid.innerHTML = "";
 
   if (!Array.isArray(values)) {
     if (card) card.style.display = "none";
+    if (underdogCard) underdogCard.style.display = "none";
     if (hcCard) hcCard.style.display = "none";
     return;
   }
@@ -122,7 +185,17 @@ function renderMultiLineCards(values) {
   // ── 1. Evaluar picks (Sincronizado con Backend) ──
   const valuePicks = values
     .filter((v) => v.selection && v.odds != null)
-    .filter((v) => v.is_value === true)
+    .filter((v) => v.is_value === true && v.is_underdog !== true) // Profesional
+    .sort((a, b) => {
+      const dqA = a.data_quality_score ?? 0;
+      const dqB = b.data_quality_score ?? 0;
+      if (dqB !== dqA) return dqB - dqA;
+      return (b.model_prob ?? 0) - (a.model_prob ?? 0);
+    });
+
+  const underdogPicks = values
+    .filter((v) => v.selection && v.odds != null)
+    .filter((v) => v.is_underdog === true)
     .sort((a, b) => {
       const dqA = a.data_quality_score ?? 0;
       const dqB = b.data_quality_score ?? 0;
@@ -137,6 +210,8 @@ function renderMultiLineCards(values) {
 
   // Control de visibilidad
   if (card) card.style.display = valuePicks.length > 0 ? "block" : "none";
+  if (underdogCard)
+    underdogCard.style.display = underdogPicks.length > 0 ? "block" : "none";
   if (hcCard) hcCard.style.display = hcPicks.length > 0 ? "block" : "none";
 
   // Función auxiliar de renderizado de item
@@ -153,6 +228,9 @@ function renderMultiLineCards(values) {
     if (v.is_publishable) {
       mod = "strong";
       badgeText = "🎯 PROFESIONAL";
+    } else if (v.is_underdog) {
+      mod = "underdog";
+      badgeText = "🦄 UNDERDOG";
     } else if (v.is_high_confidence) {
       mod = "high"; // Use new high style
       badgeText = "⭐ ALTA CONF.";
@@ -174,6 +252,10 @@ function renderMultiLineCards(values) {
     } else if (v.success === false) {
       successHtml = '<div class="value-line-card__success-marker">❌</div>';
       statusClass = "value-line-card--fail";
+    } else if (v.success === "void") {
+      successHtml =
+        '<div class="value-line-card__success-marker" style="background: var(--void-bg, rgba(100,116,139,0.25)); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3);">↩️</div>';
+      statusClass = "value-line-card--void";
     }
 
     const el = document.createElement("div");
@@ -204,20 +286,8 @@ function renderMultiLineCards(values) {
   };
 
   valuePicks.forEach((v) => renderItem(v, grid));
+  underdogPicks.forEach((v) => renderItem(v, underdogGrid));
   hcPicks.forEach((v) => renderItem(v, hcGrid));
-}
-
-/**
- * renderComparison (Tennis specific)
- * Reutiliza renderResults pero asegura el flow de tennis
- */
-function renderComparison(data, sport) {
-  if (sport === "tennis") {
-    // Para tennis, simplemente usamos renderResults que ya es genérico
-    // pero nos aseguramos de que el sport sea correcto
-    currentSport = "tennis";
-    renderResults(data);
-  }
 }
 
 function renderResults(data) {
@@ -272,12 +342,55 @@ function renderResults(data) {
           }
         });
 
-        const renderCard = (p) => `
-          <div class="projected-card">
-            <div class="projected-card__label">${p.label}</div>
-            <div class="projected-card__value" style="font-size: 1.25rem; font-weight: 700; color: var(--accent); margin-top: 0.25rem;">${p.value.toFixed(2)}</div>
-          </div>
-        `;
+        const renderCard = (p) => {
+          let successClass = "";
+          let successMarker = "";
+          if (p.success === true) {
+            successClass = "projected-card--success";
+            successMarker =
+              '<div class="projected-card__success-marker">✅</div>';
+          } else if (p.success === false) {
+            successClass = "projected-card--fail";
+            successMarker =
+              '<div class="projected-card__success-marker">❌</div>';
+          }
+
+          let displayVal = p.value.toFixed(2);
+          let extraLabel = "";
+
+          if (
+            p.type === "handicap_prob" &&
+            p.prob !== null &&
+            p.prob !== undefined
+          ) {
+            displayVal = `${p.prob}%`;
+            extraLabel = `<div style="font-size: 0.7rem; opacity: 0.8; margin-top: 0.1rem;">Línea: ${p.value >= 0 ? "+" : ""}${p.value.toFixed(2)}</div>`;
+          } else if (
+            p.type === "double_chance" ||
+            p.type === "btts" ||
+            (p.type === "goals" && p.label.toLowerCase().includes("over"))
+          ) {
+            displayVal = `${p.value.toFixed(1)}%`;
+          }
+
+          let resultText = "";
+          if (p.actual_val !== undefined && p.actual_val !== null) {
+            const sign = p.diff_sign ? ` (${p.diff_sign})` : "";
+            resultText = `<div style="font-size: 0.72rem; color: var(--text-secondary); margin-top: 0.25rem;">Real: ${p.actual_val}${sign}</div>`;
+          }
+
+          return `
+            <div class="projected-card ${successClass}" style="position: relative; display: flex; flex-direction: column; justify-content: space-between; min-height: 90px; padding: 0.75rem 0.5rem;">
+              ${successMarker}
+              <div class="projected-card__label" style="margin-bottom: 0.25rem;">${p.label}</div>
+              <div>
+                <div class="projected-card__value" style="font-size: 1.25rem; font-weight: 700; color: var(--accent);">${displayVal}</div>
+                ${extraLabel}
+              </div>
+              ${resultText}
+            </div>
+          `;
+        };
 
         projectedLinesEl.innerHTML = `
           <div style="grid-column: 1 / -1; margin-bottom: 0.5rem; color: var(--text-secondary); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 1px;">Proyecciones Totales</div>
@@ -495,6 +608,57 @@ function renderResults(data) {
   }
 
   // ==========================================
+  // 3b. MOST PROBABLE SCORE
+  // ==========================================
+  try {
+    const scoreBox = document.getElementById("most-probable-score-box");
+    const scoreValue = document.getElementById("most-probable-score-value");
+    const scoreResult = document.getElementById("most-probable-score-result");
+    if (scoreBox && scoreValue && data.most_probable_score) {
+      scoreBox.style.display = "block";
+      scoreValue.textContent = data.most_probable_score;
+      // Check if actual result exists in snapshot values
+      // The result highlight is set when the snapshot is loaded with final scores
+      if (
+        data._actual_score_home !== undefined &&
+        data._actual_score_away !== undefined
+      ) {
+        const predictedParts = data.most_probable_score.split("-");
+        if (predictedParts.length === 2) {
+          const predH = parseInt(predictedParts[0].trim(), 10);
+          const predA = parseInt(predictedParts[1].trim(), 10);
+          const actualH = data._actual_score_home;
+          const actualA = data._actual_score_away;
+          const isCorrect = predH === actualH && predA === actualA;
+          scoreBox.style.background = isCorrect
+            ? "rgba(34,197,94,0.15)"
+            : "rgba(239,68,68,0.15)";
+          scoreBox.style.borderColor = isCorrect
+            ? "rgba(34,197,94,0.35)"
+            : "rgba(239,68,68,0.35)";
+          scoreValue.style.color = isCorrect ? "#22c55e" : "#ef4444";
+          if (scoreResult) {
+            scoreResult.style.color = isCorrect ? "#22c55e" : "#ef4444";
+            scoreResult.textContent = isCorrect
+              ? `✅ Acertó: resultado real ${actualH} - ${actualA}`
+              : `❌ Real: ${actualH} - ${actualA}`;
+          }
+        }
+      } else {
+        // Reset to default accent style
+        scoreBox.style.background = "rgba(99,102,241,0.12)";
+        scoreBox.style.borderColor = "rgba(99,102,241,0.25)";
+        scoreValue.style.color = "var(--accent)";
+        if (scoreResult) scoreResult.textContent = "";
+      }
+    } else if (scoreBox) {
+      scoreBox.style.display = "none";
+    }
+  } catch (e) {
+    console.error("Error Most Probable Score:", e);
+  }
+
+  // ==========================================
   // 4. BAR CHART HORIZONTAL
   // ==========================================
   try {
@@ -668,12 +832,16 @@ function updateRealTimeValue() {
 async function saveAnalysisDataToDB(sport, payload, results = null) {
   try {
     const entry = {
+      id: loadedHistoryEntryId,
       sport: sport,
       match_title:
         (payload.home?.name || payload.player1?.name || "Local") +
         " vs " +
         (payload.away?.name || payload.player2?.name || "Visitante"),
-      match_date: payload.match_date || new Date().toISOString(),
+      match_date:
+        loadedHistoryEntryDate ||
+        payload.match_date ||
+        new Date().toISOString(),
       payload: payload,
       picks_calculados: results ? results.values : [],
       user_context: payload.context || "",
@@ -690,6 +858,9 @@ async function saveAnalysisDataToDB(sport, payload, results = null) {
     });
     const data = await res.json();
     console.log("Analysis persisted:", data.id);
+    // Actualizar el ID cargado con el retornado y limpiar edición
+    loadedHistoryEntryId = data.id;
+    cancelEditing();
     return data;
   } catch (e) {
     console.error("Error saving to DB:", e);
@@ -787,13 +958,85 @@ function renderHistoryList(entries) {
         else statusDot = "🔴";
       }
 
+      // ── Determinar categorías de picks ──
+      let pickCategories = [];
+
+      // Parsear picks_calculados (string JSON de la BD)
+      let picks = [];
+      if (e.picks_calculados) {
+        try {
+          const parsed =
+            typeof e.picks_calculados === "string"
+              ? JSON.parse(e.picks_calculados)
+              : e.picks_calculados;
+          picks = Array.isArray(parsed) ? parsed : [];
+        } catch {
+          picks = [];
+        }
+      }
+
+      if (picks.length > 0) {
+        const hasProfessional = picks.some(
+          (p) =>
+            p.is_publishable === true ||
+            (p.is_value === true &&
+              p.is_underdog !== true &&
+              p.is_high_confidence !== true),
+        );
+        const hasUnderdog = picks.some((p) => p.is_underdog === true);
+        const hasHighConfidence = picks.some(
+          (p) => p.is_high_confidence === true,
+        );
+
+        if (hasProfessional)
+          pickCategories.push({
+            label: "Profesional",
+            icon: "🎯",
+            color: "#4CAF50",
+          });
+        if (hasUnderdog)
+          pickCategories.push({
+            label: "Underdog",
+            icon: "🚀",
+            color: "#FF9800",
+          });
+        if (hasHighConfidence)
+          pickCategories.push({
+            label: "Alta Confianza",
+            icon: "⭐",
+            color: "#FFD700",
+          });
+      }
+
+      // Construir los badges de categorías
+      let categoryBadges = "";
+      if (pickCategories.length === 0) {
+        categoryBadges = `<span title="Sin Picks" style="margin-right: 5px; opacity: 0.3; cursor: help;">⭕</span>`;
+      } else {
+        categoryBadges = pickCategories
+          .map(
+            (cat) =>
+              `<span title="${cat.label}" style="margin-right: 4px; cursor: help; font-size: 0.9em;">${cat.icon}</span>`,
+          )
+          .join("");
+      }
+
+      let competition = "—";
+      if (e.payload) {
+        try {
+          const p =
+            typeof e.payload === "string" ? JSON.parse(e.payload) : e.payload;
+          if (p.competition) competition = p.competition;
+        } catch {}
+      }
+
       return `
       <tr>
         <td>${new Date(e.match_date || e.date).toLocaleDateString()}</td>
-        <td>${e.sport.toUpperCase()}</td>
+        <td style="font-size: 0.85em; color: var(--color-text-muted, #94a3b8);">${competition}</td>
         <td style="text-align: left;">
-          ${e.has_picks ? '<span title="Tiene Picks" style="margin-right: 5px; cursor: help;">🎯</span>' : '<span title="Sin Picks" style="margin-right: 5px; opacity: 0.3; cursor: help;">⭕</span>'}
-          ${statusDot} ${e.match_title}
+          ${categoryBadges}
+          ${e.match_title} ${statusDot}
         </td>
         <td><span class="badge badge--${accClass}">${accuracy}</span></td>
         <td>
@@ -849,7 +1092,7 @@ async function recalculateAllHistoryAccuracy() {
 
     // Refrescar historial
     loadHistory();
-    
+
     // Si el modal de estadísticas está abierto, también sería bueno actualizarlo
     if (typeof loadGlobalStats === "function") {
       loadGlobalStats();
@@ -906,6 +1149,20 @@ async function loadHistoryEntry(id) {
         typeof entry.payload === "string"
           ? JSON.parse(entry.payload)
           : entry.payload;
+
+      // Guardar ID y fecha de edición
+      loadedHistoryEntryId = entry.id;
+      loadedHistoryEntryDate = entry.match_date || entry.date;
+
+      // Mostrar indicador de edición
+      const indicator = document.getElementById("editing-indicator");
+      const matchName = document.getElementById("editing-match-name");
+      if (indicator && matchName) {
+        matchName.textContent =
+          entry.match_title || `${payload.home?.name} vs ${payload.away?.name}`;
+        indicator.style.display = "flex";
+      }
+
       populateAppForm(entry.sport, payload);
       toggleHistoryModal();
 
@@ -919,10 +1176,17 @@ async function loadHistoryEntry(id) {
         currentPayload = payload;
         window._currentSnapshot = snapshot;
 
-        if (entry.sport === "football" || entry.sport === "nba") {
+        // Inject actual scores into snapshot for most_probable_score highlighting
+        if (
+          entry.final_score_home !== null &&
+          entry.final_score_home !== undefined
+        ) {
+          snapshot._actual_score_home = entry.final_score_home;
+          snapshot._actual_score_away = entry.final_score_away;
+        }
+
+        if (entry.sport === "football") {
           renderResults(snapshot);
-        } else if (entry.sport === "tennis") {
-          renderComparison(snapshot, "tennis");
         }
 
         if (entry.llm_response) {
@@ -987,11 +1251,18 @@ async function reanalyzeHistoryEntry(id) {
 
       // Trigger specific sport analysis
       if (entry.sport === "football") analyzeFootball();
-      else if (entry.sport === "nba") analyzeNBA();
-      else if (entry.sport === "tennis") analyzeTennis();
     }
   } catch (e) {
     showError("Error al reanalizar.");
+  }
+}
+
+function cancelEditing() {
+  loadedHistoryEntryId = null;
+  loadedHistoryEntryDate = null;
+  const indicator = document.getElementById("editing-indicator");
+  if (indicator) {
+    indicator.style.display = "none";
   }
 }
 
@@ -1105,6 +1376,9 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-odds-under25", odds.under_25);
       setSafeValue("fb-odds-btts-yes", odds.btts_yes);
       setSafeValue("fb-odds-btts-no", odds.btts_no);
+      setSafeValue("fb-odds-dc-1x", odds.dc_1x);
+      setSafeValue("fb-odds-dc-x2", odds.dc_x2);
+      setSafeValue("fb-odds-dc-12", odds.dc_12);
 
       const populateTable = (tbodyId, lines, overOdds, underOdds) => {
         const tb = document.getElementById(tbodyId);
@@ -1158,135 +1432,6 @@ function populateAppForm(sport, data) {
         odds.shotsTargetUnderOdds,
       );
     }
-  } else if (sport === "nba") {
-    const { home, away, odds } = data;
-
-    setSafeValue("nba-home-name", home.name);
-    setSafeValue("nba-home-points", home.points);
-    setSafeValue("nba-home-rebounds", home.total_rebounds);
-    setSafeValue("nba-home-assists", home.assists);
-    setSafeValue("nba-home-turnovers", home.turnovers);
-    setSafeValue("nba-home-fg", home.fg_pct);
-    setSafeValue("nba-home-3pt", home.three_pt_pct);
-    setSafeValue("nba-home-ft", home.ft_pct);
-    setSafeValue("nba-home-points-allowed", home.opp_fg_pct);
-    setSafeValue("nba-home-ortg", home.off_rating);
-    setSafeValue("nba-home-drtg", home.def_rating);
-    setSafeValue("nba-home-steals", home.steals);
-    setSafeValue("nba-home-blocks", home.blocks);
-    setSafeValue("nba-home-netrtg", home.net_rating);
-    setSafeValue("nba-home-pace", home.pace);
-    setSafeValue("nba-home-3pt-att", home.three_pt_attempts);
-    setSafeValue("nba-home-blocks-allowed", home.blocks_allowed);
-    setSafeValue("nba-home-wins", home.wins);
-    setSafeValue("nba-home-losses", home.losses);
-
-    setSafeValue("nba-away-name", away.name);
-    setSafeValue("nba-away-points", away.points);
-    setSafeValue("nba-away-rebounds", away.total_rebounds);
-    setSafeValue("nba-away-assists", away.assists);
-    setSafeValue("nba-away-turnovers", away.turnovers);
-    setSafeValue("nba-away-fg", away.fg_pct);
-    setSafeValue("nba-away-3pt", away.three_pt_pct);
-    setSafeValue("nba-away-ft", away.ft_pct);
-    setSafeValue("nba-away-points-allowed", away.opp_fg_pct);
-    setSafeValue("nba-away-ortg", away.off_rating);
-    setSafeValue("nba-away-drtg", away.def_rating);
-    setSafeValue("nba-away-steals", away.steals);
-    setSafeValue("nba-away-blocks", away.blocks);
-    setSafeValue("nba-away-netrtg", away.net_rating);
-    setSafeValue("nba-away-pace", away.pace);
-    setSafeValue("nba-away-3pt-att", away.three_pt_attempts);
-    setSafeValue("nba-away-blocks-allowed", away.blocks_allowed);
-    setSafeValue("nba-away-wins", away.wins);
-    setSafeValue("nba-away-losses", away.losses);
-
-    setSafeValue(
-      "nba-hca",
-      data.home_court_advantage !== undefined ? data.home_court_advantage : 3.0,
-    );
-
-    if (odds) {
-      setSafeValue("nba-odds-home", odds.home);
-      setSafeValue("nba-odds-away", odds.away);
-      setSafeValue("nba-bookmaker", odds.bookmaker);
-    }
-  } else if (sport === "tennis") {
-    const { player1, player2, odds } = data;
-
-    setSafeValue("tennis-p1-name", player1.name);
-    setSafeValue("tennis-p1-age", player1.age);
-    setSafeValue("tennis-p1-height", player1.height);
-    setSafeValue("tennis-p1-hand", player1.hand);
-    setSafeValue("tennis-p1-rank", player1.rank);
-    setSafeValue("tennis-p1-matches-won", player1.matches_won);
-    setSafeValue("tennis-p1-total-matches", player1.total_matches);
-    setSafeValue("tennis-p1-tournaments-won", player1.tournaments_won);
-    setSafeValue("tennis-p1-total-tournaments", player1.total_tournaments);
-    setSafeValue("tennis-p1-first-serve-pct", player1.first_serve_pct);
-    setSafeValue(
-      "tennis-p1-first-serve-points-won",
-      player1.first_serve_points_won_pct,
-    );
-    setSafeValue("tennis-p1-second-serve-pct", player1.second_serve_pct);
-    setSafeValue(
-      "tennis-p1-second-serve-points-won",
-      player1.second_serve_points_won_pct,
-    );
-    setSafeValue("tennis-p1-aces", player1.aces_per_match);
-    setSafeValue("tennis-p1-df", player1.double_faults_per_match);
-    setSafeValue("tennis-p1-bp-saved", player1.break_points_saved);
-    setSafeValue("tennis-p1-bp-saved-total", player1.break_points_saved_total);
-    setSafeValue("tennis-p1-bp-converted", player1.break_points_converted);
-    setSafeValue(
-      "tennis-p1-bp-converted-total",
-      player1.break_points_converted_total,
-    );
-    setSafeValue("tennis-p1-tiebreak-won", player1.tiebreaks_won);
-    setSafeValue("tennis-p1-tiebreak-total", player1.tiebreaks_total);
-    setSafeValue("tennis-p1-surface-won", player1.matches_on_surface_won);
-    setSafeValue("tennis-p1-surface-total", player1.total_matches_on_surface);
-
-    setSafeValue("tennis-p2-name", player2.name);
-    setSafeValue("tennis-p2-age", player2.age);
-    setSafeValue("tennis-p2-height", player2.height);
-    setSafeValue("tennis-p2-hand", player2.hand);
-    setSafeValue("tennis-p2-rank", player2.rank);
-    setSafeValue("tennis-p2-matches-won", player2.matches_won);
-    setSafeValue("tennis-p2-total-matches", player2.total_matches);
-    setSafeValue("tennis-p2-tournaments-won", player2.tournaments_won);
-    setSafeValue("tennis-p2-total-tournaments", player2.total_tournaments);
-    setSafeValue("tennis-p2-first-serve-pct", player2.first_serve_pct);
-    setSafeValue(
-      "tennis-p2-first-serve-points-won",
-      player2.first_serve_points_won_pct,
-    );
-    setSafeValue("tennis-p2-second-serve-pct", player2.second_serve_pct);
-    setSafeValue(
-      "tennis-p2-second-serve-points-won",
-      player2.second_serve_points_won_pct,
-    );
-    setSafeValue("tennis-p2-aces", player2.aces_per_match);
-    setSafeValue("tennis-p2-df", player2.double_faults_per_match);
-    setSafeValue("tennis-p2-bp-saved", player2.break_points_saved);
-    setSafeValue("tennis-p2-bp-saved-total", player2.break_points_saved_total);
-    setSafeValue("tennis-p2-bp-converted", player2.break_points_converted);
-    setSafeValue(
-      "tennis-p2-bp-converted-total",
-      player2.break_points_converted_total,
-    );
-    setSafeValue("tennis-p2-tiebreak-won", player2.tiebreaks_won);
-    setSafeValue("tennis-p2-tiebreak-total", player2.tiebreaks_total);
-    setSafeValue("tennis-p2-surface-won", player2.matches_on_surface_won);
-    setSafeValue("tennis-p2-surface-total", player2.total_matches_on_surface);
-
-    setSafeValue("tennis-surface", data.surface || "hard");
-
-    if (odds) {
-      setSafeValue("tennis-odds-p1", odds.player1);
-      setSafeValue("tennis-odds-p2", odds.player2);
-      setSafeValue("tennis-bookmaker", odds.bookmaker);
-    }
   }
 }
 
@@ -1332,7 +1477,7 @@ async function streamLlmAnalysis(sport, payload) {
           </div>
       </div>`;
 
-  const endpointMap = { football: "football", nba: "nba", tennis: "tennis" };
+  const endpointMap = { football: "football" };
   const url = `/api/v1/compare/${endpointMap[sport]}/analysis`;
 
   try {
@@ -1393,9 +1538,6 @@ async function streamLlmAnalysis(sport, payload) {
 
 function validatePayload(payload, sport) {
   let missing = [];
-  const home = sport === "tennis" ? payload.player1 : payload.home;
-  const away = sport === "tennis" ? payload.player2 : payload.away;
-
   const check = (obj, prefix) => {
     for (let k in obj) {
       if (
@@ -1571,6 +1713,9 @@ function buildFootballPayloadFromForm() {
     away: getVal("fb-odds-away"),
     btts_yes: getVal("fb-odds-btts-yes"),
     btts_no: getVal("fb-odds-btts-no"),
+    dc_1x: getVal("fb-odds-dc-1x"),
+    dc_x2: getVal("fb-odds-dc-x2"),
+    dc_12: getVal("fb-odds-dc-12"),
 
     goals_lines: goalsParsed.lines,
     goalsOverOdds: goalsParsed.overOdds,
@@ -1677,207 +1822,6 @@ function loadFootballPreset(event) {
   reader.readAsText(file);
 }
 
-// ═══ NBA ═══
-async function analyzeNBA() {
-  const homeName = val("nba-home-name"),
-    awayName = val("nba-away-name");
-  if (!homeName || !awayName) return showError("Ingresa los nombres");
-
-  const payload = {
-    home: {
-      name: homeName,
-      points: val("nba-home-points"),
-      total_rebounds: val("nba-home-rebounds"),
-      assists: val("nba-home-assists"),
-      turnovers: val("nba-home-turnovers"),
-      fg_pct: val("nba-home-fg"),
-      three_pt_pct: val("nba-home-3pt"),
-      ft_pct: val("nba-home-ft"),
-      opp_fg_pct: val("nba-home-points-allowed"),
-      off_rating: val("nba-home-ortg"),
-      def_rating: val("nba-home-drtg"),
-      steals: val("nba-home-steals"),
-      blocks: val("nba-home-blocks"),
-      net_rating: val("nba-home-netrtg"),
-      pace: val("nba-home-pace"),
-      wins: val("nba-home-wins"),
-      losses: val("nba-home-losses"),
-      three_pt_attempts: val("nba-home-3pt-att"),
-      blocks_allowed: val("nba-home-blocks-allowed"),
-    },
-    away: {
-      name: awayName,
-      points: val("nba-away-points"),
-      total_rebounds: val("nba-away-rebounds"),
-      assists: val("nba-away-assists"),
-      turnovers: val("nba-away-turnovers"),
-      fg_pct: val("nba-away-fg"),
-      three_pt_pct: val("nba-away-3pt"),
-      ft_pct: val("nba-away-ft"),
-      opp_fg_pct: val("nba-away-points-allowed"),
-      off_rating: val("nba-away-ortg"),
-      def_rating: val("nba-away-drtg"),
-      steals: val("nba-away-steals"),
-      blocks: val("nba-away-blocks"),
-      net_rating: val("nba-away-netrtg"),
-      pace: val("nba-away-pace"),
-      wins: val("nba-away-wins"),
-      losses: val("nba-away-losses"),
-      three_pt_attempts: val("nba-away-3pt-att"),
-      blocks_allowed: val("nba-away-blocks-allowed"),
-    },
-    home_court_advantage: val("nba-hca"),
-    odds: {
-      home: parseFloat(val("nba-odds-home")),
-      away: parseFloat(val("nba-odds-away")),
-      bookmaker: val("nba-bookmaker"),
-    },
-  };
-
-  if (!validatePayload(payload, "basketball")) return;
-
-  currentSport = "nba";
-  currentPayload = payload;
-  const data = await apiCompare("nba", {
-    ...payload,
-    generatellmanalysis: false,
-  });
-  if (!data) return;
-
-  window._currentSnapshot = data;
-  renderResults(data);
-  await saveAnalysisDataToDB("nba", payload, data);
-
-  streamLlmAnalysis("nba", { ...payload, generatellmanalysis: false });
-}
-
-function buildTennisPayloadFromForm() {
-  const p1Name = val("tennis-p1-name"),
-    p2Name = val("tennis-p2-name");
-
-  return {
-    player1: {
-      name: p1Name,
-      age: val("tennis-p1-age"),
-      height: val("tennis-p1-height"),
-      hand: val("tennis-p1-hand"),
-      rank: val("tennis-p1-rank"),
-      matches_won: val("tennis-p1-matches-won"),
-      total_matches: val("tennis-p1-total-matches"),
-      tournaments_won: val("tennis-p1-tournaments-won"),
-      total_tournaments: val("tennis-p1-total-tournaments"),
-      first_serve_pct: val("tennis-p1-first-serve-pct"),
-      first_serve_points_won_pct: val("tennis-p1-first-serve-points-won"),
-      second_serve_pct: val("tennis-p1-second-serve-pct"),
-      second_serve_points_won_pct: val("tennis-p1-second-serve-points-won"),
-      aces_per_match: val("tennis-p1-aces"),
-      double_faults_per_match: val("tennis-p1-df"),
-      break_points_saved: val("tennis-p1-bp-saved"),
-      break_points_saved_total: val("tennis-p1-bp-saved-total"),
-      break_points_converted: val("tennis-p1-bp-converted"),
-      break_points_converted_total: val("tennis-p1-bp-converted-total"),
-      tiebreaks_won: val("tennis-p1-tiebreak-won"),
-      tiebreaks_total: val("tennis-p1-tiebreak-total"),
-      matches_on_surface_won: val("tennis-p1-surface-won"),
-      total_matches_on_surface: val("tennis-p1-surface-total"),
-    },
-    player2: {
-      name: p2Name,
-      age: val("tennis-p2-age"),
-      height: val("tennis-p2-height"),
-      hand: val("tennis-p2-hand"),
-      rank: val("tennis-p2-rank"),
-      matches_won: val("tennis-p2-matches-won"),
-      total_matches: val("tennis-p2-total-matches"),
-      tournaments_won: val("tennis-p2-tournaments-won"),
-      total_tournaments: val("tennis-p2-total-tournaments"),
-      first_serve_pct: val("tennis-p2-first-serve-pct"),
-      first_serve_points_won_pct: val("tennis-p2-first-serve-points-won"),
-      second_serve_pct: val("tennis-p2-second-serve-pct"),
-      second_serve_points_won_pct: val("tennis-p2-second-serve-points-won"),
-      aces_per_match: val("tennis-p2-aces"),
-      double_faults_per_match: val("tennis-p2-df"),
-      break_points_saved: val("tennis-p2-bp-saved"),
-      break_points_saved_total: val("tennis-p2-bp-saved-total"),
-      break_points_converted: val("tennis-p2-bp-converted"),
-      break_points_converted_total: val("tennis-p2-bp-converted-total"),
-      tiebreaks_won: val("tennis-p2-tiebreak-won"),
-      tiebreaks_total: val("tennis-p2-tiebreak-total"),
-      matches_on_surface_won: val("tennis-p2-surface-won"),
-      total_matches_on_surface: val("tennis-p2-surface-total"),
-    },
-    surface: val("tennis-surface"),
-    odds: {
-      player1: parseFloat(val("tennis-odds-p1")),
-      player2: parseFloat(val("tennis-odds-p2")),
-      bookmaker: val("tennis-bookmaker"),
-    },
-  };
-}
-
-// ═══ TENNIS ═══
-async function analyzeTennis() {
-  const payload = buildTennisPayloadFromForm();
-
-  if (!payload.player1.name || !payload.player2.name) {
-    showError("Por favor ingresa los nombres de ambos jugadores.");
-    return;
-  }
-
-  const data = await apiCompare("tennis", payload);
-  if (!data) return;
-
-  currentSport = "tennis";
-  currentPayload = payload;
-
-  window._currentSnapshot = data;
-  renderComparison(data, "tennis");
-  await saveAnalysisDataToDB("tennis", payload, data);
-
-  // Enviar a LLM
-  streamLlmAnalysis("tennis", { ...payload, generatellmanalysis: false });
-}
-
-function saveTennisPreset() {
-  const payload = buildTennisPayloadFromForm();
-  const fileContent = JSON.stringify(
-    { sport: "tennis", data: payload },
-    null,
-    2,
-  );
-  const blob = new Blob([fileContent], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
-  a.download =
-    `sherlock_tennis_${payload.player1.name}_vs_${payload.player2.name}.json`.replace(
-      /\s+/g,
-      "_",
-    );
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-}
-
-function loadTennisPreset(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function (e) {
-    try {
-      const json = JSON.parse(e.target.result);
-      if (json.sport !== "tennis") {
-        showError("El archivo no parece ser un preset de Tenis válido.");
-        return;
-      }
-      populateAppForm("tennis", json.data);
-      alert("Preset de Tenis cargado ✅");
-    } catch (err) {
-      showError("Error al leer el archivo JSON: " + err.message);
-    }
-  };
-  reader.readAsText(file);
-}
 // ── Guardar en Base de Datos (Analysis History) ──────────────────
 async function saveToDB() {
   try {
@@ -1896,24 +1840,7 @@ async function saveToDB() {
         );
       }
       matchTitle = `${payload.home.name} vs ${payload.away.name}`;
-    } else if (sport === "nba") {
-      payload = buildNbaPayloadFromForm();
-      if (!payload.home.name || !payload.away.name) {
-        return showError(
-          "Debes ingresar los nombres de los equipos antes de guardar.",
-        );
-      }
-      matchTitle = `${payload.home.name} vs ${payload.away.name}`;
-    } else if (sport === "tennis") {
-      payload = buildTennisPayloadFromForm();
-      if (!payload.player1.name || !payload.player2.name) {
-        return showError(
-          "Debes ingresar los nombres de los jugadores antes de guardar.",
-        );
-      }
-      matchTitle = `${payload.player1.name} vs ${payload.player2.name}`;
     }
-
     // Verificamos que al menos haya nombres de equipos
     if (!payload.home.name || !payload.away.name) {
       return showError(
@@ -1922,8 +1849,10 @@ async function saveToDB() {
     }
 
     const dbPayload = {
+      id: loadedHistoryEntryId,
       sport: sport,
       match_title: matchTitle,
+      match_date: loadedHistoryEntryDate || payload.match_date || null,
       payload: payload,
     };
 
@@ -1947,7 +1876,11 @@ async function saveToDB() {
           errorData.detail || "Error al guardar en la base de datos",
         );
       }
-      alert("Análisis guardado exitosamente en la BD ✅");
+      const msg = loadedHistoryEntryId
+        ? "Registro actualizado exitosamente ✅"
+        : "Análisis guardado exitosamente en la BD ✅";
+      cancelEditing();
+      alert(msg);
     } catch (error) {
       console.error("Error saving to DB", error);
       showError(error.message);
@@ -1999,7 +1932,7 @@ async function requestSherlockAnalysis() {
   const contextEl = document.getElementById("llm-context");
   const userContext = contextEl ? contextEl.value.trim() : "";
 
-  const endpointMap = { football: "football", nba: "nba", tennis: "tennis" };
+  const endpointMap = { football: "football" };
   const url = `/api/v1/compare/${endpointMap[currentSport]}/analysis`;
 
   try {
@@ -2112,6 +2045,14 @@ async function openResultsModal(id, matchTitle) {
         data.final_shots_on_target_home ?? "";
       document.getElementById("res-shots-target-a").value =
         data.final_shots_on_target_away ?? "";
+      document.getElementById("res-fouls-h").value =
+        data.final_fouls_home ?? "";
+      document.getElementById("res-fouls-a").value =
+        data.final_fouls_away ?? "";
+      document.getElementById("res-offsides-h").value =
+        data.final_offsides_home ?? "";
+      document.getElementById("res-offsides-a").value =
+        data.final_offsides_away ?? "";
     }
   } catch (err) {
     console.error("Error loading results for editing:", err);
@@ -2137,6 +2078,10 @@ async function saveFinalResults(event) {
     final_shots_away: toNullableNumber("res-shots-a"),
     final_shots_on_target_home: toNullableNumber("res-shots-target-h"),
     final_shots_on_target_away: toNullableNumber("res-shots-target-a"),
+    final_fouls_home: toNullableNumber("res-fouls-h"),
+    final_fouls_away: toNullableNumber("res-fouls-a"),
+    final_offsides_home: toNullableNumber("res-offsides-h"),
+    final_offsides_away: toNullableNumber("res-offsides-a"),
   };
 
   try {
@@ -2185,85 +2130,174 @@ function switchStatsTab(tabId) {
   document.getElementById(`tab-btn-${tabId}`).classList.add("active");
 }
 
-async function loadGlobalStats() {
-  try {
-    const res = await fetch("/api/v1/stats/global");
-    if (!res.ok) throw new Error("Error cargando estadísticas");
-    const data = await res.json();
+let cachedGlobalStats = null;
+let activeStatsCategory = "professional";
 
-    // Tab General
-    document.getElementById("stat-total-picks").textContent = data.total_picks;
-    document.getElementById("stat-total-hits").textContent = data.total_hits;
-    document.getElementById("stat-total-misses").textContent =
-      data.total_picks - data.total_hits;
-    document.getElementById("stat-global-accuracy").textContent =
-      `${data.global_accuracy.toFixed(1)}%`;
+function switchStatsCategory(category) {
+  activeStatsCategory = category;
+  renderCategoryStats(category);
+}
 
-    // Render sport chips
-    const container = document.getElementById("sport-stats-container");
-    container.innerHTML = "";
+// Keep track of Chart instance to destroy old one when category changes
+let profitChartInstance = null;
 
-    Object.entries(data.sport_stats).forEach(([sport, stats]) => {
-      const chip = document.createElement("div");
-      chip.style = `
-        padding: 0.5rem 1rem;
-        background: rgba(255, 255, 255, 0.05);
-        border: 1px solid var(--border);
-        border-radius: 20px;
-        font-size: 0.85rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      `;
-      chip.innerHTML = `
-        <span style="font-weight: 600; text-transform: uppercase;">${sport}:</span>
-        <span style="color: var(--accent)">${stats.hits}/${stats.picks}</span>
-        <small style="opacity: 0.7">(${stats.accuracy.toFixed(1)}%)</small>
-      `;
-      container.appendChild(chip);
+function renderCategoryStats(category) {
+  if (!cachedGlobalStats) return;
+
+  // Update active button classes in category selector
+  document
+    .querySelectorAll(".category-selector-container .tab-btn")
+    .forEach((btn) => {
+      if (btn.dataset.category === category) {
+        btn.classList.add("active");
+      } else {
+        btn.classList.remove("active");
+      }
     });
 
-    // Tab Advanced
-    document.getElementById("stat-avg-odds").textContent =
-      data.avg_odds.toFixed(2);
-    document.getElementById("stat-avg-winning-odds").textContent =
-      data.avg_winning_odds.toFixed(2);
+  const data =
+    cachedGlobalStats.category_stats &&
+    cachedGlobalStats.category_stats[category]
+      ? cachedGlobalStats.category_stats[category]
+      : cachedGlobalStats; // fallback if category_stats not present
 
-    const renderAnalytics = (containerId, items) => {
-      const cont = document.getElementById(containerId);
-      if (!cont) return;
-      cont.innerHTML =
-        items.length === 0
-          ? '<div style="opacity: 0.5; font-size: 0.8rem; padding: 1rem;">No hay datos suficientes</div>'
-          : "";
+  // Tab General - Main stats cards
+  document.getElementById("stat-total-picks").textContent = data.total_picks;
+  document.getElementById("stat-total-hits").textContent = data.total_hits;
+  document.getElementById("stat-total-misses").textContent =
+    data.total_picks - data.total_hits;
+  document.getElementById("stat-global-accuracy").textContent =
+    `${data.accuracy !== undefined ? data.accuracy.toFixed(1) : (data.global_accuracy || 0).toFixed(1)}%`;
+  document.getElementById("stat-total-pending").textContent =
+    data.total_pending || 0;
 
+  // Exact score stats population
+  const exactPred = data.total_exact_scores_predicted || 0;
+  const exactHits = data.total_exact_scores_hits || 0;
+  const exactAcc = exactPred > 0 ? (exactHits / exactPred) * 100 : 0;
+
+  const elExactPred = document.getElementById("stat-exact-predicted");
+  const elExactHits = document.getElementById("stat-exact-hits");
+  const elExactAcc = document.getElementById("stat-exact-accuracy");
+  if (elExactPred) elExactPred.textContent = exactPred;
+  if (elExactHits) elExactHits.textContent = exactHits;
+  if (elExactAcc) elExactAcc.textContent = `${exactAcc.toFixed(1)}%`;
+
+  // Tab Advanced - average odds
+  document.getElementById("stat-avg-odds").textContent = (
+    data.avg_odds || 0
+  ).toFixed(2);
+  document.getElementById("stat-avg-winning-odds").textContent = (
+    data.avg_winning_odds || 0
+  ).toFixed(2);
+
+  // New Metrics Calculation (Yield and ROI)
+  // Yield = (Net Profit / Total Investment) * 100
+  // Net Profit = (Sum of odds of winning picks) - (Total resolved picks)
+  // ROI = Net Profit (relative to 1 unit flat stake)
+  // Category accuracy:
+  const catAcc = data.accuracy !== undefined ? data.accuracy : 0;
+  document.getElementById("stat-category-accuracy").textContent =
+    `${catAcc.toFixed(1)}%`;
+
+  let netProfit = 0;
+  let totalStake = 0;
+
+  // To compute Yield/ROI and chart correctly, we can use the cachedDetailedPicks
+  let profitHistory = []; // list of {date, profit}
+
+  if (window.cachedDetailedPicks) {
+    // Filter picks for this category that have results (resolved)
+    const categoryPicks = window.cachedDetailedPicks.filter((p) => {
+      if (p.success === null) return false; // skip pending
+      if (
+        category === "professional" &&
+        (p.is_underdog || p.is_high_confidence)
+      )
+        return false;
+      if (category === "underdog" && !p.is_underdog) return false;
+      if (category === "high_confidence" && !p.is_high_confidence) return false;
+      return true;
+    });
+
+    // Sort chronologically (oldest first)
+    categoryPicks.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    // Calculate profit progression
+    let cumulativeProfit = 0;
+    categoryPicks.forEach((p) => {
+      const odds = p.odds || 0;
+      let profit = -1; // 1 unit lost by default
+      if (p.success === true) {
+        profit = odds - 1; // won odds - stake
+      }
+      cumulativeProfit += profit;
+      totalStake += 1;
+
+      const dateStr = new Date(p.date).toISOString().split("T")[0];
+      profitHistory.push({ date: dateStr, profit: cumulativeProfit });
+    });
+    netProfit = cumulativeProfit;
+  }
+
+  const yieldValue = totalStake > 0 ? (netProfit / totalStake) * 100 : 0.0;
+
+  // Format ROI text color based on positive/negative
+  const roiEl = document.getElementById("stat-roi");
+  roiEl.textContent = `${netProfit >= 0 ? "+" : ""}${netProfit.toFixed(2)} u`;
+  roiEl.style.color = netProfit >= 0 ? "#22c55e" : "#ef4444";
+
+  const yieldEl = document.getElementById("stat-yield");
+  yieldEl.textContent = `${yieldValue >= 0 ? "+" : ""}${yieldValue.toFixed(1)}%`;
+  yieldEl.style.color = yieldValue >= 0 ? "#3b82f6" : "#ef4444";
+
+  // Render Profit Chart
+  renderProfitChart(profitHistory);
+
+  // Best/worst markets, leagues, teams
+  const renderAnalytics = (containerId, items) => {
+    const cont = document.getElementById(containerId);
+    if (!cont) return;
+    cont.innerHTML =
+      !items || items.length === 0
+        ? '<div style="opacity: 0.5; font-size: 0.8rem; padding: 1rem;">No hay datos suficientes</div>'
+        : "";
+
+    if (items) {
       items.forEach((item) => {
         const el = document.createElement("div");
         el.className = "analytics-item";
+
+        const profitVal = item.profit ?? 0.0;
+        const profitText =
+          (profitVal >= 0 ? "+" : "") + profitVal.toFixed(2) + " u";
+        const profitColor = profitVal >= 0 ? "#22c55e" : "#ef4444";
+
         el.innerHTML = `
             <div class="analytics-item__main">
                 <span class="analytics-item__name">${item.name}</span>
-                <span class="analytics-item__stat">${item.hits} aciertos de ${item.picks} picks</span>
+                <span class="analytics-item__stat">${item.hits} aciertos de ${item.picks} picks | <strong style="color: ${profitColor}">${profitText}</strong></span>
             </div>
             <span class="analytics-item__acc">${item.accuracy.toFixed(0)}%</span>
         `;
         cont.appendChild(el);
       });
-    };
+    }
+  };
+  renderAnalytics("best-markets-container", data.best_markets || []);
+  renderAnalytics("best-leagues-container", data.best_leagues || []);
+  renderAnalytics("best-teams-container", data.best_teams || []);
 
-    renderAnalytics("best-markets-container", data.best_markets);
-    renderAnalytics("worst-markets-container", data.worst_markets);
-    renderAnalytics("best-leagues-container", data.best_leagues);
-    renderAnalytics("best-teams-container", data.best_teams);
+  // Buckets
+  const renderBuckets = (containerId, items) => {
+    const cont = document.getElementById(containerId);
+    if (!cont) return;
+    cont.innerHTML =
+      !items || items.length === 0
+        ? '<div style="opacity: 0.5; font-size: 0.8rem; padding: 1rem;">No hay datos suficientes</div>'
+        : "";
 
-    const renderBuckets = (containerId, items) => {
-      const cont = document.getElementById(containerId);
-      if (!cont) return;
-      cont.innerHTML =
-        items.length === 0
-          ? '<div style="opacity: 0.5; font-size: 0.8rem; padding: 1rem;">No hay datos suficientes</div>'
-          : "";
-
+    if (items) {
       items.forEach((item) => {
         const el = document.createElement("div");
         el.className = "analytics-item";
@@ -2276,11 +2310,146 @@ async function loadGlobalStats() {
         `;
         cont.appendChild(el);
       });
-    };
+    }
+  };
 
-    renderBuckets("odds-buckets-container", data.odds_buckets);
-    renderBuckets("edge-buckets-container", data.edge_buckets);
-    renderBuckets("confidence-buckets-container", data.confidence_buckets);
+  renderBuckets("odds-buckets-container", data.odds_buckets || []);
+  renderBuckets("edge-buckets-container", data.edge_buckets || []);
+  renderBuckets("confidence-buckets-container", data.confidence_buckets || []);
+}
+
+function renderProfitChart(profitHistory) {
+  const ctx = document.getElementById("profit-chart");
+  if (!ctx) return;
+
+  if (profitChartInstance) {
+    profitChartInstance.destroy();
+  }
+
+  // Group by date to show only one point per day (last cumulative profit of that day)
+  const groupedData = {};
+  profitHistory.forEach((item) => {
+    groupedData[item.date] = item.profit;
+  });
+
+  const labels = Object.keys(groupedData);
+  const dataPoints = Object.values(groupedData);
+
+  // If no data, show empty chart helper
+  if (labels.length === 0) {
+    labels.push("Sin datos");
+    dataPoints.push(0);
+  }
+
+  profitChartInstance = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          label: "Profit Acumulado (u)",
+          data: dataPoints,
+          borderColor: "#6366f1",
+          backgroundColor: "rgba(99, 102, 241, 0.1)",
+          borderWidth: 3,
+          fill: true,
+          tension: 0.3,
+          pointBackgroundColor: "#8b5cf6",
+          pointBorderColor: "#fff",
+          pointHoverRadius: 6,
+        },
+      ],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          display: false,
+        },
+        tooltip: {
+          backgroundColor: "#0f172a",
+          titleColor: "#94a3b8",
+          bodyColor: "#fff",
+          borderColor: "rgba(255,255,255,0.1)",
+          borderWidth: 1,
+          callbacks: {
+            label: function (context) {
+              const val = context.parsed.y;
+              return `Profit: ${val >= 0 ? "+" : ""}${val.toFixed(2)} u`;
+            },
+          },
+        },
+      },
+      scales: {
+        x: {
+          grid: {
+            color: "rgba(255, 255, 255, 0.05)",
+          },
+          ticks: {
+            color: "#94a3b8",
+            font: {
+              family: "Inter",
+              size: 10,
+            },
+          },
+        },
+        y: {
+          grid: {
+            color: "rgba(255, 255, 255, 0.05)",
+          },
+          ticks: {
+            color: "#94a3b8",
+            font: {
+              family: "Inter",
+              size: 10,
+            },
+            callback: function (value) {
+              return (value >= 0 ? "+" : "") + value + " u";
+            },
+          },
+        },
+      },
+    },
+  });
+}
+
+async function loadGlobalStats() {
+  try {
+    const res = await fetch("/api/v1/stats/global");
+    if (!res.ok) throw new Error("Error cargando estadísticas");
+    const data = await res.json();
+    cachedGlobalStats = data;
+
+    // Render sport chips (which are global across categories)
+    const container = document.getElementById("sport-stats-container");
+    if (container) {
+      container.innerHTML = "";
+      if (data.sport_stats) {
+        Object.entries(data.sport_stats).forEach(([sport, stats]) => {
+          const chip = document.createElement("div");
+          chip.style = `
+            padding: 0.5rem 1rem;
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid var(--border);
+            border-radius: 20px;
+            font-size: 0.85rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+          `;
+          chip.innerHTML = `
+            <span style="font-weight: 600; text-transform: uppercase;">${sport}:</span>
+            <span style="color: var(--accent)">${stats.hits}/${stats.picks}</span>
+            <small style="opacity: 0.7">(${stats.accuracy.toFixed(1)}%)</small>
+          `;
+          container.appendChild(chip);
+        });
+      }
+    }
+
+    // Render for the currently active category
+    renderCategoryStats(activeStatsCategory);
   } catch (e) {
     showError(e.message);
   }
@@ -2289,58 +2458,115 @@ async function loadGlobalStats() {
 async function loadDetailedPicks() {
   const tbody = document.getElementById("picks-stats-list");
   tbody.innerHTML =
-    '<tr><td colspan="7" style="text-align: center; padding: 2rem;">Cargando picks...</td></tr>';
+    '<tr><td colspan="8" style="text-align: center; padding: 2rem;">Cargando picks...</td></tr>';
 
   try {
     const res = await fetch("/api/v1/stats/picks?limit=200");
     if (!res.ok) throw new Error("Error cargando picks");
     const picks = await res.json();
+    window.cachedDetailedPicks = picks;
 
-    tbody.innerHTML = "";
-    if (picks.length === 0) {
-      tbody.innerHTML =
-        '<tr><td colspan="7" style="text-align: center; padding: 2rem;">No hay picks registrados aún.</td></tr>';
-      return;
+    // Reset filters
+    const catSelect = document.getElementById("pick-filter-category");
+    const resSelect = document.getElementById("pick-filter-result");
+    if (catSelect) catSelect.value = "all";
+    if (resSelect) resSelect.value = "all";
+
+    filterDetailedPicksUI();
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="8" style="text-align: center; color: var(--error); padding: 2rem;">${e.message}</td></tr>`;
+  }
+}
+
+function filterDetailedPicksUI() {
+  const tbody = document.getElementById("picks-stats-list");
+  if (!window.cachedDetailedPicks) return;
+
+  const catFilter = document.getElementById("pick-filter-category").value;
+  const resFilter = document.getElementById("pick-filter-result").value;
+
+  tbody.innerHTML = "";
+
+  const filtered = window.cachedDetailedPicks.filter((p) => {
+    // Filter by Category
+    if (catFilter !== "all") {
+      if (
+        catFilter === "professional" &&
+        (p.is_underdog || p.is_high_confidence)
+      )
+        return false;
+      if (catFilter === "underdog" && !p.is_underdog) return false;
+      if (catFilter === "high_confidence" && !p.is_high_confidence)
+        return false;
     }
 
-    picks.forEach((p) => {
-      const tr = document.createElement("tr");
-      tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+    // Filter by Result
+    if (resFilter !== "all") {
+      if (resFilter === "hit" && p.success !== true) return false;
+      if (resFilter === "miss" && p.success !== false) return false;
+      if (resFilter === "pending" && p.success !== null && p.success !== "void")
+        return false;
+      if (resFilter === "void" && p.success !== "void") return false;
+    }
 
-      const dateStr = new Date(p.date).toLocaleDateString();
-      const statusBadge =
-        p.success === null
-          ? '<span style="color: var(--text-dim)">⏳ Pendiente</span>'
-          : p.success
-            ? '<span style="color: #22c55e; font-weight: 600;">✅ Acierto</span>'
-            : '<span style="color: #ef4444; font-weight: 600;">❌ Fallo</span>';
+    return true;
+  });
 
-      const valueBadge = p.is_value
-        ? '<span title="Value Pick" style="color: var(--accent); margin-right: 4px;">💎</span>'
-        : "";
-
-      const evVal = p.edge_ev !== null ? (p.edge_ev * 100).toFixed(1) : "N/A";
-      const fairOdds = p.fair_odds !== null ? p.fair_odds.toFixed(2) : "N/A";
-      const evColor = p.edge_ev > 0.07 ? "#22c55e" : p.edge_ev > 0.02 ? "#eab308" : "#ef4444";
-
-      tr.innerHTML = `
-        <td style="padding: 0.75rem; font-size: 0.85rem; color: var(--text-dim);">${dateStr}</td>
-        <td style="padding: 0.75rem; font-weight: 500;">
-          <div style="font-size: 0.9rem;">${p.match_title}</div>
-          <small style="text-transform: uppercase; opacity: 0.6; font-size: 0.7rem;">${p.sport}</small>
-        </td>
-        <td style="padding: 0.75rem;">
-          ${valueBadge}<span style="font-weight: 600;">${p.selection}</span>
-          <div style="font-size: 0.75rem; opacity: 0.7;">${p.market} ${p.line || ""}</div>
-        </td>
-        <td style="padding: 0.75rem; text-align: center; font-family: monospace;">${p.odds.toFixed(2)}</td>
-        <td style="padding: 0.75rem; text-align: center; font-family: monospace; color: ${evColor}; font-weight: 600;">${evVal}%</td>
-        <td style="padding: 0.75rem; text-align: center; font-family: monospace; color: var(--text-dim);">${fairOdds}</td>
-        <td style="padding: 0.75rem; text-align: center;">${statusBadge}</td>
-      `;
-      tbody.appendChild(tr);
-    });
-  } catch (e) {
-    tbody.innerHTML = `<tr><td colspan="7" style="text-align: center; color: var(--error); padding: 2rem;">${e.message}</td></tr>`;
+  if (filtered.length === 0) {
+    tbody.innerHTML =
+      '<tr><td colspan="8" style="text-align: center; padding: 2rem;">No hay picks que coincidan con los filtros.</td></tr>';
+    return;
   }
+
+  filtered.forEach((p) => {
+    const tr = document.createElement("tr");
+    tr.style.borderBottom = "1px solid rgba(255,255,255,0.05)";
+
+    const dateStr = new Date(p.date).toLocaleDateString();
+    const statusBadge =
+      p.success === null
+        ? '<span style="color: var(--text-dim)">⏳ Pendiente</span>'
+        : p.success
+          ? '<span style="color: #22c55e; font-weight: 600;">✅ Acierto</span>'
+          : '<span style="color: #ef4444; font-weight: 600;">❌ Fallo</span>';
+
+    const valueBadge = p.is_value
+      ? '<span title="Value Pick" style="color: var(--accent); margin-right: 4px;">💎</span>'
+      : "";
+
+    const evVal = p.edge_ev !== null ? (p.edge_ev * 100).toFixed(1) : "N/A";
+    const fairOdds = p.fair_odds !== null ? p.fair_odds.toFixed(2) : "N/A";
+    const evColor =
+      p.edge_ev > 0.07 ? "#22c55e" : p.edge_ev > 0.02 ? "#eab308" : "#ef4444";
+
+    let catBadge = "";
+    if (p.is_underdog) {
+      catBadge =
+        '<span class="value-line-card__badge badge--underdog" style="margin-top: 0; font-size: 0.65rem;">🦄 Underdog</span>';
+    } else if (p.is_high_confidence) {
+      catBadge =
+        '<span class="value-line-card__badge badge--high" style="margin-top: 0; font-size: 0.65rem; background: rgba(245, 158, 11, 0.15); color: #f59e0b;">⭐ Alta Conf.</span>';
+    } else {
+      catBadge =
+        '<span class="value-line-card__badge badge--strong" style="margin-top: 0; font-size: 0.65rem;">💼 Profesional</span>';
+    }
+
+    tr.innerHTML = `
+      <td style="padding: 0.75rem; font-size: 0.85rem; color: var(--text-dim);">${dateStr}</td>
+      <td style="padding: 0.75rem; vertical-align: middle;">${catBadge}</td>
+      <td style="padding: 0.75rem; font-weight: 500;">
+        <div style="font-size: 0.9rem;">${p.match_title}</div>
+        <small style="text-transform: uppercase; opacity: 0.6; font-size: 0.7rem;">${p.sport}</small>
+      </td>
+      <td style="padding: 0.75rem;">
+        ${valueBadge}<span style="font-weight: 600;">${p.selection}</span>
+        <div style="font-size: 0.75rem; opacity: 0.7;">${p.market} ${p.line || ""}</div>
+      </td>
+      <td style="padding: 0.75rem; text-align: center; font-family: monospace;">${p.odds.toFixed(2)}</td>
+      <td style="padding: 0.75rem; text-align: center; font-family: monospace; color: ${evColor}; font-weight: 600;">${evVal}%</td>
+      <td style="padding: 0.75rem; text-align: center; font-family: monospace; color: var(--text-dim);">${fairOdds}</td>
+      <td style="padding: 0.75rem; text-align: center;">${statusBadge}</td>
+    `;
+    tbody.appendChild(tr);
+  });
 }

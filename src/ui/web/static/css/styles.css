@@ -348,16 +348,6 @@ body {
   gap: 0.4rem 1rem;
 }
 
-.stats-grid--tennis {
-  grid-template-columns: repeat(2, 1fr);
-}
-
-@media (min-width: 1200px) {
-  .stats-grid--tennis {
-    grid-template-columns: repeat(3, 1fr);
-  }
-}
-
 /* FORZAR horizontalidad dentro de stats-grid */
 .stats-grid .form-group {
   display: flex !important;
@@ -841,6 +831,21 @@ body {
   font-variant-numeric: tabular-nums;
   line-height: 1;
 }
+.projected-card--success {
+  border: 1px solid rgba(34, 197, 94, 0.4) !important;
+  background: rgba(34, 197, 94, 0.08) !important;
+}
+.projected-card--fail {
+  border: 1px solid rgba(239, 68, 68, 0.4) !important;
+  background: rgba(239, 68, 68, 0.08) !important;
+}
+.projected-card__success-marker {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  font-size: 0.7rem;
+  z-index: 5;
+}
 
 /* ── Multi-line Value Cards ───────────────────────────────────── */
 .card--multi-line {
@@ -899,6 +904,11 @@ body {
 .value-line-card--high {
   border-top: 3px solid #f59e0b;
   background: rgba(245, 158, 11, 0.03);
+}
+
+.value-line-card--underdog {
+  border-top: 3px solid #8b5cf6;
+  background: rgba(139, 92, 246, 0.05);
 }
 
 .value-line-card--success {
@@ -967,6 +977,11 @@ body {
 .badge--neutral {
   background: rgba(255, 255, 255, 0.06);
   color: var(--text-muted);
+}
+
+.badge--underdog {
+  background: rgba(139, 92, 246, 0.15);
+  color: #c084fc;
 }
 .badge--no {
   background: rgba(239, 68, 68, 0.12);
@@ -1463,4 +1478,13 @@ body {
 .notification--error {
   border-color: var(--red);
   background: rgba(239, 68, 68, 0.1);
+}
+.value-line-card--void {
+  border-left: 3px solid #64748b !important;
+  opacity: 0.85;
+}
+.value-line-card--void .value-line-card__success-marker {
+  background: rgba(100, 116, 139, 0.2);
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.3);
 }

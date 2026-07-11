@@ -19,6 +19,7 @@ Sherlock es una plataforma avanzada de análisis deportivo diseñada para identi
 El modelo utiliza una amplia gama de métricas para alimentar el motor de inferencia:
 
 ### ⚔️ Ofensivas e Inferencia de Goles
+
 - **Goles por Juego (Local/Visita)**: Promedio real de anotación.
 - **xG (Expected Goals)**: Calidad de las ocasiones generadas.
 - **Big Chances**: Grandes oportunidades creadas vs. falladas.
@@ -26,20 +27,23 @@ El modelo utiliza una amplia gama de métricas para alimentar el motor de infere
 - **Conversión**: Porcentaje de efectividad frente al arco.
 
 ### 🛡️ Defensivas
+
 - **Goles Concedidos (Local/Visita)**: Promedio de goles recibidos.
 - **xGA (Expected Goals Against)**: Goles esperados en contra según la peligrosidad del rival.
 - **Clean Sheets (Home/Away)**: Capacidad de mantener la portería a cero por condición.
 - **Saves**: Atajadas del portero por juego.
 
 ### 🧠 Control y Táctica
+
 - **Posesión**: Control del balón porcentual.
 - **Pases**: Completados, Precisión total y Precisión en campo rival.
-- **Manejo de Balón (Calculados)**: 
-    - *Pases Totales Intentados*: `(Pases Completados * 100) / Precisión`.
-    - *Pases Intentados Campo Rival*: `(Pases Campo Rival * 100) / Precisión Rival`.
-    - *Centros Totales*: `(Centros Completados * 100) / Precisión de Centros`.
+- **Manejo de Balón (Calculados)**:
+  - _Pases Totales Intentados_: `(Pases Completados * 100) / Precisión`.
+  - _Pases Intentados Campo Rival_: `(Pases Campo Rival * 100) / Precisión Rival`.
+  - _Centros Totales_: `(Centros Completados * 100) / Precisión de Centros`.
 
 ### 🟨 Disciplina y Otros
+
 - **Faltas**: Promedio de infracciones cometidas.
 - **Tarjetas Amarillas**: Promedio global de amonestaciones.
 - **Tarjetas Rojas**: Impacto en la agresividad del equipo.
@@ -50,19 +54,22 @@ El modelo utiliza una amplia gama de métricas para alimentar el motor de infere
 ## 📐 Fórmulas y Modelado Matemático
 
 ### 1. Distribución de Poisson
+
 Utilizada para calcular la probabilidad de que ocurran `k` eventos (goles, corners, tarjetas) en un tiempo determinado:
 $$P(k; \lambda) = \frac{\lambda^k e^{-\lambda}}{k!}$$
 Donde $\lambda$ es el promedio esperado de eventos.
 
 ### 2. Bayesian Shrinkage (Regresión a la Media)
+
 Para estabilizar datos en muestras pequeñas (pocos partidos), Sherlock aplica una regresión hacia el promedio de la liga:
 $$w = \frac{\text{prior}}{\text{prior} + n}$$
 $$\lambda_{\text{final}} = \lambda_{\text{modelo}} \cdot (1 - w) + \lambda_{\text{liga}} \cdot w$$
-*Esto evita sobreestimar a equipos con rachas atípicas en muestras cortas.*
+_Esto evita sobreestimar a equipos con rachas atípicas en muestras cortas._
 
 ### 3. Cálculo de Lambdas ($\lambda$)
+
 - **Goles ($\lambda_{\text{goles}}$)**:
-  Se calcula cruzando la **Fuerza de Ataque** (hibridación de Goles y xG) del atacante con la **Debilidad Defensiva** del rival, ajustado por señales tácticas como la creación de *Big Chances*.
+  Se calcula cruzando la **Fuerza de Ataque** (hibridación de Goles y xG) del atacante con la **Debilidad Defensiva** del rival, ajustado por señales tácticas como la creación de _Big Chances_.
 - **Corners ($\lambda_{\text{corners}}$)**:
   Hibridación del 70% del historial de corners y 30% del volumen de centros efectivos, cruzado con el ratio de corners concedidos del oponente.
 - **Tarjetas ($\lambda_{\text{tarjetas}}$)**:
@@ -71,9 +78,10 @@ $$\lambda_{\text{final}} = \lambda_{\text{modelo}} \cdot (1 - w) + \lambda_{\tex
   Analiza la producción ofensiva de volumen de remates ajustado mediante Bayes a la defensiva y concesión de oportunidades del rival para proyecciones por equipo de mercado de tiros.
 
 ### 4. Análisis de Valor (Value Betting)
+
 El sistema identifica valor si la probabilidad del modelo es significativamente mayor a la implícita en la cuota:
 $$\text{Edge} = P(\text{modelo}) - P(\text{cuota justa})$$
-*Donde $P(\text{cuota justa})$ se calcula eliminando el **overround** (margen) de la casa de apuestas.*
+_Donde $P(\text{cuota justa})$ se calcula eliminando el **overround** (margen) de la casa de apuestas._
 
 ---
 
@@ -93,6 +101,7 @@ $$\text{Edge} = P(\text{modelo}) - P(\text{cuota justa})$$
 ---
 
 ## 🗺️ Roadmap
+
 - [ ] **NBA Engine**: Implementación de Rating Ofensivo/Defensivo y Ritmo (Pace).
 - [ ] **Tennis Engine**: Modelo basado en ELO y retención de servicios por superficie.
 - [ ] **AI Agents**: Integración de LLMs para análisis cualitativo (noticias, lesiones, clima).

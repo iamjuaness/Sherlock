@@ -11,14 +11,12 @@ from typing import Optional, Any, Dict, List
 
 load_dotenv()
 
+
 # ───────────────────────────────────────────────────────────────
 # Enums
 # ───────────────────────────────────────────────────────────────
 class SportType(str, Enum):
     FOOTBALL = "football"
-    NBA      = "nba"
-    TENNIS   = "tennis"
-
 
 # ───────────────────────────────────────────────────────────────
 # Football — modelo limpio
@@ -118,6 +116,11 @@ class FootballOdds(BaseModel):
     btts_yes: float | None = Field(None, gt=1.0)
     btts_no:  float | None = Field(None, gt=1.0)
 
+    # DC
+    dc_1x:    float | None = Field(None, gt=1.0)
+    dc_x2:    float | None = Field(None, gt=1.0)
+    dc_12:    float | None = Field(None, gt=1.0)
+
     goals_lines:      list[float]                = [1.5, 2.5, 3.5, 4.5]
     goals_over_odds:  Dict[str, Optional[float]] = Field(default_factory=dict)
     goals_under_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
@@ -154,164 +157,6 @@ class FootballCompareRequest(BaseModel):
     generate_llm_analysis: bool = False
     user_context: str = Field(default="", description="Contexto adicional proporcionado por el usuario sobre los equipos")
 
-
-# ───────────────────────────────────────────────────────────────
-# NBA
-# ───────────────────────────────────────────────────────────────
-class NBATeamStats(BaseModel):
-    name: str = Field(..., description="Nombre del equipo")
-
-    # Generales / Marcador
-    points:          float = Field(0.0, description="Puntos por partido")
-    points_against:  float = Field(0.0, description="Puntos permitidos por partido (PA)")
-    assists:         float = Field(0.0, description="Asistencias por partido")
-    ast_to_ratio:    float = Field(0.0, description="Ratio asistencias/pérdidas")
-
-    # Tiros de campo
-    fg_made:        float = Field(0.0, description="Tiros de campo anotados por partido")
-    fg_attempted:   float = Field(0.0, description="Tiros de campo intentados por partido")
-    fg_pct:         float = Field(0.0, description="% tiros de campo (anotados)")
-
-    # Triples
-    three_pt_made:       float = Field(0.0, description="Triples anotados por partido")
-    three_pt_attempted:  float = Field(0.0, description="Triples intentados por partido")
-    three_pt_pct:        float = Field(0.0, description="% de triples (anotados)")
-
-    # Tiros libres
-    ft_made:        float = Field(0.0, description="Tiros libres anotados por partido")
-    ft_attempted:   float = Field(0.0, description="Tiros libres intentados por partido")
-    ft_pct:         float = Field(0.0, description="% de tiros libres (anotados)")
-
-    # Eficiencia de tiro
-    efg_pct:        float = Field(0.0, description="Porcentaje de tiro efectivo (eFG%)")
-    ts_pct:         float = Field(0.0, description="Porcentaje de tiro real (TS%)")
-
-    # Rebotes
-    off_rebounds:   float = Field(0.0, description="Rebotes ofensivos por partido")
-    def_rebounds:   float = Field(0.0, description="Rebotes defensivos por partido")
-    total_rebounds: float = Field(0.0, description="Rebotes totales por partido")
-
-    # Defensa
-    blocks:               float = Field(0.0, description="Tapones por partido")
-    steals:               float = Field(0.0, description="Robos por partido")
-    three_pt_pct_allowed: float = Field(0.0, description="Porcentaje de triples permitidos")
-
-    # Control balón / Ritmo / Ratings
-    turnovers:     float = Field(0.0, description="Pérdidas por partido")
-    pace:          float = Field(0.0, description="Ritmo")
-    off_rating:    float = Field(0.0, description="Valoración ofensiva")
-    def_rating:    float = Field(0.0, description="Valoración defensiva")
-    net_rating:    float = Field(0.0, description="Valoración neta")
-
-    # Extra desde frontend (si lo quieres usar)
-    three_pt_attempts: float = Field(0.0, description="Triples intentados totales (helper)")
-
-    # Record / Clasificación
-    games_played: int   = Field(0,   description="Partidos jugados")
-    wins:         int   = Field(0,   description="Partidos ganados")
-    losses:       int   = Field(0,   description="Partidos perdidos")
-    point_diff:   float = Field(0.0, description="Diferencia de puntos")
-    win_pct:      float = Field(0.0, description="PCT (porcentaje de victorias)")
-    streak:       str   = Field("",  description="Racha (STR)")
-
-
-class NBAOdds(BaseModel):
-    home:              float | None = Field(
-        None, gt=1.0, description="Moneyline Local"
-    )
-    away:              float | None = Field(
-        None, gt=1.0, description="Moneyline Visitante"
-    )
-
-    total_line:        float | None = Field(
-        None, description="Línea de puntos totales (Over/Under)"
-    )
-    over_odds:         float | None = Field(
-        None, gt=1.0, description="Cuota Over puntos totales"
-    )
-    under_odds:        float | None = Field(
-        None, gt=1.0, description="Cuota Under puntos totales"
-    )
-
-    spread_line:       float | None = Field(
-        None, description="Línea de Handicap para el local"
-    )
-    home_spread_odds:  float | None = Field(
-        None, gt=1.0, description="Cuota Handicap Local"
-    )
-    away_spread_odds:  float | None = Field(
-        None, gt=1.0, description="Cuota Handicap Visitante"
-    )
-
-    bookmaker:         str = Field("", description="Casa de apuestas")
-
-
-class NBACompareRequest(BaseModel):
-    home: NBATeamStats = Field(..., description="Stats del equipo local")
-    away: NBATeamStats = Field(..., description="Stats del equipo visitante")
-    odds: NBAOdds      = Field(..., description="Cuotas principales del partido")
-
-    home_court_advantage: float = Field(
-        3.0, description="Ventaja de cancha local (puntos)"
-    )
-    generate_llm_analysis: bool = Field(
-        False, description="Si True, genera análisis con LLM"
-    )
-    user_context: str = Field(default="", description="Contexto adicional proporcionado por el usuario sobre los equipos")
-
-
-# ───────────────────────────────────────────────────────────────
-# Tennis
-# ───────────────────────────────────────────────────────────────
-class TennisPlayerStats(BaseModel):
-    name:                          str
-    age:                           int = Field(0, description="Edad del jugador")
-    height:                        int = Field(0, description="Altura en cm")
-    hand:                          str = Field("Right", description="Mano dominante (Right/Left)")
-    rank:                          int = Field(0, description="Clasificación ATP")
-
-    # Performance
-    matches_won:                   int = 0
-    total_matches:                 int = 0
-    tournaments_won:               int = 0
-    total_tournaments:             int = 0
-    # Service
-    first_serve_pct:               float = 0.0
-    first_serve_points_won_pct:    float = 0.0
-    second_serve_pct:              float = 0.0
-    second_serve_points_won_pct:   float = 0.0
-    aces_per_match:                float = 0.0
-    double_faults_per_match:       float = 0.0
-    # Pressure
-    break_points_saved:            int = 0
-    break_points_saved_total:      int = 0
-    break_points_converted:        int = 0
-    break_points_converted_total:  int = 0
-    tiebreaks_won:                 int = 0
-    tiebreaks_total:               int = 0
-    # Surface/H2H
-    matches_on_surface_won:        int = 0
-    total_matches_on_surface:      int = 0
-    head_to_head_won:              int = 0
-    total_head_to_head:            int = 0
-
-
-
-class TennisOdds(BaseModel):
-    player1:  float | None = Field(None, gt=1.0)
-    player2:  float | None = Field(None, gt=1.0)
-    bookmaker: str  = Field("")
-
-
-class TennisCompareRequest(BaseModel):
-    player1: TennisPlayerStats
-    player2: TennisPlayerStats
-    odds:    TennisOdds
-    surface: str = "hard"
-    generate_llm_analysis: bool = False
-    user_context: str = Field(default="", description="Contexto adicional proporcionado por el usuario sobre los jugadores")
-
-
 # ───────────────────────────────────────────────────────────────
 # Response models
 # ───────────────────────────────────────────────────────────────
@@ -346,6 +191,7 @@ class ValueIndicator(BaseModel):
     # Flags de Decisión
     is_publishable:        bool = False
     is_high_confidence:    bool = False
+    is_underdog:           bool = False
     success:               Optional[bool] = None
     display_score:         Optional[float] = None
     push_prob:             Optional[float] = None
@@ -379,6 +225,11 @@ class CompareResponse(BaseModel):
     a_corners_lam:   Optional[float] = None
     h_cards_lam:     Optional[float] = None
     a_cards_lam:     Optional[float] = None
+    h_fouls_lam:     Optional[float] = None
+    a_fouls_lam:     Optional[float] = None
+    h_offsides_lam:  Optional[float] = None
+    a_offsides_lam:  Optional[float] = None
+    most_probable_score: Optional[str] = None
     comparisons:     list[StatComparison]
     values:          list[ValueIndicator]
     projected_lines: list[ProjectedLine] = []
@@ -458,21 +309,32 @@ def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float
     b = 0.85 
     if market_family in {"corners", "cards", "shots"}:
         b = 0.75 # Más incertidumbre en mercados secundarios
+    elif market_family == "double_chance":
+        # DC es un mercado derivado del 1x2. Las probabilidades brutas son ya
+        # naturalmente muy altas (>70-90%), lo que genera sobreestimaciones sistemáticas.
+        # Usamos b=0.72 para aplastar más agresivamente la curva de calibración,
+        # y luego aplicamos un shrinkage del 10% hacia la probabilidad neutral 50%
+        # para moderar la confianza sin descartar el pick completamente.
+        b = 0.72
     
     calibrated = (p**b) / (p**b + (1-p)**b)
     
+    # Regresión hacia la media neutral para DC (shrinkage estimator)
+    if market_family == "double_chance":
+        calibrated = 0.90 * calibrated + 0.10 * 0.50
+    
     # 2. Penalización por cuota (Favorite-Longshot Bias Correction)
     if odds > 3.0:
-        calibrated *= 0.92 # Los underdogs suelen estar sobreestimados por el modelo
+        calibrated *= 0.90 # Los underdogs suelen estar sobreestimados por el modelo
     elif odds > 2.0:
-        calibrated *= 0.96
+        calibrated *= 0.94
         
     return calibrated * 100.0
 
 # Y en _value_indicator, pasar el overround del mercado:
 def get_market_confidence_tier(selection: str) -> str:
     family = _market_family(selection)
-    if family in {"result", "btts", "goals", "handicap", "dnb", "double_chance"}:
+    if family in {"result", "btts", "goals", "handicap", "double_chance"}:
         return "segmented"
     if family == "corners":
         return "hybrid"
@@ -482,7 +344,7 @@ def get_market_variance_tier(selection: str) -> str:
     family = _market_family(selection)
     if family in {"result", "btts", "goals"}:
         return "low"
-    if family in {"handicap", "dnb", "double_chance"}:
+    if family in {"handicap", "double_chance"}:
         return "medium"
     return "high"
 
@@ -612,6 +474,27 @@ def is_high_confidence_pick(v: ValueIndicator) -> bool:
     return True
 
 
+def is_underdog_pick(v: ValueIndicator) -> bool:
+    """
+    Detecta picks underdog: cuotas altas (>2.50) con edge positivo y calidad de datos aceptable.
+    Estos picks son mutuamente excluyentes con is_publishable (que requiere odds <= 2.50)
+    y con is_high_confidence (que requiere edge < 5%).
+    """
+    # 1. Cuota alta (por encima de la ventana profesional)
+    if v.odds is None or v.odds <= 2.5 or v.odds > 5.80:
+        return False
+    
+    # 2. Debe tener edge positivo real (>= 5%)
+    if v.edge_ev < 0.05:
+        return False
+    
+    # 3. Calidad de datos mínima
+    if v.data_quality_score is not None and v.data_quality_score < 50:
+        return False
+    
+    return True
+
+
 
 def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0):
     if odds is None or odds <= 1.0:
@@ -631,6 +514,14 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     # 3. Métricas de Valor
     edge_prob = calibrated_p - raw_implied
     ev = (calibrated_p / 100.0 * odds) - 1.0
+    
+    # Corrección por push/void: en mercados donde la apuesta puede anularse (e.g. Handicap Asiático entero),
+    # el EV real debe ponderarse por la fracción de tiempo que el pick es efectivamente resuelto.
+    # p_resolve = 1 - (push_p / 100), de modo que ev_efectivo = ev * p_resolve
+    if push_p > 0:
+        p_resolve = 1.0 - (push_p / 100.0)
+        ev = ev * p_resolve
+        edge_prob = edge_prob * p_resolve
     
     # 4. Kelly Criterion (Fractional Kelly 1/8 para máxima seguridad)
     kelly = (ev / (odds - 1)) * 0.125 if ev > 0 else 0
@@ -670,156 +561,13 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     v.quality_score = score_pick_quality(v)
     v.display_score = _calculate_display_score(v)
     v.is_high_confidence = is_high_confidence_pick(v)
+    v.is_underdog = is_underdog_pick(v)
     return v
-
-
-# Helpers para value de un pick individual
-def compute_model_prob_over_under_from_lambda(
-    lam: float,
-    line: float,
-    side: str,  # "over" o "under"
-) -> float:
-    # pyrefly: ignore [bad-unpacking]
-    p_over, p_under = _poisson_over_under(lam, line)
-    return p_over if side.lower() == "over" else p_under
-
-
-def value_for_market_pick(
-    selection_name: str,
-    odds: float,
-    model_prob: float,
-) -> ValueIndicator:
-    return _value_indicator(selection_name, odds, model_prob)
-
-
-# ───────────────────────────────────────────────────────────────
-# Tennis Engine
-# ───────────────────────────────────────────────────────────────
-
-def _tennis_point_prob_on_serve(p: TennisPlayerStats) -> float:
-    """Calcula la probabilidad de que el jugador gane un punto cuando saca."""
-    s1_in = p.first_serve_pct / 100.0
-    w1    = p.first_serve_points_won_pct / 100.0
-    w2    = p.second_serve_points_won_pct / 100.0
-    
-    # Si tenemos dobles faltas por partido, estimamos la prob de DF por punto
-    # Un set promedio tiene ~30 puntos de saque por jugador. Un partido 2-set ~60.
-    df_prob = (p.double_faults_per_match / 65.0) 
-    df_prob = max(0.01, min(0.12, df_prob)) # Cap razonable
-    
-    # P(Point) = P(1st In)*W1 + P(1st Out)*(P(2nd In)*W2)
-    # Aquí simplificamos P(2nd In) como (1 - DF)
-    return s1_in * w1 + (1 - s1_in) * (1 - df_prob) * w2
-
-def _tennis_game_win_prob(s: float) -> float:
-    """Probabilidad de ganar un juego de servicio con prob s de ganar punto."""
-    if s <= 0: return 0.0
-    if s >= 1: return 1.0
-    # Fórmula estándar de juego de tenis (incluyendo deuce)
-    p40_0   = s**4
-    p40_15  = 4 * (s**4) * (1-s)
-    p40_30  = 10 * (s**4) * ((1-s)**2)
-    p_deuce = 20 * (s**3) * ((1-s)**3)
-    p_win_deuce = (s**2) / (s**2 + (1-s)**2)
-    return p40_0 + p40_15 + p40_30 + (p_deuce * p_win_deuce)
-
-def _tennis_set_win_prob(s1: float, s2: float) -> float:
-    """Probabilidad de que el jugador 1 gane el set."""
-    g1 = _tennis_game_win_prob(s1)     # P(P1 gana su saque)
-    g2 = _tennis_game_win_prob(1 - s2) # P(P1 quiebra el saque de P2)
-    
-    # Aproximación de Newton-Barnett para P(Set)
-    # Basado en la ventaja relativa de juegos
-    diff = g1 - (1 - g2)
-    # En tenis, 0.1 de diff en prob de juego suele ser ~0.35 en prob de set
-    prob = 0.5 + 3.65 * (g1 + g2 - 1.0)
-    return max(0.01, min(0.99, prob))
-
-def _tennis_match_win_prob(p1: TennisPlayerStats, p2: TennisPlayerStats, surface: str = "hard") -> float:
-    """Calcula la probabilidad final de victoria de P1."""
-    s1 = _tennis_point_prob_on_serve(p1)
-    s2 = _tennis_point_prob_on_serve(p2)
-    
-    # Ajuste por superficie (Heurística)
-    # En hierba el saque pesa más, en tierra menos.
-    surf = (surface or "hard").lower()
-    if surf == "clay":
-        s1 *= 0.96; s2 *= 0.96
-    elif surf == "grass":
-        s1 *= 1.03; s2 *= 1.03
-        
-    p_set = _tennis_set_win_prob(s1, s2)
-    
-    # ── Ajuste por Clutch (Tiebreaks / Break Points) ──
-    p1_clutch = (p1.tiebreaks_won / max(p1.tiebreaks_total, 1)) * 0.5 + (p1.break_points_saved / max(p1.break_points_saved_total, 1)) * 0.5
-    p2_clutch = (p2.tiebreaks_won / max(p2.tiebreaks_total, 1)) * 0.5 + (p2.break_points_saved / max(p2.break_points_saved_total, 1)) * 0.5
-    clutch_adj = (p1_clutch - p2_clutch) * 0.05
-    
-    p_set = max(0.01, min(0.99, p_set + clutch_adj))
-    
-    # ── Ajuste por Ranking / Experiencia ──
-    # Si la diferencia de ranking es enorme, influye en la mentalidad
-    if p1.rank > 0 and p2.rank > 0:
-        rank_diff = (p2.rank - p1.rank) / 500.0 # P2 Rank 600 vs P1 Rank 100 -> +1.0
-        p_set += max(-0.1, min(0.1, rank_diff * 0.02))
-        
-    p_set = max(0.01, min(0.99, p_set))
-    
-    # Asumimos al mejor de 3 (circuito normal)
-    # Prob(2-0) + Prob(2-1) = p^2 + 2*p^2*(1-p)
-    return (p_set**2 + 2*(p_set**2)*(1-p_set)) * 100.0
-
 
 
 # ───────────────────────────────────────────────────────────────
 # Poisson engine (Football)
 # ───────────────────────────────────────────────────────────────
-
-def _compute_lambda_v2(
-    attacker: FootballTeamStats,
-    defender: FootballTeamStats,
-    league: LeagueStats,
-    is_home: bool,
-) -> float:
-    avg_team = league.avg_goals_per_game / 2.0
-
-    # ── 1. Base Dixon-Coles ───────────────────────────────────────
-    att_str  = attacker.goals_per_game / max(avg_team, 0.1)
-    def_str  = defender.goals_conceded_per_game / max(avg_team, 0.1)
-    lam_base = att_str * def_str * avg_team
-
-    # ── 2. xG proxy táctico ───────────────────────────────────────
-    bc_converted = max(
-        attacker.big_chances_per_game - attacker.big_chances_missed_per_game, 0.0
-    )
-    shot_xg   = attacker.shots_on_target_per_game * (attacker.goal_conversion_pct / 100.0)
-    xg_signal = bc_converted * 0.45 + shot_xg * 0.55
-
-    # ── 3. Multiplicador xG centrado en 1.0 con rango más amplio ──
-    # Cuando xg_signal == avg_xg → multiplier = 1.0 (neutro)
-    # alpha controla la sensibilidad a las desviaciones tácticas
-    avg_xg    = max(avg_team * 0.50, 0.10)
-    alpha     = 0.40  # 40% de sensibilidad a desviaciones del xG
-    xg_mult   = 1.0 + alpha * (xg_signal / avg_xg - 1.0)
-    # Rango ampliado para capturar equipos dominantes: 0.45 a 2.20
-    xg_mult   = max(0.45, min(2.20, xg_mult))
-    lam_adjusted = lam_base * xg_mult
-
-    # ── 4. Shrinkage bayesiana ADAPTATIVA por tamaño de muestra ───
-    # Fórmula: shrink_w = prior_n / (prior_n + matches_played)
-    # prior_n adaptativo: menos regresión para equipos con buena data
-    # prior_n = 0.5 para muestras grandes (n>=15), más para muestras pequeñas
-    prior_n  = max(0.5, 2.0 - (attacker.matches_played / 10.0))
-    n        = max(attacker.matches_played, 1)
-    shrink_w = prior_n / (prior_n + n)
-    lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team * shrink_w
-
-    # ── 5. Home / Away ────────────────────────────────────────────
-    # Ventaja de local más realista: +15% local, -10% visitante
-    lam_final *= league.home_advantage_factor if is_home else league.away_disadvantage_factor
-
-    return max(lam_final, 0.10)
-
 
 def _compute_team_goals_lambda(
     attacker: FootballTeamStats,
@@ -1243,34 +991,6 @@ def _dc_match_probs(
         "score_matrix": matrix,
     }
 
-def _poisson_1x2(
-    h_lam: float,
-    a_lam: float,
-    max_goals: int = 10,
-    rho: float | None = None,
-):
-    res = _dc_match_probs(h_lam, a_lam, max_goals=max_goals, rho=rho)
-    return (
-        res["home_win_pct"],
-        res["draw_pct"],
-        res["away_win_pct"],
-    )
-
-
-def _poisson_markets(
-    h_lam: float,
-    a_lam: float,
-    max_goals: int = 10,
-    rho: float | None = None,
-):
-    res = _dc_match_probs(h_lam, a_lam, max_goals=max_goals, rho=rho)
-    return (
-        res["over_25_pct"] / 100.0,
-        res["under_25_pct"] / 100.0,
-        res["btts_yes_pct"] / 100.0,
-        res["btts_no_pct"] / 100.0,
-    )
-
 
 def _compute_corners_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats) -> float:
     """
@@ -1323,6 +1043,62 @@ def _compute_shots_target_lambda(h: FootballTeamStats, a: FootballTeamStats, lea
     return max(lam_shots_target, league.avg_shots_target_per_game * 0.5)
 
 
+def _compute_team_fouls_lambda(
+    team: FootballTeamStats,
+    opponent: FootballTeamStats,
+    league: LeagueStats,
+    is_home: bool,
+) -> float:
+    avg_league_fouls = getattr(league, "avg_fouls_per_game", 22.0)
+    avg_team_fouls = avg_league_fouls / 2.0
+    gen_str = team.fouls_per_game if team.fouls_per_game > 0 else avg_team_fouls
+    opp_possession = opponent.possession_pct if opponent.possession_pct > 0 else 50.0
+    opp_factor = max(opp_possession / 50.0, 0.5)
+    
+    lam = gen_str * opp_factor
+    m_count = team.matches_home if is_home else team.matches_away
+    n = max(m_count, 1)
+    shrink_w = 2.0 / (2.0 + n)
+    lam = lam * (1.0 - shrink_w) + avg_team_fouls * shrink_w
+    return max(lam, 1.0)
+
+
+def _compute_fouls_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats) -> float:
+    h_f_exp = _compute_team_fouls_lambda(h, a, league, is_home=True)
+    a_f_exp = _compute_team_fouls_lambda(a, h, league, is_home=False)
+    lam_fouls = h_f_exp + a_f_exp
+    avg_league_fouls = getattr(league, "avg_fouls_per_game", 22.0)
+    return max(lam_fouls, avg_league_fouls * 0.5)
+
+
+def _compute_team_offsides_lambda(
+    team: FootballTeamStats,
+    opponent: FootballTeamStats,
+    league: LeagueStats,
+    is_home: bool,
+) -> float:
+    avg_league_offsides = getattr(league, "avg_offsides_per_game", 3.5)
+    avg_team_offsides = avg_league_offsides / 2.0
+    gen_str = team.offside_per_game if team.offside_per_game > 0 else avg_team_offsides
+    team_possession = team.possession_pct if team.possession_pct > 0 else 50.0
+    pos_factor = max(team_possession / 50.0, 0.5)
+    
+    lam = gen_str * pos_factor
+    m_count = team.matches_home if is_home else team.matches_away
+    n = max(m_count, 1)
+    shrink_w = 2.0 / (2.0 + n)
+    lam = lam * (1.0 - shrink_w) + avg_team_offsides * shrink_w
+    return max(lam, 0.1)
+
+
+def _compute_offsides_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats) -> float:
+    h_o_exp = _compute_team_offsides_lambda(h, a, league, is_home=True)
+    a_o_exp = _compute_team_offsides_lambda(a, h, league, is_home=False)
+    lam_offsides = h_o_exp + a_o_exp
+    avg_league_offsides = getattr(league, "avg_offsides_per_game", 3.5)
+    return max(lam_offsides, avg_league_offsides * 0.5)
+
+
 def _poisson_over_under(lam: float, line: float, max_k: int = 40) -> tuple[float, float, float]:
     """
     Devuelve (p_over, p_push, p_under) en porcentaje.
@@ -1349,23 +1125,8 @@ def _poisson_over_under(lam: float, line: float, max_k: int = 40) -> tuple[float
     return avg_over * 100.0, avg_push * 100.0, avg_under * 100.0
 
 
-# ───────────────────────────────────────────────────────────────
-# LLM analysis (Football, NBA, Tennis) + placeholders Sherlock
-# ───────────────────────────────────────────────────────────────
-PLACEHOLDER_FOOTBALL = (
-    "Sherlock está analizando las estadísticas del partido para darte un veredicto de valor en unos segundos..."
-)
-PLACEHOLDER_NBA = (
-    "Sherlock está procesando los ratings avanzados para darte una lectura clara del partido..."
-)
-PLACEHOLDER_TENNIS = (
-    "Sherlock está evaluando servicio, presión y momentum para darte su veredicto..."
-)
-
-
 import os
 import asyncio
-from openai import AsyncOpenAI
 
 async def _call_openrouter(prompt: str) -> str:
     api_key = os.environ.get("OPENROUTER_API_KEY")
@@ -1535,8 +1296,7 @@ def _market_family(text: str) -> str:
         return "goals"
     if any(k in s for k in ["handicap", "hándicap", "asian"]):
         return "handicap"
-    if any(k in s for k in ["draw no bet", "dnb"]):
-        return "dnb"
+
     if any(k in s for k in ["double chance", "doble oportunidad", "1x", "x2", "12"]):
         return "double_chance"
     if any(k in s for k in ["moneyline", "ml", "1x2", "ganador", "local", "visitante", "empate"]):
@@ -1571,8 +1331,6 @@ def _market_risk_weight(selection: str) -> int:
 
     if family in {"result", "handicap"}:
         return -14
-    if family == "dnb":
-        return -10
     if family == "double_chance":
         return -7
     if family == "btts":
@@ -1614,19 +1372,6 @@ def _probability_band_score(prob: float) -> int:
         return 8
     return -20
 
-
-def _edge_score(edge: float) -> int:
-    if edge < 2:
-        return -8
-    if edge < 4:
-        return 2
-    if edge < 7:
-        return 6
-    if edge < 10:
-        return 8
-    if edge < 15:
-        return 9
-    return 7
 
 
 def _projected_value_by_keywords(proj: list, keywords: list[str]) -> tuple[float | None, float | None, str | None]:
@@ -1921,6 +1666,21 @@ def _explicit_market_support(selection: str, h, a, proj: list) -> tuple[float, f
     if family == "corners" and side == "under" and line is not None:
         return _support_under_corners(line, h, a, proj)
 
+    # Double Chance
+    if family == "double_chance":
+        if "1x" in s:
+            stat_h, proj_h = _support_home_win(h, a, proj)
+            stat_d, proj_d = _support_draw(h, a, proj)
+            return max(stat_h, stat_d), max(proj_h, proj_d)
+        if "x2" in s:
+            stat_a, proj_a = _support_away_win(h, a, proj)
+            stat_d, proj_d = _support_draw(h, a, proj)
+            return max(stat_a, stat_d), max(proj_a, proj_d)
+        if "12" in s:
+            stat_h, proj_h = _support_home_win(h, a, proj)
+            stat_a, proj_a = _support_away_win(h, a, proj)
+            return max(stat_h, stat_a), max(proj_h, proj_a)
+
     return 55.0, 55.0
 
 
@@ -1970,7 +1730,7 @@ def _profitability_band_score(odds: float) -> int:
     # Tu lógica frontend, pero un poco más fina para evitar que todo termine en 1.30
     if 1.50 <= odds <= 2.50:
         return 50
-    if 2.50 < odds <= 3.50:
+    if 2.50 < odds <= 3.50: 
         return 20
     if 1.40 <= odds < 1.50:
         return -8
@@ -1982,11 +1742,6 @@ def _profitability_band_score(odds: float) -> int:
 def _is_secondary_market(selection: str) -> bool:
     s = (selection or "").lower()
     return any(k in s for k in ["corner", "corners", "córner", "córners", "tarjeta", "tarjetas", "cards"])
-
-
-def _is_main_market(selection: str) -> bool:
-    family = _market_family(selection)
-    return family in {"goals", "btts", "result", "handicap", "dnb", "double_chance"}
 
 
 def _frontend_style_strategic_score(v: ValueIndicator) -> int:
@@ -2308,150 +2063,6 @@ Para cada pick usa exactamente esta estructura:
     return await _call_openrouter(prompt)
 
 
-async def generate_nba_analysis(
-    h: NBATeamStats,
-    a: NBATeamStats,
-    vp: list[ValueIndicator],
-    req: NBACompareRequest,
-) -> str:
-    vp_text = (
-        "\n".join(
-            [
-                f"- {v.selection}: cuota={v.odds if v.odds is not None else 'N/A'} | modelo={v.model_prob:.1f}% | edge={v.edge:.1f}% | rating={v.rating}"
-                for v in vp[:6]
-            ]
-        )
-        if vp
-        else "- No hay mercados de valor claros."
-    )
-
-    prompt = f"""
-Eres un analista experto de NBA. Explica el partido con criterio estadístico y lenguaje claro, sin narración vacía ni exageraciones.
-
-REGLAS:
-- Usa SOLO estos datos.
-- No inventes lesiones, back-to-back, quintetos ni contexto externo.
-- No llames "value" a un mercado que no esté en la lista.
-- Máximo 260 palabras.
-
-PARTIDO NBA:
-Local: {h.name}
-Visitante: {a.name}
-Ventaja de cancha local: {req.home_court_advantage}
-
-LOCAL:
-- OffRtg: {h.off_rating}
-- DefRtg: {h.def_rating}
-- Pace: {h.pace}
-- Puntos: {h.points}
-- Rebotes totales: {h.total_rebounds}
-- Asistencias: {h.assists}
-- Pérdidas: {h.turnovers}
-- 3P%: {h.three_pt_pct}
-- 3PA: {h.three_pt_attempts}
-- Record: {h.wins}-{h.losses}
-
-VISITANTE:
-- OffRtg: {a.off_rating}
-- DefRtg: {a.def_rating}
-- Pace: {a.pace}
-- Puntos: {a.points}
-- Rebotes totales: {a.total_rebounds}
-- Asistencias: {a.assists}
-- Pérdidas: {a.turnovers}
-- 3P%: {a.three_pt_pct}
-- 3PA: {a.three_pt_attempts}
-- Record: {a.wins}-{a.losses}
-
-MERCADOS DE VALOR:
-{vp_text}
-{f'''
-CONTEXTO ADICIONAL DEL USUARIO:
-{req.user_context}
-''' if req.user_context else ''}
-FORMATO:
-1. Un párrafo sobre el matchup: eficiencia ofensiva, defensa, ritmo y tiro exterior.
-2. Un párrafo sobre cómo eso impacta moneyline, spread o total, solo si los datos lo sostienen.
-3. Un bloque final "Pronósticos recomendados" con exactamente 2 picks y justificación breve.
-Si no hay value claro, dilo en lugar de forzar picks.
-"""
-    return await _call_openrouter(prompt)
-
-
-async def generate_tennis_analysis(p1: TennisPlayerStats, p2: TennisPlayerStats, vp: list[ValueIndicator], surface: str = "hard", user_context: str = "") -> str:
-    vp_names = ", ".join([v.selection for v in vp]) if vp else "Ninguno claro"
-    user_context_section = f'''
-
-CONTEXTO ADICIONAL DEL USUARIO:
-{user_context}
-''' if user_context else ''
-    
-    # Preparamos métricas clave para el prompt
-    def get_player_stats_text(p: TennisPlayerStats):
-        return (
-            f"Ranking: {p.rank} | Edad: {p.age} | Altura: {p.height}cm | Mano: {p.hand}\n"
-            f"- Servicio: 1ero {p.first_serve_pct}% (W: {p.first_serve_points_won_pct}%) | 2do {p.second_serve_pct}% (W: {p.second_serve_points_won_pct}%)\n"
-            f"- Potencia/Error: Aces {p.aces_per_match} | Dobles Faltas {p.double_faults_per_match}\n"
-            f"- Presión: BP Salvados {p.break_points_saved}/{p.break_points_saved_total} ({ (p.break_points_saved/max(p.break_points_saved_total,1))*100:.1f}%) | "
-            f"BP Convertidos {p.break_points_converted}/{p.break_points_converted_total} ({ (p.break_points_converted/max(p.break_points_converted_total,1))*100:.1f}%)\n"
-            f"- Clutch: Tiebreaks {p.tiebreaks_won}/{p.tiebreaks_total} | Win% Sup {surface}: {(p.matches_on_surface_won/max(p.total_matches_on_surface,1))*100:.1f}%"
-        )
-
-    p1_stats = get_player_stats_text(p1)
-    p2_stats = get_player_stats_text(p2)
-
-    prompt = f"""Eres un analista experto del circuito profesional de tenis (ATP/WTA).
-Analiza el enfrentamiento entre {p1.name} y {p2.name} en superficie {surface}.
-
-DATOS TÉCNICOS:
---- {p1.name} ---
-{p1_stats}
-
---- {p2.name} ---
-{p2_stats}
-
-VALORES DETECTADOS POR EL MODELO: {vp_names}
-{user_context_section}
-
-REGLAS DE ANÁLISIS:
-1. Evalúa el "Matchup" técnico: ¿Cómo influye la altura o la mano dominante? ¿Quién tiene mejor servicio y quién es más sólido bajo presión (break points/tiebreaks)?
-2. Factor Superficie: Analiza quién se adapta mejor a {surface} según sus porcentajes históricos.
-3. Propón exactamente 2 pronósticos (tips) basados en los datos. No inventes lesiones ni rumores.
-
-ESTILO: Profesional, técnico, con emojis 🎾📉. Máximo 400 palabras.
-"""
-    return await _call_openrouter(prompt)
-
-
-
-async def _safe_generate_football_analysis(
-    h: FootballTeamStats,
-    a: FootballTeamStats,
-    vp: list[ValueIndicator],
-    proj: list[ProjectedLine],
-    league_stats: LeagueStats,
-    competition: str,
-    user_context: str = ""
-) -> str:
-    try:
-        return await generate_football_analysis(h, a, vp, proj, league_stats, competition, user_context)
-    except Exception as e:
-        print(f"LLM generation failed: {e}")
-        return PLACEHOLDER_FOOTBALL
-
-async def _safe_generate_nba_analysis(h: NBATeamStats, a: NBATeamStats, vp: list[ValueIndicator], req: NBACompareRequest) -> str:
-    try:
-        return await generate_nba_analysis(h, a, vp, req)
-    except Exception:
-        return PLACEHOLDER_NBA
-
-
-async def _safe_generate_tennis_analysis(p1: TennisPlayerStats, p2: TennisPlayerStats, vp: list[ValueIndicator], surface: str, user_context: str = "") -> str:
-    try:
-        return await generate_tennis_analysis(p1, p2, vp, surface, user_context)
-    except Exception:
-        return PLACEHOLDER_TENNIS
-
 
 # ───────────────────────────────────────────────────────────────
 # compare_football
@@ -2540,6 +2151,11 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     _or_1x2  = _overround(req.odds.home, req.odds.draw, req.odds.away)
     _or_btts = _overround(req.odds.btts_yes, req.odds.btts_no)
 
+    # Doble Oportunidad
+    p_dc_1x = (h_prob + d_prob) * 100
+    p_dc_x2 = (d_prob + a_prob) * 100
+    p_dc_12 = (h_prob + a_prob) * 100
+
     # market: (sel, odds, model_prob, overround, push_prob)
     market_configs: list[tuple[str, float | None, float, float, float]] = [
         ("Local",     req.odds.home,     h_prob     * 100, _or_1x2, 0.0),
@@ -2547,6 +2163,10 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         ("Visitante", req.odds.away,     a_prob     * 100, _or_1x2, 0.0),
         ("BTTS Sí",   req.odds.btts_yes, p_btts_yes * 100, _or_btts, 0.0),
         ("BTTS No",   req.odds.btts_no,  p_btts_no  * 100, _or_btts, 0.0),
+
+        ("Doble Oportunidad 1X", req.odds.dc_1x, p_dc_1x, _or_1x2, 0.0),
+        ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_1x2, 0.0),
+        ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_1x2, 0.0),
     ]
 
     projected_lines: list[ProjectedLine] = []
@@ -2555,6 +2175,18 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     projected_lines.append(ProjectedLine(
         label="Goles Totales (λ)", value=round(projected_total_goals, 2),
         type="goals", prob=None
+    ))
+    projected_lines.append(ProjectedLine(
+        label="Doble Oportunidad 1X", value=round(p_dc_1x, 1),
+        type="double_chance", prob=round(p_dc_1x, 1)
+    ))
+    projected_lines.append(ProjectedLine(
+        label="Doble Oportunidad X2", value=round(p_dc_x2, 1),
+        type="double_chance", prob=round(p_dc_x2, 1)
+    ))
+    projected_lines.append(ProjectedLine(
+        label="Doble Oportunidad 12", value=round(p_dc_12, 1),
+        type="double_chance", prob=round(p_dc_12, 1)
     ))
     projected_lines.append(ProjectedLine(
         label="BTTS Sí", value=round(p_btts_yes * 100, 1),
@@ -2693,6 +2325,25 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     a_adv = sum(1 for c in comparisons if c.advantage == "away")
     vp    = [v for v in values if v.is_value]
 
+    # ── Faltas y Offsides Lambdas ─────────────────────────────
+    lam_fouls = _compute_fouls_lambda(h, a, req.league_stats)
+    h_fouls_lam = _compute_team_fouls_lambda(h, a, req.league_stats, is_home=True)
+    a_fouls_lam = _compute_team_fouls_lambda(a, h, req.league_stats, is_home=False)
+
+    lam_offsides = _compute_offsides_lambda(h, a, req.league_stats)
+    h_offsides_lam = _compute_team_offsides_lambda(h, a, req.league_stats, is_home=True)
+    a_offsides_lam = _compute_team_offsides_lambda(a, h, req.league_stats, is_home=False)
+
+    # ── Most Probable Score ──
+    max_p = -1.0
+    best_h, best_a = 0, 0
+    for i in range(len(matrix)):
+        for j in range(len(matrix[i])):
+            if matrix[i][j] > max_p:
+                max_p = matrix[i][j]
+                best_h, best_a = i, j
+    most_probable_score = f"{best_h} - {best_a}"
+
     # ── Proyecciones por Equipo ───────────────────────────────
     projected_lines.append(ProjectedLine(label=f"Goles {h.name}", value=h_goals_lam, type="goals_team"))
     projected_lines.append(ProjectedLine(label=f"Goles {a.name}", value=a_goals_lam, type="goals_team"))
@@ -2704,6 +2355,14 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     projected_lines.append(ProjectedLine(label=f"Tiros {a.name}", value=a_shots_lam, type="shots_team"))
     projected_lines.append(ProjectedLine(label=f"Tiros a Pta {h.name}", value=h_shots_target_lam, type="shots_target_team"))
     projected_lines.append(ProjectedLine(label=f"Tiros a Pta {a.name}", value=a_shots_target_lam, type="shots_target_team"))
+
+    # Faltas y Offsides Totales y por Equipo en Projected Lines
+    projected_lines.append(ProjectedLine(label="Faltas Totales (λ)", value=round(lam_fouls, 1), type="fouls", prob=None))
+    projected_lines.append(ProjectedLine(label=f"Faltas {h.name}", value=h_fouls_lam, type="fouls_team"))
+    projected_lines.append(ProjectedLine(label=f"Faltas {a.name}", value=a_fouls_lam, type="fouls_team"))
+    projected_lines.append(ProjectedLine(label="Offsides Totales (λ)", value=round(lam_offsides, 1), type="offsides", prob=None))
+    projected_lines.append(ProjectedLine(label=f"Offsides {h.name}", value=h_offsides_lam, type="offsides_team"))
+    projected_lines.append(ProjectedLine(label=f"Offsides {a.name}", value=a_offsides_lam, type="offsides_team"))
 
     summary = (
         f"Sherlock Analytics | λ Goles: {h.name} {h_lam:.2f} - {a.name} {a_lam:.2f}\n"
@@ -2730,235 +2389,14 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         a_corners_lam=a_corners_lam,
         h_cards_lam=h_cards_lam,
         a_cards_lam=a_cards_lam,
+        h_fouls_lam=h_fouls_lam,
+        a_fouls_lam=a_fouls_lam,
+        h_offsides_lam=h_offsides_lam,
+        a_offsides_lam=a_offsides_lam,
+        most_probable_score=most_probable_score,
         comparisons=comparisons,
         values=values,
         projected_lines=projected_lines,
         summary=summary,
         llm_analysis=llm,
-    )
-
-
-# ───────────────────────────────────────────────────────────────
-# compare_nba
-# ───────────────────────────────────────────────────────────────
-async def compare_nba(req: NBACompareRequest) -> CompareResponse:
-    h, a = req.home, req.away
-
-    # Comparaciones de stats — MISMO ORDEN QUE TU LISTA
-    comparisons = [
-        # Generales / resultado
-        _stat_comparison("Puntos por partido",              "points",               h.points,               a.points),
-        _stat_comparison("Puntos permitidos por partido",   "points_against",       h.points_against,       a.points_against, False),
-        _stat_comparison("Asistencias por partido",         "assists",              h.assists,              a.assists),
-        _stat_comparison("Ratio AST/Pérdidas",              "ast_to_ratio",         h.ast_to_ratio,         a.ast_to_ratio),
-
-        # Tiros de campo
-        _stat_comparison("TC anotados por partido",         "fg_made",              h.fg_made,              a.fg_made),
-        _stat_comparison("TC intentados por partido",       "fg_attempted",         h.fg_attempted,         a.fg_attempted),
-        _stat_comparison("% tiros de campo",                "fg_pct",               h.fg_pct,               a.fg_pct),
-
-        # Triples
-        _stat_comparison("Triples anotados por partido",    "three_pt_made",        h.three_pt_made,        a.three_pt_made),
-        _stat_comparison("Triples intentados por partido",  "three_pt_attempted",   h.three_pt_attempted,   a.three_pt_attempted),
-        _stat_comparison("% de triples",                    "three_pt_pct",         h.three_pt_pct,         a.three_pt_pct),
-
-        # Tiros libres
-        _stat_comparison("TL anotados por partido",         "ft_made",              h.ft_made,              a.ft_made),
-        _stat_comparison("TL intentados por partido",       "ft_attempted",         h.ft_attempted,         a.ft_attempted),
-        _stat_comparison("% tiros libres",                  "ft_pct",               h.ft_pct,               a.ft_pct),
-
-        # Eficiencia tiro
-        _stat_comparison("Porcentaje tiro efectivo (eFG%)", "efg_pct",              h.efg_pct,              a.efg_pct),
-        _stat_comparison("Porcentaje tiro real (TS%)",      "ts_pct",               h.ts_pct,               a.ts_pct),
-
-        # Rebotes
-        _stat_comparison("Rebotes ofensivos por partido",   "off_rebounds",         h.off_rebounds,         a.off_rebounds),
-        _stat_comparison("Rebotes defensivos por partido",  "def_rebounds",         h.def_rebounds,         a.def_rebounds),
-        _stat_comparison("Rebotes totales por partido",     "total_rebounds",       h.total_rebounds,       a.total_rebounds),
-
-        # Defensa
-        _stat_comparison("Tapones por partido",             "blocks",               h.blocks,               a.blocks),
-        _stat_comparison("Robos por partido",               "steals",               h.steals,               a.steals),
-        _stat_comparison("% triples permitidos",            "three_pt_pct_allowed", h.three_pt_pct_allowed, a.three_pt_pct_allowed, False),
-
-        # Control balón / ritmo / ratings
-        _stat_comparison("Pérdidas por partido",            "turnovers",            h.turnovers,            a.turnovers, False),
-        _stat_comparison("Ritmo",                           "pace",                 h.pace,                 a.pace),
-        _stat_comparison("Valoración ofensiva",             "off_rating",           h.off_rating,           a.off_rating),
-        _stat_comparison("Valoración defensiva",            "def_rating",           h.def_rating,           a.def_rating, False),
-        _stat_comparison("Valoración neta",                 "net_rating",           h.net_rating,           a.net_rating),
-
-        # Record / standings
-        _stat_comparison("Partidos jugados",                "games_played",         float(h.games_played),  float(a.games_played)),
-        _stat_comparison("Partidos ganados",                "wins",                 float(h.wins),          float(a.wins)),
-        _stat_comparison("Partidos perdidos",               "losses",               float(h.losses),        float(a.losses), False),
-        _stat_comparison("Diferencia de puntos",            "point_diff",           h.point_diff,           a.point_diff),
-        _stat_comparison("PA (Puntos permitidos)",          "pa",                   h.points_against,       a.points_against, False),
-        _stat_comparison("PCT (Win%)",                      "win_pct",              h.win_pct,              a.win_pct),
-    ]
-
-    # --- Proyecciones usando solo stats dadas + HCA ---
-    proj_pace = (h.pace + a.pace) / 2.0
-
-    # Ajuste por HCA como boost directo a puntos esperados locales
-    hca_boost = req.home_court_advantage
-
-    # Usamos ofensiva propia + defensiva rival, escalado por ritmo
-    h_base = (h.off_rating + a.def_rating) / 2.0
-    a_base = (a.off_rating + h.def_rating) / 2.0
-
-    h_proj_pts = (h_base + hca_boost) * (proj_pace / 100.0)
-    a_proj_pts = (a_base) * (proj_pace / 100.0)
-
-    total_proj = h_proj_pts + a_proj_pts
-    spread_proj = h_proj_pts - a_proj_pts  # >0: local favorito
-
-    # Probabilidades ML via función logística en el spread
-    k_ml = 0.17
-    h_prob = 100.0 / (1.0 + math.exp(-k_ml * spread_proj))
-    a_prob = 100.0 - h_prob
-
-    # Prob O/U usando logística sobre diferencia total proyectado vs línea
-    p_over = 50.0
-    p_under = 50.0
-    if req.odds.total_line is not None:
-        k_total = 0.13
-        diff_total = total_proj - req.odds.total_line
-        p_over = 100.0 / (1.0 + math.exp(-k_total * diff_total))
-        p_under = 100.0 - p_over
-
-    # Prob spread local vs línea de handicap
-    p_h_spread = 50.0
-    p_a_spread = 50.0
-    if req.odds.spread_line is not None:
-        k_spread = 0.18
-        # línea es para el local, ej -5.5; ajustamos con spread justo del modelo
-        diff_spread = spread_proj - (-req.odds.spread_line)
-        p_h_spread = 100.0 / (1.0 + math.exp(-k_spread * diff_spread))
-        p_a_spread = 100.0 - p_h_spread
-
-    # --- Mercados / Value ---
-    market: list[tuple[str, float | None, float]] = [
-        ("Ganador (Local)",     req.odds.home, h_prob),
-        ("Ganador (Visitante)", req.odds.away, a_prob),
-    ]
-
-    if req.odds.total_line is not None:
-        market.append((f"Over {req.odds.total_line}",  req.odds.over_odds,  p_over))
-        market.append((f"Under {req.odds.total_line}", req.odds.under_odds, p_under))
-
-    if req.odds.spread_line is not None:
-        market.append((f"Handicap Local ({req.odds.spread_line:+.1f})",   req.odds.home_spread_odds, p_h_spread))
-        market.append((f"Handicap Visitante ({-req.odds.spread_line:+.1f})", req.odds.away_spread_odds, p_a_spread))
-
-    values = [_value_indicator(sel, odds, mp) for sel, odds, mp in market]
-    for v in values:
-        v.strategic_score = _frontend_style_strategic_score(v)
-        v.quality_score = v.strategic_score # Para NBA usamos el mismo score estratégico como calidad base
-        v.is_value = v.strategic_score >= 0
-        v.is_high_confidence = v.model_prob >= 75.0 and not v.is_value
-
-    # --- Projected Lines (derivadas solo de stats) ---
-    projected_lines = [
-        ProjectedLine(label="Total Puntos",      value=round(total_proj, 1), type="total",    prob=round(p_over, 1)),
-        ProjectedLine(label="Spread (Local)",    value=round(-spread_proj, 1), type="handicap", prob=round(p_h_spread, 1)),
-        ProjectedLine(label=f"Total {h.name}",   value=round(h_proj_pts, 1), type="team_total"),
-        ProjectedLine(label=f"Total {a.name}",   value=round(a_proj_pts, 1), type="team_total"),
-        ProjectedLine(label="Ritmo Esperado",    value=round(proj_pace, 1),  type="pace"),
-    ]
-
-    vp = [v for v in values if v.is_value]
-    summary = (
-        f"Sherlock NBA | Puntos Proyectados: {h.name} {h_proj_pts:.1f} - {a.name} {a_proj_pts:.1f}\n"
-        f"Total Proyectado: {total_proj:.1f} | Ritmo: {proj_pace:.1f} posesiones\n"
-        f"Handicap Estimado: {h.name} {-spread_proj:+.1f}\n"
-        + (f"✅ Value detectado en: {', '.join(v.selection for v in vp)}"
-           if vp else "⚖️ Sin value claro en las cuotas actuales.")
-    )
-
-    llm = None
-
-    return CompareResponse(
-        sport="nba",
-        home_name=h.name,
-        away_name=a.name,
-        comparisons=comparisons,
-        values=values,
-        projected_lines=projected_lines,
-        summary=summary,
-        llm_analysis=llm,
-    )
-
-
-# ───────────────────────────────────────────────────────────────
-# compare_tennis
-# ───────────────────────────────────────────────────────────────
-async def compare_tennis(req: TennisCompareRequest) -> CompareResponse:
-    p1, p2 = req.player1, req.player2
-
-    comparisons = [
-        # Perfil
-        _stat_comparison("Edad",                "age",               float(p1.age),               float(p2.age), False),
-        _stat_comparison("Altura (cm)",         "height",            float(p1.height),            float(p2.height)),
-        _stat_comparison("Ranking ATP",         "rank",              float(p1.rank),              float(p2.rank), False),
-        # Performance
-        _stat_comparison("Global: Ganados %",   "win_pct_total",      (p1.matches_won / max(p1.total_matches, 1)) * 100, (p2.matches_won / max(p2.total_matches, 1)) * 100),
-        _stat_comparison("Torneos Ganados",    "tournaments_won",   float(p1.tournaments_won),   float(p2.tournaments_won)),
-        # Service
-        _stat_comparison("% 1er Servicio",     "first_serve_pct",   p1.first_serve_pct,          p2.first_serve_pct),
-        _stat_comparison("% Pts 1er Serv",     "first_serve_points_won_pct",  p1.first_serve_points_won_pct,  p2.first_serve_points_won_pct),
-        _stat_comparison("% Pts 2do Serv",     "second_serve_points_won_pct", p1.second_serve_points_won_pct, p2.second_serve_points_won_pct),
-        _stat_comparison("Aces/Partido",       "aces_per_match",    p1.aces_per_match,           p2.aces_per_match),
-        _stat_comparison("DF/Partido",         "double_faults_per_match", p1.double_faults_per_match, p2.double_faults_per_match, False),
-        # Pressure
-        _stat_comparison("% BP Salvados",       "bp_saved_pct",       (p1.break_points_saved / max(p1.break_points_saved_total, 1)) * 100, (p2.break_points_saved / max(p2.break_points_saved_total, 1)) * 100),
-        _stat_comparison("% BP Convertidos",   "bp_conv_pct",        (p1.break_points_converted / max(p1.break_points_converted_total, 1)) * 100, (p2.break_points_converted / max(p2.break_points_converted_total, 1)) * 100),
-        _stat_comparison("% Tiebreaks Ganados","tiebreaks_won_pct",  (p1.tiebreaks_won / max(p1.tiebreaks_total, 1)) * 100, (p2.tiebreaks_won / max(p2.tiebreaks_total, 1)) * 100),
-        _stat_comparison("Win % Superficie",   "surface_win_pct",   (p1.matches_on_surface_won / max(p1.total_matches_on_surface, 1)) * 100, (p2.matches_on_surface_won / max(p2.total_matches_on_surface, 1)) * 100),
-    ]
-
-    # --- Motor de Probabilidades de Tenis (O'Malley / Barnett) ---
-    p1_prob = _tennis_match_win_prob(p1, p2, surface=req.surface)
-    p2_prob = 100.0 - p1_prob
-
-    # --- Values ---
-    market = [
-        (p1.name, req.odds.player1, p1_prob),
-        (p2.name, req.odds.player2, p2_prob),
-    ]
-    
-    values = [_value_indicator(sel, odds, mp) for sel, odds, mp in market]
-    for v in values:
-        v.strategic_score = _frontend_style_strategic_score(v)
-        v.quality_score = v.strategic_score
-        v.is_value = v.strategic_score >= 10 
-        v.is_high_confidence = v.model_prob >= 75.0 and not v.is_value
-
-    # --- LLM Analysis ---
-    llm = None
-    if req.generate_llm_analysis:
-        llm = await _safe_generate_tennis_analysis(p1, p2, [v for v in values if v.is_value], req.surface, req.user_context)
-
-    # --- Resumen ---
-    p1a = sum(1 for c in comparisons if c.advantage == "home")
-    p2a = sum(1 for c in comparisons if c.advantage == "away")
-    vp  = [v for v in values if v.is_value]
-    
-    summary = (
-        f"Sherlock Tennis | Proyección: {p1.name} {p1_prob:.1f}% vs {p2.name} {p2_prob:.1f}%\n"
-        f"{p1.name} domina {p1a} métricas, {p2.name} {p2a}.\n"
-        + (f"✅ Value en: {', '.join(v.selection for v in vp)}." if vp else "⚖️ Sin value claro.")
-    )
-
-    return CompareResponse(
-        sport="tennis",
-        home_name=p1.name,
-        away_name=p2.name,
-        comparisons=comparisons,
-        values=values,
-        summary=summary,
-        llm_analysis=llm,
-    )
-
-
-    
+    )    
