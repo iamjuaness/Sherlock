@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Configuración - Watson</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: #0f172a;
+            color: #e2e8f0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background: #1e293b;
+            border-radius: 16px;
+            padding: 32px;
+            border: 1px solid #334155;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+        .header .icon {
+            font-size: 48px;
+            margin-bottom: 12px;
+        }
+        .header h1 {
+            font-size: 24px;
+            color: #60a5fa;
+            margin-bottom: 4px;
+        }
+        .header p {
+            color: #94a3b8;
+            font-size: 14px;
+        }
+        .form-group {
+            margin-bottom: 24px;
+        }
+        .form-group label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 8px;
+        }
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 16px;
+            background: #0f172a;
+            border: 1px solid #334155;
+            border-radius: 10px;
+            color: #f1f5f9;
+            font-size: 14px;
+            font-family: monospace;
+            transition: all 0.2s;
+        }
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+        .form-group input::placeholder {
+            color: #475569;
+        }
+        .help-text {
+            font-size: 12px;
+            color: #64748b;
+            margin-top: 6px;
+            line-height: 1.5;
+        }
+        .help-text code {
+            background: #0f172a;
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #60a5fa;
+        }
+        .btn {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #3b82f6, #2563eb);
+            color: white;
+        }
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #2563eb, #1d4ed8);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+        }
+        .btn-secondary {
+            background: #334155;
+            color: #e2e8f0;
+            margin-top: 12px;
+        }
+        .btn-secondary:hover {
+            background: #475569;
+        }
+        .status {
+            margin-top: 16px;
+            padding: 12px 16px;
+            border-radius: 10px;
+            font-size: 14px;
+            display: none;
+        }
+        .status.show { display: block; }
+        .status.success {
+            background: rgba(16, 185, 129, 0.1);
+            color: #34d399;
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+        .status.error {
+            background: rgba(239, 68, 68, 0.1);
+            color: #f87171;
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+        .status.loading {
+            background: rgba(59, 130, 246, 0.1);
+            color: #60a5fa;
+            border: 1px solid rgba(59, 130, 246, 0.2);
+        }
+        .divider {
+            height: 1px;
+            background: #334155;
+            margin: 24px 0;
+        }
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #94a3b8;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-bottom: 16px;
+        }
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .checkbox-group input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            accent-color: #3b82f6;
+        }
+        .checkbox-group label {
+            font-size: 14px;
+            color: #e2e8f0;
+            cursor: pointer;
+        }
+        .advanced-options {
+            background: #0f172a;
+            border-radius: 10px;
+            padding: 16px;
+            border: 1px solid #334155;
+        }
+    </style>
+<base target="_blank">
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="icon">⚙️</div>
+            <h1>Configuración</h1>
+            <p>Personaliza tu extractor de SofaScore</p>
+        </div>
+
+        <div class="section-title">🔗 Endpoint de Destino</div>
+
+        <div class="form-group">
+            <label for="endpointUrl">URL del Endpoint</label>
+            <input 
+                type="url" 
+                id="endpointUrl" 
+                placeholder="https://tu-api.com/endpoint"
+            >
+            <div class="help-text">
+                La URL donde se enviarán los datos extraídos. Debe aceptar peticiones 
+                <code>POST</code> con Content-Type <code>application/json</code>.
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label for="authToken">Token de Autorización (opcional)</label>
+            <input 
+                type="password" 
+                id="authToken" 
+                placeholder="Bearer token o API key"
+            >
+            <div class="help-text">
+                Se enviará en el header <code>Authorization</code>. Deja vacío si no necesitas autenticación.
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">📊 Datos a Extraer</div>
+
+        <div class="advanced-options">
+            <div class="checkbox-group">
+                <input type="checkbox" id="extractLineups" checked>
+                <label for="extractLineups">Alineaciones (Lineups)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="extractStreaks" checked>
+                <label for="extractStreaks">Rachas del equipo (Team Streaks)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="extractHomeStats" checked>
+                <label for="extractHomeStats">Estadísticas del equipo local</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="extractAwayStats" checked>
+                <label for="extractAwayStats">Estadísticas del equipo visitante</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="extractIncidents">
+                <label for="extractIncidents">Incidentes del partido (goles, tarjetas, etc.)</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="extractHeatmaps">
+                <label for="extractHeatmaps">Mapas de calor de jugadores</label>
+            </div>
+            <div class="checkbox-group">
+                <input type="checkbox" id="extractMatchResults" checked>
+                <label for="extractMatchResults">Resultados Finales del Partido</label>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="section-title">⚡ Comportamiento</div>
+
+        <div class="form-group">
+            <label for="autoSend">Envío Automático</label>
+            <select id="autoSend">
+                <option value="never">Manual (requiere clic en Enviar)</option>
+                <option value="after_extract">Automático después de extraer</option>
+                <option value="on_detect">Automático al detectar partido</option>
+            </select>
+        </div>
+
+        <button class="btn btn-primary" id="btnSave">💾 Guardar Configuración</button>
+        <button class="btn btn-secondary" id="btnTest">🧪 Probar Conexión</button>
+        <button class="btn btn-secondary" id="btnReset">🔄 Restaurar Defaults</button>
+
+        <div class="status" id="status"></div>
+    </div>
+
+    <script src="settings.js"></script>
+</body>
+</html>

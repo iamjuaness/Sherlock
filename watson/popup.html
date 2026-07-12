@@ -1,0 +1,399 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Watson</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      body {
+        width: 380px;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        background: #0f172a;
+        color: #e2e8f0;
+      }
+      .header {
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        padding: 20px;
+        border-bottom: 2px solid #3b82f6;
+      }
+      .header h1 {
+        font-size: 18px;
+        color: #60a5fa;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .header .subtitle {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-top: 4px;
+      }
+      .content {
+        padding: 16px;
+      }
+      .match-info {
+        background: #1e293b;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 16px;
+        border: 1px solid #334155;
+      }
+      .match-info h3 {
+        font-size: 13px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 8px;
+      }
+      .teams {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+      .team {
+        flex: 1;
+        text-align: center;
+      }
+      .team-name {
+        font-weight: 600;
+        font-size: 14px;
+        color: #f1f5f9;
+      }
+      .team-id {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 2px;
+      }
+      .vs {
+        font-size: 12px;
+        color: #3b82f6;
+        font-weight: 700;
+        background: #1e3a5f;
+        padding: 4px 10px;
+        border-radius: 20px;
+      }
+      .event-id {
+        margin-top: 10px;
+        text-align: center;
+        font-size: 12px;
+        color: #60a5fa;
+        background: #0f172a;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-family: monospace;
+      }
+      .stats-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .stat-card {
+        background: #1e293b;
+        border-radius: 10px;
+        padding: 14px;
+        border: 1px solid #334155;
+        transition: all 0.2s;
+      }
+      .stat-card:hover {
+        border-color: #3b82f6;
+        transform: translateY(-1px);
+      }
+      .stat-card .label {
+        font-size: 11px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .stat-card .value {
+        font-size: 20px;
+        font-weight: 700;
+        color: #f1f5f9;
+        margin-top: 4px;
+      }
+      .stat-card .sub {
+        font-size: 11px;
+        color: #64748b;
+        margin-top: 2px;
+      }
+      .actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      }
+      .btn {
+        padding: 12px 16px;
+        border: none;
+        border-radius: 10px;
+        font-size: 14px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: all 0.2s;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+      }
+      .btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+      }
+      .btn-primary {
+        background: linear-gradient(135deg, #3b82f6, #2563eb);
+        color: white;
+      }
+      .btn-primary:hover:not(:disabled) {
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+      }
+      .btn-secondary {
+        background: #334155;
+        color: #e2e8f0;
+      }
+      .btn-secondary:hover:not(:disabled) {
+        background: #475569;
+      }
+      .btn-success {
+        background: linear-gradient(135deg, #10b981, #059669);
+        color: white;
+      }
+      .btn-success:hover:not(:disabled) {
+        background: linear-gradient(135deg, #059669, #047857);
+      }
+      /* Estilo para botón Betano */
+      .btn-betano {
+        background: linear-gradient(135deg, #f59e0b, #d97706);
+        color: white;
+      }
+      .btn-betano:hover:not(:disabled) {
+        background: linear-gradient(135deg, #d97706, #b45309);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
+      }
+      .status {
+        margin-top: 12px;
+        padding: 10px 14px;
+        border-radius: 8px;
+        font-size: 13px;
+        display: none;
+        white-space: pre-line;
+      }
+      .status.show {
+        display: block;
+      }
+      .status.success {
+        background: rgba(16, 185, 129, 0.1);
+        color: #34d399;
+        border: 1px solid rgba(16, 185, 129, 0.2);
+      }
+      .status.error {
+        background: rgba(239, 68, 68, 0.1);
+        color: #f87171;
+        border: 1px solid rgba(239, 68, 68, 0.2);
+      }
+      .status.loading {
+        background: rgba(59, 130, 246, 0.1);
+        color: #60a5fa;
+        border: 1px solid rgba(59, 130, 246, 0.2);
+      }
+      .settings-link {
+        text-align: center;
+        margin-top: 12px;
+      }
+      .settings-link a {
+        color: #64748b;
+        font-size: 12px;
+        text-decoration: none;
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .settings-link a:hover {
+        color: #3b82f6;
+      }
+      .no-match {
+        text-align: center;
+        padding: 30px 20px;
+        color: #64748b;
+      }
+      .no-match-icon {
+        font-size: 40px;
+        margin-bottom: 10px;
+      }
+      .endpoint-config {
+        background: #1e293b;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 12px;
+        border: 1px solid #334155;
+      }
+      .endpoint-config label {
+        font-size: 11px;
+        color: #94a3b8;
+        text-transform: uppercase;
+      }
+      .endpoint-config .url {
+        font-size: 12px;
+        color: #60a5fa;
+        font-family: monospace;
+        margin-top: 4px;
+        word-break: break-all;
+      }
+      .endpoint-config .url.not-set {
+        color: #ef4444;
+      }
+      .spinner {
+        display: inline-block;
+        width: 16px;
+        height: 16px;
+        border: 2px solid rgba(255, 255, 255, 0.3);
+        border-radius: 50%;
+        border-top-color: white;
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .progress-bar {
+        width: 100%;
+        height: 4px;
+        background: #334155;
+        border-radius: 2px;
+        margin-top: 8px;
+        overflow: hidden;
+        display: none;
+      }
+      .progress-bar.show {
+        display: block;
+      }
+      .progress-bar .fill {
+        height: 100%;
+        background: linear-gradient(90deg, #3b82f6, #60a5fa);
+        border-radius: 2px;
+        transition: width 0.3s ease;
+        width: 0%;
+      }
+    </style>
+    <base target="_blank" />
+  </head>
+  <body>
+    <div class="header">
+      <h1>⚽ Watson</h1>
+      <div class="subtitle">Extracción de estadísticas de equipos</div>
+    </div>
+
+    <div class="content">
+      <div id="matchContainer">
+        <div class="no-match">
+          <div class="no-match-icon">🔍</div>
+          <p>Navega a un partido de SofaScore o Betano para extraer datos</p>
+          <p style="font-size: 11px; margin-top: 8px">
+            SofaScore: URL debe contener <code>#id:12345678</code>
+          </p>
+          <p style="font-size: 11px; margin-top: 4px">
+            Betano: URL debe contener <code>/cuotas-de-partido/</code>
+          </p>
+        </div>
+      </div>
+
+      <div id="statsContainer" style="display: none">
+        <div class="match-info">
+          <h3>📋 Información del Partido</h3>
+          <div class="teams">
+            <div class="team">
+              <div class="team-name" id="homeTeam">-</div>
+              <div class="team-id" id="homeTeamId">-</div>
+            </div>
+            <div class="vs">VS</div>
+            <div class="team">
+              <div class="team-name" id="awayTeam">-</div>
+              <div class="team-id" id="awayTeamId">-</div>
+            </div>
+          </div>
+          <div class="event-id" id="eventId">-</div>
+        </div>
+
+        <div class="endpoint-config">
+          <label>🔗 Endpoint Configurado</label>
+          <div class="url not-set" id="endpointUrl">
+            No configurado - Ve a Settings
+          </div>
+        </div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <div class="label">Goles Marcados</div>
+            <div class="value" id="goalsScored">-</div>
+            <div class="sub" id="goalsScoredTeam">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Goles Recibidos</div>
+            <div class="value" id="goalsConceded">-</div>
+            <div class="sub" id="goalsConcededTeam">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Posesión Media</div>
+            <div class="value" id="avgPossession">-</div>
+            <div class="sub" id="avgPossessionTeam">-</div>
+          </div>
+          <div class="stat-card">
+            <div class="label">Tiros a Puerta</div>
+            <div class="value" id="shotsOnTarget">-</div>
+            <div class="sub" id="shotsOnTargetTeam">-</div>
+          </div>
+        </div>
+
+        <div class="actions">
+          <button class="btn btn-primary" id="btnExtract">
+            <span>📊 Extraer Estadísticas Completas</span>
+          </button>
+          <button class="btn btn-success" id="btnSend" disabled>
+            <span>🚀 Enviar a Endpoint</span>
+          </button>
+          <button
+            class="btn btn-primary"
+            id="btnExtractResults"
+            style="background: linear-gradient(135deg, #8b5cf6, #6d28d9)"
+          >
+            <span>📊 Obtener Resultados Finales</span>
+          </button>
+
+          <!-- NUEVO: Botón para Betano -->
+          <button
+            class="btn btn-betano"
+            id="btnBetanoExtract"
+            style="display: none"
+          >
+            <span>🎰 Extraer Cuotas Betano</span>
+          </button>
+
+          <button class="btn btn-secondary" id="btnViewJson">
+            <span>👁️ Ver JSON</span>
+          </button>
+        </div>
+
+        <div class="progress-bar" id="progressBar">
+          <div class="fill" id="progressFill"></div>
+        </div>
+
+        <div class="status" id="status"></div>
+      </div>
+
+      <div class="settings-link">
+        <a href="#" id="btnSettings">⚙️ Configurar Endpoint</a>
+      </div>
+    </div>
+
+    <script src="sofaScoreToSherlock.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>

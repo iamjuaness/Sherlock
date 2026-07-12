@@ -109,13 +109,13 @@ let loadedHistoryEntryDate = null;
   }
 
   function showPrefillBanner(sport, payload) {
-    let existing = document.getElementById("prefill-banner");
+    let existing = document.getElementById("prefill-toast");
     if (existing) existing.remove();
 
     const home = payload?.home?.name || "";
     const away = payload?.away?.name || "";
     const banner = document.createElement("div");
-    banner.id = "prefill-banner";
+    banner.id = "prefill-toast";
     banner.style.cssText = `
       position: fixed; bottom: 1.5rem; right: 1.5rem; z-index: 9999;
       background: linear-gradient(135deg, #10b981, #059669);
@@ -1274,87 +1274,126 @@ function populateAppForm(sport, data) {
   if (sport === "football") {
     const { home, away, odds } = data;
 
-    setSafeValue("fb-home-name", home.name);
-    setSafeValue("fb-home-matches-home", home.matches_home);
-    setSafeValue("fb-home-matches-away", home.matches_away);
-    setSafeValue("fb-home-wins", home.wins);
-    setSafeValue("fb-home-draws", home.draws);
-    setSafeValue("fb-home-losses", home.losses);
-    setSafeValue("fb-home-goals-per-game", home.goals_per_game);
-    setSafeValue("fb-home-goals-conceded", home.goals_conceded_per_game);
-    setSafeValue("fb-home-goal-conv", home.goal_conversion_pct);
-    setSafeValue("fb-home-big-chances", home.big_chances_per_game);
-    setSafeValue(
-      "fb-home-big-chances-missed",
-      home.big_chances_missed_per_game,
-    );
-    setSafeValue("fb-home-shots", home.shots_per_game);
-    setSafeValue("fb-home-shots-target", home.shots_on_target_per_game);
-    setSafeValue("fb-home-possession", home.possession_pct);
-    setSafeValue("fb-home-pass", home.passes_completed);
-    setSafeValue("fb-home-pass-acc", home.pass_accuracy);
-    setSafeValue("fb-home-pass-opp-half", home.passes_opp_half);
-    setSafeValue("fb-home-pass-opp", home.pass_accuracy_opp_half);
-    setSafeValue("fb-home-cross-completed", home.crosses_per_game);
-    setSafeValue("fb-home-cross-acc", home.cross_accuracy);
-    setSafeValue("fb-home-corners", home.corners_per_game);
-    setSafeValue("fb-home-clean-sheets-home", home.clean_sheets_home);
-    setSafeValue("fb-home-clean-sheets-away", home.clean_sheets_away);
-    setSafeValue("fb-home-saves", home.saves_per_game);
-    setSafeValue("fb-home-balls-recovered", home.balls_recovered_per_game);
-    setSafeValue("fb-home-duels", home.duels_won_per_game);
-    setSafeValue("fb-home-duels-ground", home.ground_duels_won_per_game);
-    setSafeValue("fb-home-pen-conceded", home.penalties_conceded);
-    setSafeValue("fb-home-fouls", home.fouls_per_game);
-    setSafeValue("fb-home-yellow-cards", home.yellow_cards_per_game);
-    setSafeValue("fb-home-red-cards", home.red_cards_total);
-    setSafeValue("fb-home-offsides", home.offside_per_game);
-    setSafeValue("fb-home-errors-goal", home.errors_leading_to_goal);
-    // Nuevos campos
-    setSafeValue("fb-home-xg", home.xg_per_game);
-    setSafeValue("fb-home-xga", home.xga_per_game);
-    setSafeValue("fb-home-corners-conceded", home.corners_conceded_per_game);
+    // Update prefill banner state to "Loaded"
+    const banner = document.getElementById("prefill-banner");
+    if (banner) {
+      banner.style.background =
+        "linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.2))";
+      banner.style.border = "1px solid rgba(16, 185, 129, 0.3)";
+    }
+    const bannerIcon = document.getElementById("prefill-icon");
+    if (bannerIcon) {
+      bannerIcon.textContent = "⚡";
+      bannerIcon.style.color = "#10b981";
+      bannerIcon.style.opacity = "1";
+    }
+    const bannerTitle = document.getElementById("prefill-title");
+    if (bannerTitle) {
+      bannerTitle.style.color = "#10b981";
+      bannerTitle.innerHTML = `
+        Datos Cargados Automáticamente
+        <span id="prefill-badge" style="background: #10b981; color: #fff; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px;">Prefill Activo</span>
+      `;
+    }
+    const bannerDesc = document.getElementById("prefill-desc");
+    if (bannerDesc) {
+      bannerDesc.textContent =
+        "El comparador ha inyectado el historial del partido. Puedes revisar directamente los paneles abajo.";
+    }
 
-    setSafeValue("fb-away-name", away.name);
-    setSafeValue("fb-away-matches-home", away.matches_home);
-    setSafeValue("fb-away-matches-away", away.matches_away);
-    setSafeValue("fb-away-wins", away.wins);
-    setSafeValue("fb-away-draws", away.draws);
-    setSafeValue("fb-away-losses", away.losses);
-    setSafeValue("fb-away-goals-per-game", away.goals_per_game);
-    setSafeValue("fb-away-goals-conceded", away.goals_conceded_per_game);
-    setSafeValue("fb-away-goal-conv", away.goal_conversion_pct);
-    setSafeValue("fb-away-big-chances", away.big_chances_per_game);
-    setSafeValue(
-      "fb-away-big-chances-missed",
-      away.big_chances_missed_per_game,
-    );
-    setSafeValue("fb-away-shots", away.shots_per_game);
-    setSafeValue("fb-away-shots-target", away.shots_on_target_per_game);
-    setSafeValue("fb-away-possession", away.possession_pct);
-    setSafeValue("fb-away-pass", away.passes_completed);
-    setSafeValue("fb-away-pass-acc", away.pass_accuracy);
-    setSafeValue("fb-away-pass-opp-half", away.passes_opp_half);
-    setSafeValue("fb-away-pass-opp", away.pass_accuracy_opp_half);
-    setSafeValue("fb-away-cross-completed", away.crosses_per_game);
-    setSafeValue("fb-away-cross-acc", away.cross_accuracy);
-    setSafeValue("fb-away-corners", away.corners_per_game);
-    setSafeValue("fb-away-clean-sheets-home", away.clean_sheets_home);
-    setSafeValue("fb-away-clean-sheets-away", away.clean_sheets_away);
-    setSafeValue("fb-away-saves", away.saves_per_game);
-    setSafeValue("fb-away-balls-recovered", away.balls_recovered_per_game);
-    setSafeValue("fb-away-duels", away.duels_won_per_game);
-    setSafeValue("fb-away-duels-ground", away.ground_duels_won_per_game);
-    setSafeValue("fb-away-pen-conceded", away.penalties_conceded);
-    setSafeValue("fb-away-fouls", away.fouls_per_game);
-    setSafeValue("fb-away-yellow-cards", away.yellow_cards_per_game);
-    setSafeValue("fb-away-red-cards", away.red_cards_total);
-    setSafeValue("fb-away-offsides", away.offside_per_game);
-    setSafeValue("fb-away-errors-goal", away.errors_leading_to_goal);
-    // Nuevos campos
-    setSafeValue("fb-away-xg", away.xg_per_game);
-    setSafeValue("fb-away-xga", away.xga_per_game);
-    setSafeValue("fb-away-corners-conceded", away.corners_conceded_per_game);
+    if (home) {
+      setSafeValue("fb-home-name", home.name);
+      const prefillHome = document.getElementById("prefill-home-team");
+      if (prefillHome) {
+        prefillHome.textContent = home.name || "Local";
+        prefillHome.style.color = "var(--text-primary)";
+      }
+      setSafeValue("fb-home-matches-home", home.matches_home);
+      setSafeValue("fb-home-matches-away", home.matches_away);
+      setSafeValue("fb-home-wins", home.wins);
+      setSafeValue("fb-home-draws", home.draws);
+      setSafeValue("fb-home-losses", home.losses);
+      setSafeValue("fb-home-goals-per-game", home.goals_per_game);
+      setSafeValue("fb-home-goals-conceded", home.goals_conceded_per_game);
+      setSafeValue("fb-home-goal-conv", home.goal_conversion_pct);
+      setSafeValue("fb-home-big-chances", home.big_chances_per_game);
+      setSafeValue(
+        "fb-home-big-chances-missed",
+        home.big_chances_missed_per_game,
+      );
+      setSafeValue("fb-home-shots", home.shots_per_game);
+      setSafeValue("fb-home-shots-target", home.shots_on_target_per_game);
+      setSafeValue("fb-home-possession", home.possession_pct);
+      setSafeValue("fb-home-pass", home.passes_completed);
+      setSafeValue("fb-home-pass-acc", home.pass_accuracy);
+      setSafeValue("fb-home-pass-opp-half", home.passes_opp_half);
+      setSafeValue("fb-home-pass-opp", home.pass_accuracy_opp_half);
+      setSafeValue("fb-home-cross-completed", home.crosses_per_game);
+      setSafeValue("fb-home-cross-acc", home.cross_accuracy);
+      setSafeValue("fb-home-corners", home.corners_per_game);
+      setSafeValue("fb-home-clean-sheets-home", home.clean_sheets_home);
+      setSafeValue("fb-home-clean-sheets-away", home.clean_sheets_away);
+      setSafeValue("fb-home-saves", home.saves_per_game);
+      setSafeValue("fb-home-balls-recovered", home.balls_recovered_per_game);
+      setSafeValue("fb-home-duels", home.duels_won_per_game);
+      setSafeValue("fb-home-duels-ground", home.ground_duels_won_per_game);
+      setSafeValue("fb-home-pen-conceded", home.penalties_conceded);
+      setSafeValue("fb-home-fouls", home.fouls_per_game);
+      setSafeValue("fb-home-yellow-cards", home.yellow_cards_per_game);
+      setSafeValue("fb-home-red-cards", home.red_cards_total);
+      setSafeValue("fb-home-offsides", home.offside_per_game);
+      setSafeValue("fb-home-errors-goal", home.errors_leading_to_goal);
+      setSafeValue("fb-home-xg", home.xg_per_game);
+      setSafeValue("fb-home-xga", home.xga_per_game);
+      setSafeValue("fb-home-corners-conceded", home.corners_conceded_per_game);
+    }
+
+    if (away) {
+      setSafeValue("fb-away-name", away.name);
+      const prefillAway = document.getElementById("prefill-away-team");
+      if (prefillAway) {
+        prefillAway.textContent = away.name || "Visitante";
+        prefillAway.style.color = "var(--text-primary)";
+      }
+      setSafeValue("fb-away-matches-home", away.matches_home);
+      setSafeValue("fb-away-matches-away", away.matches_away);
+      setSafeValue("fb-away-wins", away.wins);
+      setSafeValue("fb-away-draws", away.draws);
+      setSafeValue("fb-away-losses", away.losses);
+      setSafeValue("fb-away-goals-per-game", away.goals_per_game);
+      setSafeValue("fb-away-goals-conceded", away.goals_conceded_per_game);
+      setSafeValue("fb-away-goal-conv", away.goal_conversion_pct);
+      setSafeValue("fb-away-big-chances", away.big_chances_per_game);
+      setSafeValue(
+        "fb-away-big-chances-missed",
+        away.big_chances_missed_per_game,
+      );
+      setSafeValue("fb-away-shots", away.shots_per_game);
+      setSafeValue("fb-away-shots-target", away.shots_on_target_per_game);
+      setSafeValue("fb-away-possession", away.possession_pct);
+      setSafeValue("fb-away-pass", away.passes_completed);
+      setSafeValue("fb-away-pass-acc", away.pass_accuracy);
+      setSafeValue("fb-away-pass-opp-half", away.passes_opp_half);
+      setSafeValue("fb-away-pass-opp", away.pass_accuracy_opp_half);
+      setSafeValue("fb-away-cross-completed", away.crosses_per_game);
+      setSafeValue("fb-away-cross-acc", away.cross_accuracy);
+      setSafeValue("fb-away-corners", away.corners_per_game);
+      setSafeValue("fb-away-clean-sheets-home", away.clean_sheets_home);
+      setSafeValue("fb-away-clean-sheets-away", away.clean_sheets_away);
+      setSafeValue("fb-away-saves", away.saves_per_game);
+      setSafeValue("fb-away-balls-recovered", away.balls_recovered_per_game);
+      setSafeValue("fb-away-duels", away.duels_won_per_game);
+      setSafeValue("fb-away-duels-ground", away.ground_duels_won_per_game);
+      setSafeValue("fb-away-pen-conceded", away.penalties_conceded);
+      setSafeValue("fb-away-fouls", away.fouls_per_game);
+      setSafeValue("fb-away-yellow-cards", away.yellow_cards_per_game);
+      setSafeValue("fb-away-red-cards", away.red_cards_total);
+      setSafeValue("fb-away-offsides", away.offside_per_game);
+      setSafeValue("fb-away-errors-goal", away.errors_leading_to_goal);
+      setSafeValue("fb-away-xg", away.xg_per_game);
+      setSafeValue("fb-away-xga", away.xga_per_game);
+      setSafeValue("fb-away-corners-conceded", away.corners_conceded_per_game);
+    }
 
     if (data.competition) {
       setSafeValue("fb-competition", data.competition);

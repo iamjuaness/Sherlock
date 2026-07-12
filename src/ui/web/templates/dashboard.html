@@ -154,7 +154,172 @@
           </div>
         </div>
 
-        <div class="comparator">
+        <!-- Banner de carga automatizada -->
+        <div
+          id="prefill-banner"
+          style="
+            margin: 1.5rem 0;
+            background: linear-gradient(
+              135deg,
+              rgba(30, 41, 59, 0.4),
+              rgba(15, 23, 42, 0.8)
+            );
+            border: 1px dashed rgba(255, 255, 255, 0.2);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+          "
+        >
+          <div
+            style="
+              display: flex;
+              align-items: flex-start;
+              gap: 1rem;
+              margin-bottom: 1.5rem;
+            "
+          >
+            <div
+              id="prefill-icon"
+              style="font-size: 2rem; color: var(--text-muted); opacity: 0.5"
+            >
+              ⏳
+            </div>
+            <div>
+              <h3
+                id="prefill-title"
+                style="
+                  margin: 0 0 0.25rem 0;
+                  color: var(--text-primary);
+                  font-size: 1.1rem;
+                  display: flex;
+                  align-items: center;
+                  gap: 0.5rem;
+                "
+              >
+                Esperando datos del comparador...
+                <span
+                  id="prefill-badge"
+                  style="
+                    background: rgba(255, 255, 255, 0.1);
+                    color: var(--text-muted);
+                    font-size: 0.6rem;
+                    padding: 2px 6px;
+                    border-radius: 4px;
+                    text-transform: uppercase;
+                    letter-spacing: 1px;
+                  "
+                  >Pendiente</span
+                >
+              </h3>
+              <p
+                id="prefill-desc"
+                style="
+                  margin: 0;
+                  color: var(--text-secondary);
+                  font-size: 0.9rem;
+                "
+              >
+                Inyecta las estadísticas desde la extensión o carga un análisis
+                previo del historial.
+              </p>
+            </div>
+          </div>
+
+          <!-- Tarjetas de Enfrentamiento -->
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              gap: 1.5rem;
+              flex-wrap: wrap;
+            "
+          >
+            <div
+              style="
+                flex: 1;
+                min-width: 200px;
+                background: rgba(0, 0, 0, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 8px;
+                padding: 1.25rem;
+                text-align: center;
+              "
+            >
+              <div style="font-size: 1.5rem; margin-bottom: 0.5rem">🏠</div>
+              <div
+                style="
+                  color: var(--text-muted);
+                  font-size: 0.75rem;
+                  text-transform: uppercase;
+                  letter-spacing: 1px;
+                  margin-bottom: 0.25rem;
+                "
+              >
+                Local
+              </div>
+              <div
+                id="prefill-home-team"
+                style="
+                  font-size: 1.2rem;
+                  font-weight: 700;
+                  color: var(--text-muted);
+                "
+              >
+                ---
+              </div>
+            </div>
+
+            <div
+              style="
+                font-size: 1.2rem;
+                font-weight: 800;
+                color: var(--text-dim);
+                opacity: 0.5;
+              "
+            >
+              VS
+            </div>
+
+            <div
+              style="
+                flex: 1;
+                min-width: 200px;
+                background: rgba(0, 0, 0, 0.2);
+                border: 1px solid rgba(255, 255, 255, 0.05);
+                border-radius: 8px;
+                padding: 1.25rem;
+                text-align: center;
+              "
+            >
+              <div style="font-size: 1.5rem; margin-bottom: 0.5rem">✈️</div>
+              <div
+                style="
+                  color: var(--text-muted);
+                  font-size: 0.75rem;
+                  text-transform: uppercase;
+                  letter-spacing: 1px;
+                  margin-bottom: 0.25rem;
+                "
+              >
+                Visitante
+              </div>
+              <div
+                id="prefill-away-team"
+                style="
+                  font-size: 1.2rem;
+                  font-weight: 700;
+                  color: var(--text-muted);
+                "
+              >
+                ---
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="comparator" style="display: none">
           <!-- LOCAL -->
           <div class="comparator__team">
             <div class="team-header team-header--home">
