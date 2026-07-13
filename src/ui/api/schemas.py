@@ -84,6 +84,8 @@ class AnalysisSave(BaseModel):
     llm_timestamp: datetime | None = None
     compare_response_snapshot: Any | None = None
     needs_reanalysis: bool | None = False
+    count_in_profitability: bool | None = True
+    has_real_stats: bool | None = True
 
 
 class AnalysisResultsUpdate(BaseModel):
@@ -135,8 +137,10 @@ class AnalysisHistoryOut(BaseModel):
     final_offsides_home: int | None = None
     final_offsides_away: int | None = None
     accuracy_percentage: float | None = None
+    count_in_profitability: bool = True
     has_picks: bool = False
     picks_hits_summary: str | None = None # e.g. "2/3"
+    has_real_stats: bool = True
 
     @field_validator("payload", "picks_calculados", "compare_response_snapshot", mode="before")
     @classmethod
@@ -215,6 +219,7 @@ class PickStat(BaseModel):
     is_value: bool
     is_high_confidence: bool = False
     is_underdog: bool = False
+    count_in_profitability: bool = True
     
     # Nuevas métricas quant
     calibrated_prob: float | None = None

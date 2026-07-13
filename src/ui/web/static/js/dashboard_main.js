@@ -17,10 +17,55 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('btn-simulate').addEventListener('click', updateCapitalSimulator);
 });
 
+// Helper to get selected date range parameters for dashboard
+function getDashboardDateParams() {
+  const range = document.getElementById("dashboard-date-range") ? document.getElementById("dashboard-date-range").value : "all";
+  let dateFrom = "";
+  let dateTo = "";
+
+  if (range === "today") {
+    const todayStr = new Date().toISOString().split("T")[0];
+    dateFrom = `${todayStr}T00:00:00`;
+    dateTo = `${todayStr}T23:59:59`;
+  } else if (range === "7days") {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+  } else if (range === "30days") {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+  } else if (range === "custom") {
+    const fromVal = document.getElementById("dashboard-date-from") ? document.getElementById("dashboard-date-from").value : "";
+    const toVal = document.getElementById("dashboard-date-to") ? document.getElementById("dashboard-date-to").value : "";
+    if (fromVal) dateFrom = `${fromVal}T00:00:00`;
+    if (toVal) dateTo = `${toVal}T23:59:59`;
+  }
+
+  let params = [];
+  if (dateFrom) params.push(`date_from=${encodeURIComponent(dateFrom)}`);
+  if (dateTo) params.push(`date_to=${encodeURIComponent(dateTo)}`);
+  return params.length > 0 ? "?" + params.join("&") : "";
+}
+
+function handleDashboardDateRangeChange() {
+  const range = document.getElementById("dashboard-date-range").value;
+  const customInputs = document.getElementById("dashboard-custom-date-inputs");
+  if (customInputs) {
+    customInputs.style.display = range === "custom" ? "flex" : "none";
+  }
+  reloadDashboardStats();
+}
+
+async function reloadDashboardStats() {
+  await fetchGlobalStats();
+}
+
 // Fetch stats from backend
 async function fetchGlobalStats() {
   try {
-    const res = await fetch('/api/v1/stats/global');
+    const queryParams = getDashboardDateParams();
+    const res = await fetch(`/api/v1/stats/global${queryParams}`);
     if (!res.ok) throw new Error('Error al cargar estadísticas');
     globalStatsData = await res.json();
     
@@ -115,6 +160,28 @@ function renderDashboard() {
   
   const roi = (totalResolvedPicks > 0) ? ((totalProfit / totalResolvedPicks) * 100).toFixed(1) : 0;
   document.getElementById('stat-roi').textContent = `ROI estimado: ${roi}%`;
+
+  // Category breakdown display logic
+  const breakdownEl = document.getElementById('category-profit-breakdown');
+  if (breakdownEl) {
+    if (activeCategory === 'global' && globalStatsData.category_stats) {
+      breakdownEl.style.display = 'block';
+      const proProf = globalStatsData.category_stats.professional?.total_profit || 0;
+      const undProf = globalStatsData.category_stats.underdog?.total_profit || 0;
+      const hcProf = globalStatsData.category_stats.high_confidence?.total_profit || 0;
+      
+      const setBreakdownStyle = (el, val) => {
+        el.textContent = `${val > 0 ? '+' : ''}${val.toFixed(2)} u`;
+        el.style.color = val > 0 ? 'var(--green)' : (val < 0 ? 'var(--red)' : 'var(--text-muted)');
+      };
+      
+      setBreakdownStyle(document.getElementById('prof-breakdown-pro'), proProf);
+      setBreakdownStyle(document.getElementById('prof-breakdown-und'), undProf);
+      setBreakdownStyle(document.getElementById('prof-breakdown-hc'), hcProf);
+    } else {
+      breakdownEl.style.display = 'none';
+    }
+  }
 
   // 2. Render Rankings (Ligas y Equipos)
   renderRankings(currentStats.best_leagues, 'list-best-leagues', '🏆');

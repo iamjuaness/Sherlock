@@ -91,6 +91,14 @@
             padding: 0 1rem;
           "
         >
+          <!-- Rentabilidad Switch -->
+          <div class="form-group" style="flex: 0 0 auto; min-width: 160px; display: flex; flex-direction: column; justify-content: center;">
+            <label style="margin-bottom: 0.5rem; display: flex; align-items: center; gap: 0.25rem;">📈 Stats</label>
+            <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer; height: 42px; user-select: none;">
+              <input type="checkbox" id="fb-count-profit" checked style="width: 18px; height: 18px; cursor: pointer; accent-color: var(--accent);">
+              <span style="font-size: 0.9rem; font-weight: 500;">Contar en rentabilidad</span>
+            </label>
+          </div>
           <div class="form-group" style="flex: 2; min-width: 280px">
             <label>🏆 Competencia</label>
             <input
@@ -127,6 +135,26 @@
               step="0.01"
               id="fb-league-cards"
               placeholder="4.80"
+              class="input"
+            />
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 140px">
+            <label>Amarillas/j (Liga)</label>
+            <input
+              type="number"
+              step="0.01"
+              id="fb-league-yellow-cards"
+              placeholder="4.50"
+              class="input"
+            />
+          </div>
+          <div class="form-group" style="flex: 1; min-width: 140px">
+            <label>Rojas/j (Liga)</label>
+            <input
+              type="number"
+              step="0.01"
+              id="fb-league-red-cards"
+              placeholder="0.20"
               class="input"
             />
           </div>
@@ -1272,6 +1300,26 @@
                 placeholder="Ej: 1.30"
               />
             </div>
+            <div class="form-group">
+              <label>DNB 1 (Local)</label>
+              <input
+                type="number"
+                step="0.01"
+                id="fb-odds-dnb-home"
+                class="input"
+                placeholder="Ej: 1.50"
+              />
+            </div>
+            <div class="form-group">
+              <label>DNB 2 (Visita)</label>
+              <input
+                type="number"
+                step="0.01"
+                id="fb-odds-dnb-away"
+                class="input"
+                placeholder="Ej: 2.30"
+              />
+            </div>
           </div>
 
           <!-- Tablas multi-línea -->
@@ -2234,6 +2282,26 @@
           </button>
         </div>
         <div class="modal__body">
+          <!-- Date Filter Selector -->
+          <div class="stats-date-filter-bar" style="display: flex; gap: 1rem; align-items: center; margin-bottom: 1.5rem; padding: 0.75rem 1rem; background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border); border-radius: 8px; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 0.9rem; color: var(--text-secondary); font-weight: 500;">📅 Filtro de Fecha:</span>
+              <select id="modal-date-range" class="input" style="width: auto; padding: 0.25rem 2rem 0.25rem 0.75rem; height: 36px; font-size: 0.85rem;" onchange="handleModalDateRangeChange()">
+                <option value="all">Todo el Historial</option>
+                <option value="today">Hoy</option>
+                <option value="7days">Últimos 7 días</option>
+                <option value="30days">Últimos 30 días</option>
+                <option value="custom">Personalizado</option>
+              </select>
+            </div>
+            <div id="modal-custom-date-inputs" style="display: none; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 0.85rem; color: var(--text-secondary);">Desde:</span>
+              <input type="date" id="modal-date-from" class="input" style="width: auto; padding: 0.25rem 0.5rem; height: 36px; font-size: 0.85rem;" onchange="reloadModalStats()">
+              <span style="font-size: 0.85rem; color: var(--text-secondary);">Hasta:</span>
+              <input type="date" id="modal-date-to" class="input" style="width: auto; padding: 0.25rem 0.5rem; height: 36px; font-size: 0.85rem;" onchange="reloadModalStats()">
+            </div>
+          </div>
+
           <!-- Tab Navigation -->
           <div
             class="modal-tabs"

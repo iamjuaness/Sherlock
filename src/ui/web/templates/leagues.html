@@ -1,0 +1,259 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sherlock – Rendimiento por Ligas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/static/css/styles.css?v={{ css_version }}" />
+    <style>
+      .leagues-container {
+        max-width: 1400px;
+        margin: 0 auto;
+        padding: 2rem 1.5rem 4rem 1.5rem;
+      }
+      .leagues-layout {
+        display: grid;
+        grid-template-columns: 320px 1fr;
+        gap: 2rem;
+        margin-top: 1.5rem;
+      }
+      @media (max-width: 900px) {
+        .leagues-layout {
+          grid-template-columns: 1fr;
+        }
+      }
+      .sidebar-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.25rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+        max-height: 80vh;
+        overflow-y: auto;
+      }
+      .sidebar-title {
+        font-size: 1.05rem;
+        font-weight: 700;
+        margin-bottom: 1rem;
+        padding-bottom: 0.5rem;
+        border-bottom: 1px solid var(--border);
+        color: var(--text-primary);
+      }
+      .league-list-item {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        transition: var(--transition);
+        margin-bottom: 0.5rem;
+        border: 1px solid transparent;
+        background: rgba(255, 255, 255, 0.01);
+      }
+      .league-list-item:hover {
+        background: rgba(255, 255, 255, 0.04);
+        border-color: var(--border-light);
+      }
+      .league-list-item--active {
+        background: rgba(99, 102, 241, 0.15);
+        border-color: var(--accent);
+        color: var(--accent-light);
+      }
+      .league-list-item__name {
+        font-size: 0.9rem;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        max-width: 180px;
+      }
+      .league-list-item__profit {
+        font-size: 0.85rem;
+        font-weight: 700;
+      }
+      
+      /* Detail section */
+      .detail-header {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        padding: 1.5rem;
+        margin-bottom: 1.5rem;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      }
+      .detail-header__title {
+        font-size: 1.5rem;
+        font-weight: 800;
+        margin-bottom: 1rem;
+        color: #fff;
+      }
+      .league-stats-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+        gap: 1rem;
+      }
+      .league-stat-box {
+        background: rgba(255, 255, 255, 0.02);
+        border: 1px solid var(--border);
+        padding: 0.75rem 1rem;
+        border-radius: var(--radius-sm);
+        text-align: center;
+      }
+      .league-stat-box__val {
+        font-size: 1.4rem;
+        font-weight: 800;
+        color: #fff;
+      }
+      .league-stat-box__lbl {
+        font-size: 0.72rem;
+        color: var(--text-muted);
+        text-transform: uppercase;
+        margin-top: 0.25rem;
+        letter-spacing: 0.05em;
+      }
+      
+      .match-card {
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        margin-bottom: 1rem;
+        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
+        overflow: hidden;
+      }
+      .match-card__header {
+        padding: 1rem 1.25rem;
+        background: rgba(255,255,255,0.01);
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .match-card__title {
+        font-weight: 700;
+        font-size: 1.05rem;
+      }
+      .match-card__date {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+      }
+      .match-card__body {
+        padding: 1.25rem;
+      }
+      .pick-row {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        padding: 0.6rem 0.8rem;
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid rgba(255, 255, 255, 0.04);
+        border-radius: 6px;
+        margin-bottom: 0.5rem;
+      }
+      .pick-row:last-child {
+        margin-bottom: 0;
+      }
+      .badge-success {
+        background: rgba(16, 185, 129, 0.15);
+        color: var(--green);
+        border: 1px solid rgba(16, 185, 129, 0.3);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+      .badge-fail {
+        background: rgba(239, 68, 68, 0.15);
+        color: var(--red);
+        border: 1px solid rgba(239, 68, 68, 0.3);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+      .badge-pending {
+        background: rgba(245, 158, 11, 0.15);
+        color: #f59e0b;
+        border: 1px solid rgba(245, 158, 11, 0.3);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+      .badge-stats-missing {
+        background: rgba(100, 116, 139, 0.15);
+        color: #94a3b8;
+        border: 1px solid rgba(100, 116, 139, 0.3);
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-size: 0.72rem;
+        font-weight: 600;
+      }
+    </style>
+  </head>
+  <body>
+    <header class="header">
+      <div class="header__brand">
+        <a href="/" style="text-decoration:none; font-size:1.4rem; margin-right: 0.5rem;">⬅️</a>
+        <span class="header__icon">🏆</span>
+        <h1 class="header__title">Sherlock</h1>
+        <span class="header__tag">Ligas</span>
+      </div>
+      <p class="header__subtitle">
+        Desglose detallado por competición, partidos y cuotas evaluadas
+      </p>
+    </header>
+
+    <div class="leagues-container">
+      <div id="leagues-loader" class="dashboard-loader">
+        <div class="spinner"></div>
+        <span>Cargando ligas y estadísticas...</span>
+      </div>
+
+      <div id="leagues-content" style="display: none;" class="leagues-layout">
+        <!-- Columna Izquierda: Lista de Ligas -->
+        <div class="sidebar-card">
+          <div class="sidebar-title">Competiciones</div>
+          <div id="leagues-list">
+            <!-- Rellenado dinámicamente -->
+          </div>
+        </div>
+
+        <!-- Columna Derecha: Detalles de la Liga seleccionada -->
+        <div id="league-detail-section">
+          <div class="detail-header">
+            <div class="detail-header__title" id="selected-league-name">Selecciona una liga</div>
+            <div class="league-stats-grid">
+              <div class="league-stat-box">
+                <div class="league-stat-box__val" id="lbl-total-matches">0</div>
+                <div class="league-stat-box__lbl">Partidos</div>
+              </div>
+              <div class="league-stat-box">
+                <div class="league-stat-box__val" id="lbl-total-picks">0</div>
+                <div class="league-stat-box__lbl">Picks</div>
+              </div>
+              <div class="league-stat-box">
+                <div class="league-stat-box__val" id="lbl-accuracy">0%</div>
+                <div class="league-stat-box__lbl">Acierto</div>
+              </div>
+              <div class="league-stat-box">
+                <div class="league-stat-box__val" id="lbl-profit">0.0 u</div>
+                <div class="league-stat-box__lbl">Beneficio</div>
+              </div>
+            </div>
+          </div>
+
+          <div id="matches-list">
+            <!-- Rellenado dinámicamente con partidos y sus picks -->
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script src="/static/js/leagues.js?v={{ js_version }}"></script>
+  </body>
+</html>

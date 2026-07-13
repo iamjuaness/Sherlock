@@ -288,6 +288,8 @@ class AnalysisHistory(Base):
     final_offsides_home = Column(Integer, nullable=True)
     final_offsides_away = Column(Integer, nullable=True)
     accuracy_percentage = Column(Float, nullable=True)
+    count_in_profitability = Column(Boolean, default=True, nullable=False, server_default="1")
+    has_real_stats = Column(Boolean, default=True, nullable=False, server_default="1")
 
     def __repr__(self) -> str:
         return f"<AnalysisHistory {self.match_title} ({self.date})>"

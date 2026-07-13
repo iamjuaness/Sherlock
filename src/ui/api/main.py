@@ -126,6 +126,25 @@ def serve_dashboard(request: Request):
         },
     )
 
+@app.get("/leagues", tags=["Web UI"])
+def serve_leagues(request: Request):
+    css_path = os.path.join(WEB_DIR, "static", "css", "styles.css")
+    js_path = os.path.join(WEB_DIR, "static", "js", "leagues.js")
+    
+    js_ver = "1"
+    if os.path.exists(js_path):
+        js_ver = file_version(js_path)
+
+    return templates.TemplateResponse(
+        request=request,
+        name="leagues.html",
+        context={
+            "request": request,
+            "css_version": file_version(css_path),
+            "js_version": js_ver,
+        },
+    )
+
 
 @app.get("/api/v1/sports", response_model=list[SportOut], tags=["Sports"])
 def list_sports() -> list[SportOut]:
@@ -455,7 +474,7 @@ async def _call_llm_for_result(sport: str, result: CompareResponse, request) -> 
     if sport == "football":
         fn = getattr(_cmp, "safe_generate_football_analysis", None)
         if fn:
-            return await fn(request.home, request.away, vp, result.projected_lines, request.league_stats, request.competition_name, user_context)
+            return await fn(request.home, request.away, vp, result.projected_lines, request.league_stats, request.competition, user_context)
 
     return "⚠️ No se pudo encontrar el generador de análisis LLM."
 
@@ -543,6 +562,12 @@ def save_analysis(
         if req.compare_response_snapshot is not None:
             # pyrefly: ignore [bad-assignment]
             existing.compare_response_snapshot = json.dumps(req.compare_response_snapshot)
+        if req.count_in_profitability is not None:
+            # pyrefly: ignore [bad-assignment]
+            existing.count_in_profitability = req.count_in_profitability
+        if req.has_real_stats is not None:
+            # pyrefly: ignore [bad-assignment]
+            existing.has_real_stats = req.has_real_stats
         
         db.commit()
         db.refresh(existing)
@@ -564,6 +589,73 @@ def save_analysis(
         llm_timestamp=req.llm_timestamp,
         compare_response_snapshot=json.dumps(req.compare_response_snapshot) if req.compare_response_snapshot else None,
         needs_reanalysis=req.needs_reanalysis or False,
+        count_in_profitability=req.count_in_profitability if req.count_in_profitability is not None else True,
+        has_real_stats=req.has_real_stats if req.has_real_stats is not None else True,
+    )
+    db.add(history)
+    db.commit()
+    db.refresh(history)
+    out = AnalysisHistoryOut.model_validate(history)
+    return _populate_history_extra_fields(history, out)
+
+
+@app.post("/api/v1/analysis/quick-save", response_model=AnalysisHistoryOut, tags=["Analysis History"])
+def quick_save_match(
+    payload: dict,
+    db: Session = Depends(get_db)
+) -> AnalysisHistoryOut:
+    """
+    Saves a match details without statistics (early league / placeholder match).
+    Automatically maps tournament/competition details.
+    """
+    sport = payload.get("sport", "football")
+    try:
+        sport_enum = Sport(sport)
+    except ValueError:
+        raise HTTPException(status_code=400, detail=f"Invalid sport: {sport}")
+
+    home_name = payload.get("home", {}).get("name") or "Local"
+    away_name = payload.get("away", {}).get("name") or "Visitante"
+    match_title = f"{home_name} vs {away_name}"
+    
+    # competition gets correctly set here
+    competition = payload.get("competition") or "Desconocida"
+    
+    # Prepare clean payload for quick save
+    cleaned_payload = {
+        "sport": sport,
+        "home": payload.get("home", {}),
+        "away": payload.get("away", {}),
+        "competition": competition,
+        "league_stats": payload.get("league_stats", {}),
+        "odds": payload.get("odds", {})
+    }
+
+    # Find existing or create
+    existing = db.query(AnalysisHistory).filter(
+        AnalysisHistory.sport == sport_enum,
+        AnalysisHistory.match_title == match_title
+    ).first()
+
+    record_date = datetime.utcnow()
+
+    if existing:
+        existing.payload = json.dumps(cleaned_payload)
+        existing.has_real_stats = False
+        db.commit()
+        db.refresh(existing)
+        out = AnalysisHistoryOut.model_validate(existing)
+        return _populate_history_extra_fields(existing, out)
+
+    history = AnalysisHistory(
+        sport=sport_enum,
+        match_title=match_title,
+        payload=json.dumps(cleaned_payload),
+        date=record_date,
+        match_date=record_date,
+        picks_calculados=None,
+        has_real_stats=False,
+        count_in_profitability=True
     )
     db.add(history)
     db.commit()
@@ -579,6 +671,7 @@ def list_analysis(
     date_to: str | None = Query(None),
     match_date_from: str | None = Query(None),
     match_date_to: str | None = Query(None),
+    competition: str | None = Query(None),
     limit: int = Query(100, ge=1, le=500),
     db: Session = Depends(get_db),
 ) -> list[AnalysisHistoryOut]:
@@ -603,12 +696,120 @@ def list_analysis(
     if match_date_to:
         query = query.filter(AnalysisHistory.match_date <= datetime.fromisoformat(match_date_to))
 
-    query = query.order_by(AnalysisHistory.date.desc()).limit(limit)
+    query = query.order_by(AnalysisHistory.date.desc())
     history_list = query.all()
+    
+    # Filter by competition in JSON payload if specified
+    if competition:
+        filtered_list = []
+        for h in history_list:
+            if h.payload:
+                try:
+                    p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
+                    c_name = p_data.get("competition") or p_data.get("competition") or "Desconocida"
+                    if c_name.lower() == competition.lower():
+                        filtered_list.append(h)
+                except:
+                    pass
+        history_list = filtered_list
+        
+    # Slice list by limit
+    history_list = history_list[:limit]
+    
     results = []
     for h in history_list:
         out = AnalysisHistoryOut.model_validate(h)
         results.append(_populate_history_extra_fields(h, out))
+    return results
+
+
+@app.get("/api/v1/stats/leagues", tags=["Stats"])
+def get_leagues_stats(
+    db: Session = Depends(get_db)
+):
+    """
+    Groups AnalysisHistory by competition inside the JSON payload and calculates stats.
+    """
+    history = db.query(AnalysisHistory).all()
+    leagues_data = {}
+    
+    for h in history:
+        # Resolve competition name
+        comp_name = "Desconocida"
+        if h.payload:
+            try:
+                p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
+                comp_name = p_data.get("competition") or p_data.get("competition") or "Desconocida"
+            except:
+                pass
+                
+        if comp_name not in leagues_data:
+            leagues_data[comp_name] = {
+                "name": comp_name,
+                "total_matches": 0,
+                "total_picks": 0,
+                "total_hits": 0,
+                "accuracy": 0.0,
+                "total_profit": 0.0
+            }
+            
+        leagues_data[comp_name]["total_matches"] += 1
+        
+        if h.picks_calculados:
+            try:
+                picks = json.loads(h.picks_calculados) if isinstance(h.picks_calculados, str) else h.picks_calculados
+                if isinstance(picks, list):
+                    res_dict = {
+                        "final_score_home": h.final_score_home,
+                        "final_score_away": h.final_score_away,
+                        "final_corners_home": h.final_corners_home,
+                        "final_corners_away": h.final_corners_away,
+                        "final_yellow_cards_home": h.final_yellow_cards_home,
+                        "final_yellow_cards_away": h.final_yellow_cards_away,
+                        "final_red_cards_home": h.final_red_cards_home,
+                        "final_red_cards_away": h.final_red_cards_away,
+                    }
+                    
+                    has_result = h.final_score_home is not None
+                    
+                    for pick in picks:
+                        is_pub = pick.get("is_publishable", False)
+                        is_und = pick.get("is_underdog", False)
+                        is_hc = pick.get("is_high_confidence", False)
+                        
+                        if not is_pub and not is_und and not is_hc:
+                            if pick.get("is_value", False):
+                                is_pub = True
+                                
+                        if not (is_pub or is_und or is_hc):
+                            continue
+                            
+                        # If resolving success
+                        if has_result:
+                            success = _check_pick_success(pick, res_dict)
+                            if success is not None:
+                                leagues_data[comp_name]["total_picks"] += 1
+                                odds = float(pick.get("odds", 0.0))
+                                
+                                pick_profit = 0.0
+                                if success is True:
+                                    leagues_data[comp_name]["total_hits"] += 1
+                                    pick_profit = odds - 1.0
+                                elif success is False:
+                                    pick_profit = -1.0
+                                    
+                                leagues_data[comp_name]["total_profit"] += pick_profit
+            except:
+                pass
+
+    # Calculate final accuracies and round profits
+    results = []
+    for league in leagues_data.values():
+        picks_cnt = league["total_picks"]
+        league["accuracy"] = round((league["total_hits"] / picks_cnt * 100), 1) if picks_cnt > 0 else 0.0
+        league["total_profit"] = round(league["total_profit"], 2)
+        results.append(league)
+        
     return results
 
 
@@ -777,9 +978,27 @@ def get_market_name(selection: str) -> str:
 
 
 @app.get("/api/v1/stats/global", response_model=GlobalStatsOut, tags=["Stats"])
-def get_global_stats(db: Session = Depends(get_db)):
+def get_global_stats(
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    db: Session = Depends(get_db)
+):
     """Calculate global performance metrics across all sports with advanced analytics."""
-    history = db.query(AnalysisHistory).all()
+    query = db.query(AnalysisHistory)
+    if date_from:
+        try:
+            query = query.filter(AnalysisHistory.date >= datetime.fromisoformat(date_from))
+        except Exception:
+            pass
+    if date_to:
+        try:
+            query = query.filter(AnalysisHistory.date <= datetime.fromisoformat(date_to))
+        except Exception:
+            pass
+            
+    history = query.all()
+    # Filter only matches that count in profitability
+    history = [h for h in history if getattr(h, "count_in_profitability", True)]
     
     total_matches = len(history)
     matches_with_results = 0
@@ -817,6 +1036,7 @@ def get_global_stats(db: Session = Depends(get_db)):
             "total_picks": 0,
             "total_hits": 0,
             "total_pending": 0,
+            "total_profit": 0.0,
             "total_odds": 0.0,
             "total_winning_odds": 0.0,
             "winning_picks_count": 0,
@@ -1008,6 +1228,7 @@ def get_global_stats(db: Session = Depends(get_db)):
                     cat_acc = cat_accumulators[cat]
                     cat_acc["total_picks"] += 1
                     cat_acc["total_odds"] += odds
+                    cat_acc["total_profit"] += pick_profit
                     
                     cat_market_counters = cat_acc["market_counters"]
                     if market not in cat_market_counters:
@@ -1143,6 +1364,7 @@ def get_global_stats(db: Session = Depends(get_db)):
             "total_picks": cat_picks,
             "total_hits": cat_hits,
             "total_pending": cat_pending,
+            "total_profit": round(cat_acc["total_profit"], 2),
             "accuracy": round(cat_accuracy, 1),
             "avg_odds": round(cat_avg_odds, 2),
             "avg_winning_odds": round(cat_avg_winning_odds, 2),
@@ -1195,6 +1417,8 @@ def get_global_stats(db: Session = Depends(get_db)):
 def get_all_picks(
     limit: int = 100,
     sport: str | None = None,
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
     db: Session = Depends(get_db)
 ):
     """Get a detailed list of all calculated picks with their outcomes."""
@@ -1205,6 +1429,20 @@ def get_all_picks(
             query = query.filter(AnalysisHistory.sport == sport_enum)
         except:
             pass
+            
+    if date_from:
+        try:
+            query = query.filter(AnalysisHistory.date >= datetime.fromisoformat(date_from))
+        except Exception:
+            pass
+    if date_to:
+        try:
+            query = query.filter(AnalysisHistory.date <= datetime.fromisoformat(date_to))
+        except Exception:
+            pass
+            
+    # filter out matches that shouldn't count in profitability
+    query = query.filter(AnalysisHistory.count_in_profitability != False)
             
     history = query.order_by(AnalysisHistory.date.desc()).limit(limit).all()
     all_picks = []
@@ -1268,6 +1506,7 @@ def get_all_picks(
                     "is_value": pick.get("is_value", False),
                     "is_high_confidence": is_hc,
                     "is_underdog": is_und,
+                    "count_in_profitability": getattr(h, "count_in_profitability", True),
                     "calibrated_prob": pick.get("calibrated_prob"),
                     "edge_ev": pick.get("edge_ev"),
                     "display_score": pick.get("display_score"),

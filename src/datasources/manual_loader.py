@@ -147,7 +147,7 @@ class ManualLoaderAdapter(DataSourceAdapter):
             )
             match._home_team_obj = home_team  # type: ignore[attr-defined]
             match._away_team_obj = away_team  # type: ignore[attr-defined]
-            match._competition_name = str(row["competition"]).strip()  # type: ignore[attr-defined]
+            match._competition = str(row["competition"]).strip()  # type: ignore[attr-defined]
 
             # Parse betting lines if present
             betting_lines: list[BettingLine] = []

@@ -343,10 +343,31 @@
             <button class="tab-link" onclick="switchCategory('professional')">🎯 Picks Professional</button>
             <button class="tab-link" onclick="switchCategory('underdog')">🐕 Picks Underdog</button>
             <button class="tab-link" onclick="switchCategory('high_confidence')">🔥 High Confidence</button>
+            <a href="/leagues" class="tab-link" style="text-decoration: none; display: inline-flex; align-items: center;">🏆 Vista de Ligas</a>
           </div>
           <a href="/compare" class="btn-primary" style="padding: 0.5rem 1.25rem; font-size: 0.85rem; border-radius: var(--radius-pill); white-space: nowrap;">
             <span>⚽ Comparador / Value Bet Detector</span>
           </a>
+        </div>
+
+        <!-- Date Filters Bar -->
+        <div class="date-filters-bar" style="display: flex; gap: 1rem; align-items: center; margin-top: 1rem; margin-bottom: 1rem; padding: 0.75rem 1rem; background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.9rem; color: var(--text-muted); font-weight: 500;">📅 Rango de Rentabilidad:</span>
+            <select id="dashboard-date-range" class="tab-link" style="background: var(--bg-card); border: 1px solid rgba(255,255,255,0.1); padding: 0.35rem 1.5rem 0.35rem 0.75rem; border-radius: 6px; font-size: 0.85rem; cursor: pointer; color: var(--text-primary); outline: none;" onchange="handleDashboardDateRangeChange()">
+              <option value="all">Todo el Historial</option>
+              <option value="today">Hoy</option>
+              <option value="7days">Últimos 7 días</option>
+              <option value="30days">Últimos 30 días</option>
+              <option value="custom">Personalizado</option>
+            </select>
+          </div>
+          <div id="dashboard-custom-date-inputs" style="display: none; align-items: center; gap: 0.5rem;">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Desde:</span>
+            <input type="date" id="dashboard-date-from" style="background: var(--bg-card); border: 1px solid rgba(255,255,255,0.1); padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.85rem; color: var(--text-primary);" onchange="reloadDashboardStats()">
+            <span style="font-size: 0.85rem; color: var(--text-muted);">Hasta:</span>
+            <input type="date" id="dashboard-date-to" style="background: var(--bg-card); border: 1px solid rgba(255,255,255,0.1); padding: 0.35rem 0.5rem; border-radius: 6px; font-size: 0.85rem; color: var(--text-primary);" onchange="reloadDashboardStats()">
+          </div>
         </div>
 
         <!-- ══ Grid de Resumen / Cards ══ -->
@@ -385,6 +406,11 @@
             <div class="stat-card__label">Unidades Ganadas</div>
             <div class="stat-card__value" id="stat-total-profit" style="color: var(--accent-light);">-</div>
             <div class="stat-card__subtext" id="stat-roi">ROI estimado: -</div>
+            <div id="category-profit-breakdown" style="display: none; font-size: 0.72rem; color: var(--text-muted); border-top: 1px solid rgba(255,255,255,0.08); margin-top: 8px; padding-top: 8px; line-height: 1.4;">
+              <div>🎯 Prof: <span id="prof-breakdown-pro" style="font-weight:700;">-</span></div>
+              <div>🐕 Dog: <span id="prof-breakdown-und" style="font-weight:700;">-</span></div>
+              <div>🔥 HC: <span id="prof-breakdown-hc" style="font-weight:700;">-</span></div>
+            </div>
           </div>
         </div>
 

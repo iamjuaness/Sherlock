@@ -86,6 +86,10 @@ function setupEventListeners() {
   if (els.btnExtractResults) {
     els.btnExtractResults.addEventListener("click", handleExtractResults);
   }
+  const btnSaveMatch = document.getElementById("btnSaveMatch");
+  if (btnSaveMatch) {
+    btnSaveMatch.addEventListener("click", handleSaveMatchWithoutStats);
+  }
   els.btnViewJson.addEventListener("click", handleViewJson);
   els.btnSettings.addEventListener("click", () =>
     chrome.runtime.openOptionsPage(),
@@ -126,6 +130,55 @@ async function handleExtractResults() {
     setTimeout(() => hideProgress(), 1500);
   }
 }
+async function handleSaveMatchWithoutStats() {
+  if (!currentMatchData) {
+    showStatus("error", "No hay datos de partido disponibles");
+    return;
+  }
+  if (!sherlockEndpoint) {
+    showStatus("error", "Configura el endpoint de Sherlock en Settings");
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  showStatus("loading", "Guardando partido (sin stats)...");
+  showProgress(25);
+  try {
+    // build minimum payload with match data
+    const payload = buildSherlockPayload({ match: currentMatchData.event || currentMatchData });
+    payload.has_real_stats = false;
+    // We send to `/api/v1/analysis/quick-save` endpoint
+    let quickSaveUrl = sherlockEndpoint;
+    if (quickSaveUrl.includes("/api/v1/prefill")) {
+      quickSaveUrl = quickSaveUrl.replace("/api/v1/prefill", "/api/v1/analysis/quick-save");
+    } else {
+      quickSaveUrl = quickSaveUrl + "/analysis/quick-save";
+    }
+    showProgress(60);
+    const response = await fetch(quickSaveUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Source": "sofascore-extractor",
+        "X-Extractor-Version": "1.1.0",
+        "X-Event-Id": currentEventId || "unknown",
+      },
+      body: JSON.stringify(payload),
+    });
+    showProgress(100);
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Error ${response.status}: ${errorText}`);
+    }
+    const result = await response.json();
+    showStatus("success", `✅ Partido guardado: ${result.match_title || "Correctamente"}`);
+  } catch (error) {
+    showStatus("error", `❌ Error: ${error.message}`);
+    console.error("Error guardando partido:", error);
+  } finally {
+    setTimeout(() => hideProgress(), 1500);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // EXTRACCIÓN DE ESTADÍSTICAS
 // ═══════════════════════════════════════════════════════════════

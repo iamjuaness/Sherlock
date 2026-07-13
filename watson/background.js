@@ -1,6 +1,8 @@
 // background.js - Service Worker de Watson (SofaScore Extractor)
 // Versión corregida con standings reales
 
+importScripts("sofaScoreToSherlock.js");
+
 // ═══════════════════════════════════════════════════════════════
 // INSTALACIÓN
 // ═══════════════════════════════════════════════════════════════
@@ -197,6 +199,13 @@ async function handleExtractStats(data) {
                 );
             } catch (e) {
                 console.warn('Standings:', e.message);
+            }
+            try {
+                result.leagueInfo = await fetchSofaScore(
+                    `/api/v1/unique-tournament/${tournamentId}/season/${seasonId}/info`
+                );
+            } catch (e) {
+                console.warn('League info:', e.message);
             }
         }
 

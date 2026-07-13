@@ -849,6 +849,9 @@ async function saveAnalysisDataToDB(sport, payload, results = null) {
       llm_timestamp:
         results && results.llm_analysis ? new Date().toISOString() : null,
       compare_response_snapshot: results ? results : null,
+      count_in_profitability: document.getElementById("fb-count-profit")
+        ? document.getElementById("fb-count-profit").checked
+        : true,
     };
 
     const res = await fetch("/api/v1/analysis", {
@@ -958,6 +961,39 @@ function renderHistoryList(entries) {
         else statusDot = "🔴";
       }
 
+      // ── Calcular unidades ganadas/perdidas en este partido ──
+      let matchUnits = null;
+      let matchUnitsText = "";
+      if (e.picks_calculados) {
+        try {
+          const parsed = typeof e.picks_calculados === "string" ? JSON.parse(e.picks_calculados) : e.picks_calculados;
+          const picks = Array.isArray(parsed) ? parsed : [];
+          // Si el partido está resuelto, sumamos el beneficio de cada pick
+          if (e.accuracy_percentage != null && picks.length > 0) {
+            let totalProfit = 0;
+            let countProfit = false;
+            picks.forEach(p => {
+              if (p.success !== null) {
+                countProfit = true;
+                if (p.success === true) {
+                  totalProfit += (p.odds - 1);
+                } else if (p.success === false) {
+                  totalProfit -= 1;
+                }
+              }
+            });
+            if (countProfit) {
+              matchUnits = totalProfit;
+              const sign = totalProfit >= 0 ? "+" : "";
+              const color = totalProfit >= 0 ? "#22c55e" : "#ef4444";
+              matchUnitsText = `<span style="color: ${color}; font-weight: bold; margin-left: 6px; font-size: 0.9em;">(${sign}${totalProfit.toFixed(2)}u)</span>`;
+            }
+          }
+        } catch (err) {
+          console.warn("Error calculating match profit:", err);
+        }
+      }
+
       // ── Determinar categorías de picks ──
       let pickCategories = [];
 
@@ -1036,7 +1072,7 @@ function renderHistoryList(entries) {
         <td style="font-size: 0.85em; color: var(--color-text-muted, #94a3b8);">${competition}</td>
         <td style="text-align: left;">
           ${categoryBadges}
-          ${e.match_title} ${statusDot}
+          ${e.match_title} ${statusDot} ${matchUnitsText}
         </td>
         <td><span class="badge badge--${accClass}">${accuracy}</span></td>
         <td>
@@ -1154,6 +1190,11 @@ async function loadHistoryEntry(id) {
       loadedHistoryEntryId = entry.id;
       loadedHistoryEntryDate = entry.match_date || entry.date;
 
+      if (document.getElementById("fb-count-profit")) {
+        document.getElementById("fb-count-profit").checked =
+          entry.count_in_profitability !== false;
+      }
+
       // Mostrar indicador de edición
       const indicator = document.getElementById("editing-indicator");
       const matchName = document.getElementById("editing-match-name");
@@ -1263,6 +1304,9 @@ function cancelEditing() {
   const indicator = document.getElementById("editing-indicator");
   if (indicator) {
     indicator.style.display = "none";
+  }
+  if (document.getElementById("fb-count-profit")) {
+    document.getElementById("fb-count-profit").checked = true;
   }
 }
 
@@ -1402,6 +1446,8 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-league-goals", data.league_stats.avg_goals_per_game);
       setSafeValue("fb-league-corners", data.league_stats.avg_corners_per_game);
       setSafeValue("fb-league-cards", data.league_stats.avg_cards_per_game);
+      setSafeValue("fb-league-yellow-cards", data.league_stats.avg_yellow_cards_per_game);
+      setSafeValue("fb-league-red-cards", data.league_stats.avg_red_cards_per_game);
       setSafeValue("fb-referee-yellow", data.league_stats.referee_avg_yellow);
       setSafeValue("fb-referee-red", data.league_stats.referee_avg_red);
     }
@@ -1418,6 +1464,8 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-odds-dc-1x", odds.dc_1x);
       setSafeValue("fb-odds-dc-x2", odds.dc_x2);
       setSafeValue("fb-odds-dc-12", odds.dc_12);
+      setSafeValue("fb-odds-dnb-home", odds.dnb_home);
+      setSafeValue("fb-odds-dnb-away", odds.dnb_away);
 
       const populateTable = (tbodyId, lines, overOdds, underOdds) => {
         const tb = document.getElementById(tbodyId);
@@ -1755,6 +1803,8 @@ function buildFootballPayloadFromForm() {
     dc_1x: getVal("fb-odds-dc-1x"),
     dc_x2: getVal("fb-odds-dc-x2"),
     dc_12: getVal("fb-odds-dc-12"),
+    dnb_home: getVal("fb-odds-dnb-home"),
+    dnb_away: getVal("fb-odds-dnb-away"),
 
     goals_lines: goalsParsed.lines,
     goalsOverOdds: goalsParsed.overOdds,
@@ -1783,6 +1833,8 @@ function buildFootballPayloadFromForm() {
     avg_goals_per_game: getSafeNumber("fb-league-goals", 2.74),
     avg_corners_per_game: getSafeNumber("fb-league-corners", 9.5),
     avg_cards_per_game: getSafeNumber("fb-league-cards", 4.5),
+    avg_yellow_cards_per_game: getSafeNumber("fb-league-yellow-cards", 4.0),
+    avg_red_cards_per_game: getSafeNumber("fb-league-red-cards", 0.2),
     referee_avg_yellow: getSafeNumber("fb-referee-yellow", 0.0),
     referee_avg_red: getSafeNumber("fb-referee-red", 0.0),
   };
@@ -1893,6 +1945,9 @@ async function saveToDB() {
       match_title: matchTitle,
       match_date: loadedHistoryEntryDate || payload.match_date || null,
       payload: payload,
+      count_in_profitability: document.getElementById("fb-count-profit")
+        ? document.getElementById("fb-count-profit").checked
+        : true,
     };
 
     // Opcional: mostrar un indicador de carga al usuario
@@ -2453,9 +2508,60 @@ function renderProfitChart(profitHistory) {
   });
 }
 
+function getModalDateParams() {
+  const range = document.getElementById("modal-date-range")
+    ? document.getElementById("modal-date-range").value
+    : "all";
+  let dateFrom = "";
+  let dateTo = "";
+
+  if (range === "today") {
+    const todayStr = new Date().toISOString().split("T")[0];
+    dateFrom = `${todayStr}T00:00:00`;
+    dateTo = `${todayStr}T23:59:59`;
+  } else if (range === "7days") {
+    const d = new Date();
+    d.setDate(d.getDate() - 7);
+    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+  } else if (range === "30days") {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+  } else if (range === "custom") {
+    const fromVal = document.getElementById("modal-date-from")
+      ? document.getElementById("modal-date-from").value
+      : "";
+    const toVal = document.getElementById("modal-date-to")
+      ? document.getElementById("modal-date-to").value
+      : "";
+    if (fromVal) dateFrom = `${fromVal}T00:00:00`;
+    if (toVal) dateTo = `${toVal}T23:59:59`;
+  }
+
+  let params = [];
+  if (dateFrom) params.push(`date_from=${encodeURIComponent(dateFrom)}`);
+  if (dateTo) params.push(`date_to=${encodeURIComponent(dateTo)}`);
+  return params.length > 0 ? "?" + params.join("&") : "";
+}
+
+function handleModalDateRangeChange() {
+  const range = document.getElementById("modal-date-range").value;
+  const customInputs = document.getElementById("modal-custom-date-inputs");
+  if (customInputs) {
+    customInputs.style.display = range === "custom" ? "flex" : "none";
+  }
+  reloadModalStats();
+}
+
+async function reloadModalStats() {
+  await loadGlobalStats();
+  await loadDetailedPicks();
+}
+
 async function loadGlobalStats() {
   try {
-    const res = await fetch("/api/v1/stats/global");
+    const queryParams = getModalDateParams();
+    const res = await fetch(`/api/v1/stats/global${queryParams}`);
     if (!res.ok) throw new Error("Error cargando estadísticas");
     const data = await res.json();
     cachedGlobalStats = data;
@@ -2500,7 +2606,11 @@ async function loadDetailedPicks() {
     '<tr><td colspan="8" style="text-align: center; padding: 2rem;">Cargando picks...</td></tr>';
 
   try {
-    const res = await fetch("/api/v1/stats/picks?limit=200");
+    const queryParams = getModalDateParams();
+    const separator = queryParams ? "&" : "?";
+    const res = await fetch(
+      `/api/v1/stats/picks${queryParams}${separator}limit=200`,
+    );
     if (!res.ok) throw new Error("Error cargando picks");
     const picks = await res.json();
     window.cachedDetailedPicks = picks;

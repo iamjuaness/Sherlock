@@ -121,6 +121,10 @@ class FootballOdds(BaseModel):
     dc_x2:    float | None = Field(None, gt=1.0)
     dc_12:    float | None = Field(None, gt=1.0)
 
+    # DNB
+    dnb_home: float | None = Field(None, gt=1.0)
+    dnb_away: float | None = Field(None, gt=1.0)
+
     goals_lines:      list[float]                = [1.5, 2.5, 3.5, 4.5]
     goals_over_odds:  Dict[str, Optional[float]] = Field(default_factory=dict)
     goals_under_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
@@ -153,7 +157,7 @@ class FootballCompareRequest(BaseModel):
     away: FootballTeamStats
     odds: FootballOdds
     league_stats: LeagueStats = Field(default_factory=LeagueStats)
-    competition_name: str = "Desconocida"
+    competition: str = "Desconocida"
     generate_llm_analysis: bool = False
     user_context: str = Field(default="", description="Contexto adicional proporcionado por el usuario sobre los equipos")
 
@@ -310,18 +314,34 @@ def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float
     if market_family in {"corners", "cards", "shots"}:
         b = 0.75 # Más incertidumbre en mercados secundarios
     elif market_family == "double_chance":
-        # DC es un mercado derivado del 1x2. Las probabilidades brutas son ya
-        # naturalmente muy altas (>70-90%), lo que genera sobreestimaciones sistemáticas.
-        # Usamos b=0.72 para aplastar más agresivamente la curva de calibración,
-        # y luego aplicamos un shrinkage del 10% hacia la probabilidad neutral 50%
-        # para moderar la confianza sin descartar el pick completamente.
-        b = 0.72
+        # DC: calibración dinámica según nivel de probabilidad.
+        # Alta prob (≥80%): favorito claro → el modelo es más fiable, menos squashing.
+        # Prob media (70-80%): ajuste moderado.
+        # Baja prob (<70%): mercado equilibrado (ej. DC 12 en partido parejo) → más incertidumbre.
+        if p >= 0.80:
+            b = 0.78   # DC de alta confianza
+        elif p >= 0.70:
+            b = 0.74   # DC moderado
+        else:
+            b = 0.70   # DC balanceado / mercado 12
+    elif market_family == "dnb":
+        b = 0.82   # DNB suele ser muy predecible
     
     calibrated = (p**b) / (p**b + (1-p)**b)
     
-    # Regresión hacia la media neutral para DC (shrinkage estimator)
+    # Shrinkage adaptativo hacia la media neutral (50%) para DC.
+    # Cuanto mayor la incertidumbre (prob más baja), más nos acercamos al 50%.
     if market_family == "double_chance":
-        calibrated = 0.90 * calibrated + 0.10 * 0.50
+        if p >= 0.80:
+            shrinkage = 0.07
+        elif p >= 0.70:
+            shrinkage = 0.09
+        else:
+            shrinkage = 0.12
+        calibrated = (1.0 - shrinkage) * calibrated + shrinkage * 0.50
+    elif market_family == "dnb":
+        # Shrinkage mínimo para DNB
+        calibrated = 0.95 * calibrated + 0.05 * 0.50
     
     # 2. Penalización por cuota (Favorite-Longshot Bias Correction)
     if odds > 3.0:
@@ -407,6 +427,11 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
     Filtro profesional equilibrado. 
     Relajado para permitir visibilidad manteniendo la ventaja estadística.
     """
+    # Prohibit BTTS and Double Chance
+    family = _market_family(v.selection)
+    if family in {"btts", "double_chance"}:
+        return False
+
     # 1. Ventana de Cuotas (Gestión de Varianza)
     # Rango ampliado: 1.40 - 2.50
     if v.odds is None or v.odds < 1.4 or v.odds > 2.50:
@@ -458,6 +483,11 @@ def is_high_confidence_pick(v: ValueIndicator) -> bool:
     Detecta picks con probabilidad muy alta (>=75%) que NO tienen edge matemático claro (<2%).
     Estos son los picks 'estrella' (⭐) que son muy probables pero no están bien pagados por la casa.
     """
+    # Prohibit Double Chance and 1X2
+    family = _market_family(v.selection)
+    if family in {"double_chance", "result"}:
+        return False
+
     # 1. Umbral de probabilidad alta (>=75%)
     if v.model_prob < 75.0:
         return False
@@ -480,6 +510,11 @@ def is_underdog_pick(v: ValueIndicator) -> bool:
     Estos picks son mutuamente excluyentes con is_publishable (que requiere odds <= 2.50)
     y con is_high_confidence (que requiere edge < 5%).
     """
+    # Prohibit corners
+    family = _market_family(v.selection)
+    if family == "corners":
+        return False
+
     # 1. Cuota alta (por encima de la ventana profesional)
     if v.odds is None or v.odds <= 2.5 or v.odds > 5.80:
         return False
@@ -720,10 +755,16 @@ def _compute_team_cards_lambda(
 
     # 4. Integración del Árbitro (The "Sheriff" Factor)
     # Si tenemos data del árbitro, la usamos para moderar/ajustar la expectativa
+    # Determinamos la media de tarjetas de la liga (usando amarillas y rojas separadas si están presentes)
+    if league.avg_yellow_cards_per_game > 0 and league.avg_red_cards_per_game > 0:
+        league_cards_avg = league.avg_yellow_cards_per_game + (league.avg_red_cards_per_game * 2.0)
+    else:
+        # Fallback a como se hace hasta ahora (usando avg_cards_per_game)
+        league_cards_avg = league.avg_cards_per_game
+
     if league.referee_avg_yellow > 0:
         # El árbitro es una señal de alta calidad pero externa a los equipos
         ref_baseline = league.referee_avg_yellow + (league.referee_avg_red * 2.0)
-        league_cards_avg = league.avg_yellow_cards_per_game + (league.avg_red_cards_per_game * 2.0)
         
         # Desviación del árbitro frente a la media de la liga
         ref_dev_ratio = ref_baseline / max(league_cards_avg, 1.0)
@@ -734,7 +775,7 @@ def _compute_team_cards_lambda(
         lam *= ref_modifier
 
     # 5. Shrinkage (Regresión a la media)
-    avg_team_cards = league.avg_cards_per_game / 2.0
+    avg_team_cards = league_cards_avg / 2.0
     prior_n = 5.0
     shrink_w = prior_n / (prior_n + actual_matches)
     
@@ -1299,6 +1340,8 @@ def _market_family(text: str) -> str:
 
     if any(k in s for k in ["double chance", "doble oportunidad", "1x", "x2", "12"]):
         return "double_chance"
+    if any(k in s for k in ["dnb", "draw no bet", "sin empate"]):
+        return "dnb"
     if any(k in s for k in ["moneyline", "ml", "1x2", "ganador", "local", "visitante", "empate"]):
         return "result"
 
@@ -1469,16 +1512,24 @@ def _support_btts_yes(h, a, proj: list) -> tuple[float, float]:
     a_c = _safe_num(a.goals_conceded_per_game)
     h_xga = _safe_num(h.xga_per_game)
     a_xga = _safe_num(a.xga_per_game)
-    h_clean = _safe_num(h.clean_sheets)
-    a_clean = _safe_num(a.clean_sheets)
-    h_mp = max(1.0, _safe_num(h.matches_played, 1))
-    a_mp = max(1.0, _safe_num(a.matches_played, 1))
 
-    clean_rate = (h_clean / h_mp) + (a_clean / a_mp)
-    both_attack = min(h_g + h_xg, a_g + a_xg)
-    both_allow = min(h_c + h_xga, a_c + a_xga)
+    # Clean sheets segmentados por localía
+    h_cs_rate = _safe_num(h.clean_sheets_home) / max(1, _safe_num(h.matches_home, 1))
+    a_cs_rate = _safe_num(a.clean_sheets_away) / max(1, _safe_num(a.matches_away, 1))
 
-    stat = 48 + both_attack * 12 + both_allow * 8 - clean_rate * 16
+    # Capacidad de ataque
+    h_attack = (h_g + h_xg) / 2.0
+    a_attack = (a_g + a_xg) / 2.0
+    # Debilidad defensiva rival
+    h_def_weakness = (a_c + a_xga) / 2.0
+    a_def_weakness = (h_c + h_xga) / 2.0
+
+    # Score por equipo: ataque propio + defensa rival - clean sheets
+    h_score = h_attack * 8.0 + h_def_weakness * 5.0 - h_cs_rate * 20.0
+    a_score = a_attack * 8.0 + a_def_weakness * 5.0 - a_cs_rate * 20.0
+
+    # BTTS requiere que ambos anoten
+    stat = 45.0 + (h_score + a_score) / 2.0
     stat = _clip_0_100(stat)
 
     pval, pprob, _ = _projected_value_by_keywords(proj, ["btts"])
@@ -1487,7 +1538,7 @@ def _support_btts_yes(h, a, proj: list) -> tuple[float, float]:
 
     proj_score = 55.0
     if pprob is not None:
-        proj_score += (pprob - 50) * 0.75
+        proj_score = pprob
 
     return stat, _clip_0_100(proj_score)
 
@@ -1579,20 +1630,26 @@ def _support_over_shots(line: float, h, a, proj: list) -> tuple[float, float]:
 def _support_over_cards(line: float, h, a, proj: list) -> tuple[float, float]:
     total_y = _safe_num(h.yellow_cards_per_game) + _safe_num(a.yellow_cards_per_game)
     total_f = _safe_num(h.fouls_per_game) + _safe_num(a.fouls_per_game)
-    reds = _safe_num(h.red_cards_total) + _safe_num(a.red_cards_total)
+    # Una roja equivale a 2 amarillas en mercados reales de amonestaciones
+    total_r = (_safe_num(h.red_cards_total) + _safe_num(a.red_cards_total)) / max(
+        _safe_num(h.matches_played, 1) + _safe_num(a.matches_played, 1), 2
+    )
+    base = total_y + total_f * 0.10 + total_r * 2.0
 
-    base = total_y + total_f * 0.08 + reds * 0.2
-    stat = _clip_0_100(58 + (base - line) * 11)
+    lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["tarjetas totales"])
+    if lam_val is None:
+         lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["tarjetas"])
 
-    pval, pprob, _ = _projected_value_by_keywords(proj, ["tarjetas"])
-    if pval is None:
-        pval, pprob, _ = _projected_value_by_keywords(proj, ["cards"])
+    if lam_val is not None:
+        stat = _clip_0_100(58 + (lam_val - line) * 12)
+    else:
+        stat = _clip_0_100(58 + (base - line) * 11)
 
     proj_score = 55.0
-    if pval is not None:
-        proj_score += (pval - line) * 11
-    if pprob is not None:
-        proj_score += (pprob - 50) * 0.45
+    if lam_prob is not None:
+        proj_score = lam_prob
+    elif lam_val is not None:
+        proj_score = _clip_0_100(55 + (lam_val - line) * 10)
 
     return stat, _clip_0_100(proj_score)
 
@@ -1603,22 +1660,31 @@ def _support_under_cards(line: float, h, a, proj: list) -> tuple[float, float]:
 
 
 def _support_over_corners(line: float, h, a, proj: list) -> tuple[float, float]:
-    base = (
-        _safe_num(h.corners_per_game) + _safe_num(a.corners_per_game) +
-        _safe_num(h.corners_conceded_per_game) + _safe_num(a.corners_conceded_per_game)
-    ) / 2
+    lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["corners totales"])
+    if lam_val is None:
+        lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["corners"])
 
-    stat = _clip_0_100(57 + (base - line) * 10)
+    if lam_val is not None:
+        stat = _clip_0_100(58 + (lam_val - line) * 12)
+    else:
+        base = (
+            _safe_num(h.corners_per_game) + _safe_num(a.corners_per_game) +
+            _safe_num(h.corners_conceded_per_game) + _safe_num(a.corners_conceded_per_game)
+        ) / 2
+        stat = _clip_0_100(57 + (base - line) * 10)
 
-    pval, pprob, _ = _projected_value_by_keywords(proj, ["corners"])
-    if pval is None:
-        pval, pprob, _ = _projected_value_by_keywords(proj, ["córners"])
+    # Ajuste por efectividad en centros (cross completion ratio)
+    h_cross_ratio = _safe_num(h.crosses_per_game) / max(_safe_num(h.crosses_total_per_game, 20), 1)
+    a_cross_ratio = _safe_num(a.crosses_per_game) / max(_safe_num(a.crosses_total_per_game, 20), 1)
+    cross_signal = (h_cross_ratio + a_cross_ratio) / 2.0
+    stat += (cross_signal - 0.45) * 8
+    stat = _clip_0_100(stat)
 
     proj_score = 55.0
-    if pval is not None:
-        proj_score += (pval - line) * 10
-    if pprob is not None:
-        proj_score += (pprob - 50) * 0.45
+    if lam_prob is not None:
+        proj_score = lam_prob
+    elif lam_val is not None:
+        proj_score = _clip_0_100(55 + (lam_val - line) * 10)
 
     return stat, _clip_0_100(proj_score)
 
@@ -1626,6 +1692,30 @@ def _support_over_corners(line: float, h, a, proj: list) -> tuple[float, float]:
 def _support_under_corners(line: float, h, a, proj: list) -> tuple[float, float]:
     stat_o, proj_o = _support_over_corners(line, h, a, proj)
     return _clip_0_100(110 - stat_o), _clip_0_100(110 - proj_o)
+
+
+def _dc_component_weights(h, a) -> tuple[float, float, float]:
+    """
+    Estima pesos relativos (h_weight, d_weight, a_weight) para los componentes
+    del Doble Oportunidad basándose en la fuerza relativa de los equipos.
+    Los tres pesos suman 1.0 y se usan para ponderar el soporte de cada componente
+    en lugar del max() previo, que inflaba artificialmente el score.
+    """
+    h_str = max(0.1, _team_strength_score(h) + 60.0)  # desplazado al dominio positivo
+    a_str = max(0.1, _team_strength_score(a) + 60.0)
+    total_str = h_str + a_str
+    h_w_base = h_str / total_str
+    a_w_base = a_str / total_str
+
+    # El peso del empate crece cuando los equipos son más equilibrados
+    balance = 1.0 - abs(h_w_base - a_w_base)  # 0=muy desequilibrado, 1=perfectamente igual
+    d_w = 0.20 + balance * 0.15  # rango: 20% (desequilibrado) → 35% (equilibrado)
+
+    # Redistribuir el peso restante proporcionalmente
+    rem = 1.0 - d_w
+    h_w = rem * h_w_base
+    a_w = rem * a_w_base
+    return h_w, d_w, a_w
 
 
 def _explicit_market_support(selection: str, h, a, proj: list) -> tuple[float, float]:
@@ -1666,20 +1756,47 @@ def _explicit_market_support(selection: str, h, a, proj: list) -> tuple[float, f
     if family == "corners" and side == "under" and line is not None:
         return _support_under_corners(line, h, a, proj)
 
-    # Double Chance
+    # Double Chance — combinación ponderada por fuerza relativa de los equipos.
+    # El max() anterior inflaba artificialmente el soporte ignorando la componente débil.
     if family == "double_chance":
+        h_w, d_w, a_w = _dc_component_weights(h, a)
+        stat_h, proj_h = _support_home_win(h, a, proj)
+        stat_d, proj_d = _support_draw(h, a, proj)
+        stat_a, proj_a = _support_away_win(h, a, proj)
+
         if "1x" in s:
-            stat_h, proj_h = _support_home_win(h, a, proj)
-            stat_d, proj_d = _support_draw(h, a, proj)
-            return max(stat_h, stat_d), max(proj_h, proj_d)
+            # Normalizar pesos al espacio 1X (local + empate)
+            norm = h_w + d_w
+            w_h, w_d = h_w / norm, d_w / norm
+            return (
+                _clip_0_100(w_h * stat_h + w_d * stat_d),
+                _clip_0_100(w_h * proj_h + w_d * proj_d),
+            )
         if "x2" in s:
-            stat_a, proj_a = _support_away_win(h, a, proj)
-            stat_d, proj_d = _support_draw(h, a, proj)
-            return max(stat_a, stat_d), max(proj_a, proj_d)
+            # Normalizar al espacio X2 (visitante + empate)
+            norm = a_w + d_w
+            w_a, w_d2 = a_w / norm, d_w / norm
+            return (
+                _clip_0_100(w_a * stat_a + w_d2 * stat_d),
+                _clip_0_100(w_a * proj_a + w_d2 * proj_d),
+            )
         if "12" in s:
+            # Normalizar al espacio 12 (local + visitante, excluye empate)
+            norm = h_w + a_w
+            w_h2, w_a2 = h_w / norm, a_w / norm
+            return (
+                _clip_0_100(w_h2 * stat_h + w_a2 * stat_a),
+                _clip_0_100(w_h2 * proj_h + w_a2 * proj_a),
+            )
+
+    # DNB (Draw No Bet / Sin Empate)
+    if family == "dnb":
+        if "local" in s or "home" in s or "1" in s:
             stat_h, proj_h = _support_home_win(h, a, proj)
+            return _clip_0_100(stat_h * 1.05), _clip_0_100(proj_h * 1.05)
+        if "visitante" in s or "away" in s or "2" in s:
             stat_a, proj_a = _support_away_win(h, a, proj)
-            return max(stat_h, stat_a), max(proj_h, proj_a)
+            return _clip_0_100(stat_a * 1.05), _clip_0_100(proj_a * 1.05)
 
     return 55.0, 55.0
 
@@ -2118,24 +2235,37 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     matrix, _ = _dc_score_matrix(h_lam, a_lam)
     markets = _sum_score_matrix_1x2_and_markets(matrix)
 
-    h_prob = markets["home_win_pct"] / 100.0
-    d_prob = markets["draw_pct"]     / 100.0
-    a_prob = markets["away_win_pct"] / 100.0
+    # Probabilidades crudas de la matriz DC (sin blend de liga todavía)
+    h_prob_raw = markets["home_win_pct"] / 100.0
+    d_prob_raw = markets["draw_pct"]     / 100.0
+    a_prob_raw = markets["away_win_pct"] / 100.0
     p_btts_yes = markets["btts_yes_pct"] / 100.0
     p_btts_no  = markets["btts_no_pct"]  / 100.0
 
-    # ── FIX 1: Blend con prior histórico de la liga (30% de peso) ──────────
-    # Ancla las probabilidades a la distribución real de la competición para evitar
-    # sobre-confianza en los números de corto plazo de los equipos.
-    _BLEND_W = 0.70  # 70% modelo, 30% prior de liga
+    # ── FIX 1: Blend diferenciado por mercado ────────────────────────────────
+    # 1X2: blend fuerte (70/30) para anclar al prior de liga y evitar sobre-confianza.
+    # DC:  blend leve  (90/10) — el DC ya es un mercado compuesto cuya señal proviene
+    #       directamente de la matriz. Aplicar el mismo 30% de prior genera una doble
+    #       regresión a la media que subestima la probabilidad del favorito.
+    _BLEND_W    = 0.70  # 70% modelo, 30% prior → mercados 1X2
+    _DC_BLEND_W = 0.90  # 90% modelo, 10% prior → mercados DC (señal más directa)
+
     _prior_sum = req.league_stats.home_win_pct + req.league_stats.draw_pct + req.league_stats.away_win_pct
+
+    # Inicializar priors con las probabilidades crudas como fallback
+    _ph, _pd, _pa = h_prob_raw, d_prob_raw, a_prob_raw
+    h_prob = h_prob_raw
+    d_prob = d_prob_raw
+    a_prob = a_prob_raw
+
     if _prior_sum > 0:
         _ph = req.league_stats.home_win_pct / _prior_sum
         _pd = req.league_stats.draw_pct     / _prior_sum
         _pa = req.league_stats.away_win_pct / _prior_sum
-        h_prob = h_prob * _BLEND_W + _ph * (1.0 - _BLEND_W)
-        d_prob = d_prob * _BLEND_W + _pd * (1.0 - _BLEND_W)
-        a_prob = a_prob * _BLEND_W + _pa * (1.0 - _BLEND_W)
+        # Blend fuerte para mercados de resultado
+        h_prob = h_prob_raw * _BLEND_W + _ph * (1.0 - _BLEND_W)
+        d_prob = d_prob_raw * _BLEND_W + _pd * (1.0 - _BLEND_W)
+        a_prob = a_prob_raw * _BLEND_W + _pa * (1.0 - _BLEND_W)
 
     # ── FIX 2: Helper local que remueve el overround antes de calcular edge ─
     # Las cuotas de la casa incluyen margen (~3–8%), lo que infla las implied
@@ -2151,10 +2281,29 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     _or_1x2  = _overround(req.odds.home, req.odds.draw, req.odds.away)
     _or_btts = _overround(req.odds.btts_yes, req.odds.btts_no)
 
-    # Doble Oportunidad
-    p_dc_1x = (h_prob + d_prob) * 100
-    p_dc_x2 = (d_prob + a_prob) * 100
-    p_dc_12 = (h_prob + a_prob) * 100
+    # ── Doble Oportunidad — blend leve desde matriz raw ──────────────────────
+    # Se calcula ANTES del blend fuerte del 1X2, usando directamente las probabilidades
+    # de la matriz Dixon-Coles. Esto evita que h_prob/d_prob/a_prob (ya blended al 30%)
+    # introduzcan una segunda regresión a la media en el DC.
+    p_dc_1x = ((h_prob_raw + d_prob_raw) * _DC_BLEND_W + (_ph + _pd) * (1.0 - _DC_BLEND_W)) * 100
+    p_dc_x2 = ((d_prob_raw + a_prob_raw) * _DC_BLEND_W + (_pd + _pa) * (1.0 - _DC_BLEND_W)) * 100
+    p_dc_12 = ((h_prob_raw + a_prob_raw) * _DC_BLEND_W + (_ph + _pa) * (1.0 - _DC_BLEND_W)) * 100
+
+    # ── Overround específico del mercado DC ──────────────────────────────────
+    # Las casas publican cuotas DC con su propio margen, diferente al del 1X2.
+    # Usar _or_1x2 para DC inflaba la implied_no_vig y subestimaba el edge real.
+    _or_dc_raw = _overround(req.odds.dc_1x, req.odds.dc_x2, req.odds.dc_12)
+    _or_dc = _or_dc_raw if _or_dc_raw > 100.5 else _or_1x2  # fallback si no hay cuotas DC
+
+    # ── Overround específico del mercado DNB ─────────────────────────────────
+    _or_dnb_raw = _overround(req.odds.dnb_home, req.odds.dnb_away)
+    _or_dnb = _or_dnb_raw if _or_dnb_raw > 100.5 else _or_1x2
+
+    # En DNB, el empate se reembolsa (push_prob = d_prob_raw * 100).
+    # La probabilidad de acierto del pick se normaliza excluyendo el empate.
+    p_dnb_home = (h_prob_raw / max(h_prob_raw + a_prob_raw, 0.1)) * 100
+    p_dnb_away = (a_prob_raw / max(h_prob_raw + a_prob_raw, 0.1)) * 100
+    push_dnb = d_prob_raw * 100
 
     # market: (sel, odds, model_prob, overround, push_prob)
     market_configs: list[tuple[str, float | None, float, float, float]] = [
@@ -2164,9 +2313,12 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         ("BTTS Sí",   req.odds.btts_yes, p_btts_yes * 100, _or_btts, 0.0),
         ("BTTS No",   req.odds.btts_no,  p_btts_no  * 100, _or_btts, 0.0),
 
-        ("Doble Oportunidad 1X", req.odds.dc_1x, p_dc_1x, _or_1x2, 0.0),
-        ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_1x2, 0.0),
-        ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_1x2, 0.0),
+        ("Doble Oportunidad 1X", req.odds.dc_1x, p_dc_1x, _or_dc, 0.0),
+        ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_dc, 0.0),
+        ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_dc, 0.0),
+
+        (f"DNB Local ({h.name})", req.odds.dnb_home, p_dnb_home, _or_dnb, push_dnb),
+        (f"DNB Visitante ({a.name})", req.odds.dnb_away, p_dnb_away, _or_dnb, push_dnb),
     ]
 
     projected_lines: list[ProjectedLine] = []
@@ -2377,7 +2529,7 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
 
     llm = None
     if req.generate_llm_analysis:
-        llm = await generate_football_analysis(h, a, vp, projected_lines, req.league_stats, competition=req.competition_name)
+        llm = await generate_football_analysis(h, a, vp, projected_lines, req.league_stats, competition=req.competition)
 
     return CompareResponse(
         sport="football",
