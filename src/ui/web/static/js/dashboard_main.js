@@ -191,8 +191,8 @@ function renderDashboard() {
   renderMarketChart(currentStats.best_markets);
   renderBucketsChart(currentStats.odds_buckets, currentStats.edge_buckets);
   
-  // Daily profit chart (Only available in Global for now, if missing fallback to empty)
-  const dailySeries = activeCategory === 'global' ? globalStatsData.daily_profit_series : [];
+  // Daily profit chart
+  const dailySeries = activeCategory === 'global' ? globalStatsData.daily_profit_series : (currentStats.daily_profit_series || []);
   renderDailyProfitChart(dailySeries);
   
   // 4. Update simulator if there's data
@@ -438,13 +438,23 @@ function renderDailyProfitChart(dailySeries) {
     return;
   }
 
-  const labels = dailySeries.map(d => {
+  let chartSeries = [...dailySeries];
+  if (chartSeries.length === 1) {
+    chartSeries.unshift({
+      date: 'Inicio',
+      daily: 0,
+      cumulative: 0
+    });
+  }
+
+  const labels = chartSeries.map(d => {
+    if (d.date === 'Inicio') return 'Inicio';
     // Format YYYY-MM-DD to DD/MM
     const p = d.date.split('-');
     if (p.length === 3) return `${p[2]}/${p[1]}`;
     return d.date;
   });
-  const dataPoints = dailySeries.map(d => d.cumulative);
+  const dataPoints = chartSeries.map(d => d.cumulative);
 
   dailyProfitChartInstance = new Chart(ctx, {
     type: 'line',

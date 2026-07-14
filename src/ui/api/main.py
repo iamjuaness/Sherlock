@@ -1045,7 +1045,8 @@ def get_global_stats(
             "team_counters": {},
             "odds_b_stats": {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in odds_buckets_cfg},
             "edge_b_stats": {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in edge_buckets_cfg},
-            "conf_b_stats": {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in conf_buckets_cfg}
+            "conf_b_stats": {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in conf_buckets_cfg},
+            "daily_profit_dict": {}
         }
         
     for h in history:
@@ -1169,6 +1170,7 @@ def get_global_stats(
                     match_day = (h.match_date or h.date).strftime("%Y-%m-%d") if (h.match_date or h.date) else None
                     if match_day:
                         daily_profit_dict[match_day] = daily_profit_dict.get(match_day, 0.0) + pick_profit
+                        cat_accumulators[cat]["daily_profit_dict"][match_day] = cat_accumulators[cat]["daily_profit_dict"].get(match_day, 0.0) + pick_profit
 
                     if market not in market_counters:
                         market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
@@ -1360,6 +1362,17 @@ def get_global_stats(
         cat_best_leagues = sorted(cat_all_leagues, key=lambda x: x["profit"], reverse=True)
         cat_best_teams = sorted(cat_all_teams, key=lambda x: x["profit"], reverse=True)
         
+        cat_daily_profit_dict = cat_acc["daily_profit_dict"]
+        cat_daily_profit_series = []
+        cat_cumulative = 0.0
+        for day in sorted(cat_daily_profit_dict.keys()):
+            cat_cumulative += cat_daily_profit_dict[day]
+            cat_daily_profit_series.append({
+                "date": day,
+                "daily": round(cat_daily_profit_dict[day], 2),
+                "cumulative": round(cat_cumulative, 2)
+            })
+            
         category_stats_out[cat] = {
             "total_picks": cat_picks,
             "total_hits": cat_hits,
@@ -1374,7 +1387,8 @@ def get_global_stats(
             "best_teams": cat_best_teams,
             "odds_buckets": bucket_to_list(cat_acc["odds_b_stats"]),
             "edge_buckets": bucket_to_list(cat_acc["edge_b_stats"]),
-            "confidence_buckets": bucket_to_list(cat_acc["conf_b_stats"])
+            "confidence_buckets": bucket_to_list(cat_acc["conf_b_stats"]),
+            "daily_profit_series": cat_daily_profit_series
         }
         
     # Build daily profit series sorted by date, with cumulative

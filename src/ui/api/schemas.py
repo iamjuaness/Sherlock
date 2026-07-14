@@ -182,6 +182,7 @@ class CategoryStatsOut(BaseModel):
     odds_buckets: list[BucketStat] = []
     edge_buckets: list[BucketStat] = []
     confidence_buckets: list[BucketStat] = []
+    daily_profit_series: list[dict[str, Any]] = []
 
 class GlobalStatsOut(BaseModel):
     total_matches: int
