@@ -175,6 +175,7 @@ class CategoryStatsOut(BaseModel):
     avg_odds: float = 0.0
     avg_winning_odds: float = 0.0
     total_profit: float = 0.0
+    roi: float = 0.0
     best_markets: list[StatItem] = []
     worst_markets: list[StatItem] = []
     best_leagues: list[StatItem] = []
@@ -197,6 +198,7 @@ class GlobalStatsOut(BaseModel):
     avg_odds: float = 0.0
     avg_winning_odds: float = 0.0
     total_profit: float = 0.0
+    roi: float = 0.0
     daily_profit_series: list[dict[str, Any]] = []
     best_markets: list[StatItem] = []
     worst_markets: list[StatItem] = []

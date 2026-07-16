@@ -27,6 +27,7 @@ from src.ui.api.compare import (
     compare_football,
     FootballCompareRequest,
     CompareResponse,
+    split_asian_line,
 )
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
@@ -288,9 +289,9 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                                     if not (pick.get("is_publishable", pick.get("is_value", False))):
                                         continue
                                     success = _check_pick_success(pick, results_dict)
-                                    if success is not None:
+                                    if success is not None and success != "void":
                                         total += 1
-                                        if success is True:
+                                        if _is_pick_hit(success):
                                             hits += 1
                                 if total > 0:
                                     h.accuracy_percentage = (hits / total) * 100
@@ -788,17 +789,12 @@ def get_leagues_stats(
                         if has_result:
                             success = _check_pick_success(pick, res_dict)
                             if success is not None:
-                                leagues_data[comp_name]["total_picks"] += 1
-                                odds = float(pick.get("odds", 0.0))
-                                
-                                pick_profit = 0.0
-                                if success is True:
-                                    leagues_data[comp_name]["total_hits"] += 1
-                                    pick_profit = odds - 1.0
-                                elif success is False:
-                                    pick_profit = -1.0
-                                    
+                                pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0))
                                 leagues_data[comp_name]["total_profit"] += pick_profit
+                                if success != "void":
+                                    leagues_data[comp_name]["total_picks"] += 1
+                                    if _is_pick_hit(success):
+                                        leagues_data[comp_name]["total_hits"] += 1
             except:
                 pass
 
@@ -846,11 +842,10 @@ def update_analysis_results(
                         
                     success = _check_pick_success(pick, results_dict)
                     if success is not None:
-                        total += 1
-                        # "void" = push/nulo: no suma ni hit ni miss, pero SÍ está resuelto
-                        if success is True:
-                            hits += 1
-                        # success == "void" → resuelto pero neutro (no afecta accuracy)
+                        if success != "void":
+                            total += 1
+                            if _is_pick_hit(success):
+                                hits += 1
                 
                 if total > 0:
                     # pyrefly: ignore [bad-assignment]
@@ -927,9 +922,9 @@ async def recalculate_all_accuracy(db: Session = Depends(get_db)):
                             continue
                             
                         success = _check_pick_success(pick, results_dict)
-                        if success is not None:
+                        if success is not None and success != "void":
                             total += 1
-                            if success:
+                            if _is_pick_hit(success):
                                 hits += 1
                     
                     if total > 0:
@@ -1012,6 +1007,7 @@ def get_global_stats(
     total_winning_odds = 0.0
     winning_picks_count = 0
     total_profit = 0.0
+    total_staked_picks = 0
     # daily_profit_dict: date_str -> net profit that day
     daily_profit_dict: dict[str, float] = {}
     
@@ -1037,6 +1033,7 @@ def get_global_stats(
             "total_hits": 0,
             "total_pending": 0,
             "total_profit": 0.0,
+            "total_staked_picks": 0,
             "total_odds": 0.0,
             "total_winning_odds": 0.0,
             "winning_picks_count": 0,
@@ -1153,18 +1150,15 @@ def get_global_stats(
                         continue
 
                     # --- Only resolved picks beyond this point ---
-                    total_picks += 1
-                    sport_stats[sport]["picks"] += 1
-                    total_odds += odds
-
-                    # Calculate pick profit: Win = odds-1, Loss = -1, Void = 0
-                    pick_profit = 0.0
-                    if success is True:
-                        pick_profit = odds - 1.0
-                    elif success is False:
-                        pick_profit = -1.0
-                    
+                    pick_profit = _calculate_pick_profit(success, odds)
                     total_profit += pick_profit
+
+                    counts_for_accuracy = success != "void"
+                    if counts_for_accuracy:
+                        total_picks += 1
+                        total_staked_picks += 1
+                        sport_stats[sport]["picks"] += 1
+                        total_odds += odds
                     
                     # Accumulate daily profit (use match_date or analysis date)
                     match_day = (h.match_date or h.date).strftime("%Y-%m-%d") if (h.match_date or h.date) else None
@@ -1172,127 +1166,133 @@ def get_global_stats(
                         daily_profit_dict[match_day] = daily_profit_dict.get(match_day, 0.0) + pick_profit
                         cat_accumulators[cat]["daily_profit_dict"][match_day] = cat_accumulators[cat]["daily_profit_dict"].get(match_day, 0.0) + pick_profit
 
-                    if market not in market_counters:
-                        market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
-                    market_counters[market]["picks"] += 1
-                    market_counters[market]["profit"] += pick_profit
-                    
-                    if league not in league_counters:
-                        league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
-                    league_counters[league]["picks"] += 1
-                    league_counters[league]["profit"] += pick_profit
-                    
-                    for t in teams:
-                        if t not in team_counters:
-                            team_counters[t] = {"picks": 0, "hits": 0, "profit": 0.0}
-                        team_counters[t]["picks"] += 1
-                        team_counters[t]["profit"] += pick_profit
-
-                    if success is True:
-                        total_hits += 1
-                        sport_stats[sport]["hits"] += 1
-                        market_counters[market]["hits"] += 1
-                        league_counters[league]["hits"] += 1
+                    if counts_for_accuracy:
+                        if market not in market_counters:
+                            market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
+                        market_counters[market]["picks"] += 1
+                        market_counters[market]["profit"] += pick_profit
+                        
+                        if league not in league_counters:
+                            league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
+                        league_counters[league]["picks"] += 1
+                        league_counters[league]["profit"] += pick_profit
+                        
                         for t in teams:
-                            team_counters[t]["hits"] += 1
-                        total_winning_odds += odds
-                        winning_picks_count += 1
+                            if t not in team_counters:
+                                team_counters[t] = {"picks": 0, "hits": 0, "profit": 0.0}
+                            team_counters[t]["picks"] += 1
+                            team_counters[t]["profit"] += pick_profit
 
-                    # Bucketing logic
-                    edge_val = float(pick.get("edge_ev", 0.0)) * 100.0
+                        if _is_pick_hit(success):
+                            total_hits += 1
+                            sport_stats[sport]["hits"] += 1
+                            market_counters[market]["hits"] += 1
+                            league_counters[league]["hits"] += 1
+                            for t in teams:
+                                team_counters[t]["hits"] += 1
+                            total_winning_odds += odds
+                            winning_picks_count += 1
+
+                    # Bucketing logic (solo picks con stake efectivo)
+                    edge_val = float(pick.get("edge", 0.0))
                     conf = float(pick.get("calibrated_prob", pick.get("model_prob", 0.0)))
 
-                    for low, high, label in odds_buckets_cfg:
-                        if low <= odds < high:
-                            odds_b_stats[label]["count"] += 1
-                            odds_b_stats[label]["total_odds"] += odds
-                            odds_b_stats[label]["resolved"] += 1
-                            if success is True: odds_b_stats[label]["hits"] += 1
-                            break
+                    if counts_for_accuracy:
+                        for low, high, label in odds_buckets_cfg:
+                            if low <= odds < high:
+                                odds_b_stats[label]["count"] += 1
+                                odds_b_stats[label]["total_odds"] += odds
+                                odds_b_stats[label]["resolved"] += 1
+                                if _is_pick_hit(success): odds_b_stats[label]["hits"] += 1
+                                break
 
-                    for low, high, label in edge_buckets_cfg:
-                        if low <= edge_val < high:
-                            edge_b_stats[label]["count"] += 1
-                            edge_b_stats[label]["total_odds"] += odds
-                            edge_b_stats[label]["resolved"] += 1
-                            if success is True: edge_b_stats[label]["hits"] += 1
-                            break
+                        for low, high, label in edge_buckets_cfg:
+                            if low <= edge_val < high:
+                                edge_b_stats[label]["count"] += 1
+                                edge_b_stats[label]["total_odds"] += odds
+                                edge_b_stats[label]["resolved"] += 1
+                                if _is_pick_hit(success): edge_b_stats[label]["hits"] += 1
+                                break
 
-                    for low, high, label in conf_buckets_cfg:
-                        if low <= conf < high:
-                            conf_b_stats[label]["count"] += 1
-                            conf_b_stats[label]["total_odds"] += odds
-                            conf_b_stats[label]["resolved"] += 1
-                            if success is True: conf_b_stats[label]["hits"] += 1
-                            break
+                        for low, high, label in conf_buckets_cfg:
+                            if low <= conf < high:
+                                conf_b_stats[label]["count"] += 1
+                                conf_b_stats[label]["total_odds"] += odds
+                                conf_b_stats[label]["resolved"] += 1
+                                if _is_pick_hit(success): conf_b_stats[label]["hits"] += 1
+                                break
 
                     # --- Category-Specific Stats Accumulation ---
                     cat_acc = cat_accumulators[cat]
-                    cat_acc["total_picks"] += 1
-                    cat_acc["total_odds"] += odds
                     cat_acc["total_profit"] += pick_profit
+                    if counts_for_accuracy:
+                        cat_acc["total_picks"] += 1
+                        cat_acc["total_staked_picks"] += 1
+                        cat_acc["total_odds"] += odds
                     
                     cat_market_counters = cat_acc["market_counters"]
-                    if market not in cat_market_counters:
-                        cat_market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
-                    cat_market_counters[market]["picks"] += 1
-                    cat_market_counters[market]["profit"] += pick_profit
-                    
-                    cat_league_counters = cat_acc["league_counters"]
-                    if league not in cat_league_counters:
-                        cat_league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
-                    cat_league_counters[league]["picks"] += 1
-                    cat_league_counters[league]["profit"] += pick_profit
-                    
-                    cat_team_counters = cat_acc["team_counters"]
-                    for t in teams:
-                        if t not in cat_team_counters:
-                            cat_team_counters[t] = {"picks": 0, "hits": 0, "profit": 0.0}
-                        cat_team_counters[t]["picks"] += 1
-                        cat_team_counters[t]["profit"] += pick_profit
-
-                    if success is True:
-                        cat_acc["total_hits"] += 1
-                        cat_market_counters[market]["hits"] += 1
-                        cat_league_counters[league]["hits"] += 1
+                    if counts_for_accuracy:
+                        if market not in cat_market_counters:
+                            cat_market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
+                        cat_market_counters[market]["picks"] += 1
+                        cat_market_counters[market]["profit"] += pick_profit
+                        
+                        cat_league_counters = cat_acc["league_counters"]
+                        if league not in cat_league_counters:
+                            cat_league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
+                        cat_league_counters[league]["picks"] += 1
+                        cat_league_counters[league]["profit"] += pick_profit
+                        
+                        cat_team_counters = cat_acc["team_counters"]
                         for t in teams:
-                            cat_team_counters[t]["hits"] += 1
-                        cat_acc["total_winning_odds"] += odds
-                        cat_acc["winning_picks_count"] += 1
+                            if t not in cat_team_counters:
+                                cat_team_counters[t] = {"picks": 0, "hits": 0, "profit": 0.0}
+                            cat_team_counters[t]["picks"] += 1
+                            cat_team_counters[t]["profit"] += pick_profit
 
-                    # Bucketing logic for category
-                    cat_odds_b_stats = cat_acc["odds_b_stats"]
-                    for low, high, label in odds_buckets_cfg:
-                        if low <= odds < high:
-                            cat_odds_b_stats[label]["count"] += 1
-                            cat_odds_b_stats[label]["total_odds"] += odds
-                            cat_odds_b_stats[label]["resolved"] += 1
-                            if success: cat_odds_b_stats[label]["hits"] += 1
-                            break
+                        if _is_pick_hit(success):
+                            cat_acc["total_hits"] += 1
+                            cat_market_counters[market]["hits"] += 1
+                            cat_league_counters[league]["hits"] += 1
+                            for t in teams:
+                                cat_team_counters[t]["hits"] += 1
+                            cat_acc["total_winning_odds"] += odds
+                            cat_acc["winning_picks_count"] += 1
 
-                    cat_edge_b_stats = cat_acc["edge_b_stats"]
-                    for low, high, label in edge_buckets_cfg:
-                        if low <= edge_val < high:
-                            cat_edge_b_stats[label]["count"] += 1
-                            cat_edge_b_stats[label]["total_odds"] += odds
-                            cat_edge_b_stats[label]["resolved"] += 1
-                            if success: cat_edge_b_stats[label]["hits"] += 1
-                            break
+                        # Bucketing logic for category
+                        cat_odds_b_stats = cat_acc["odds_b_stats"]
+                        for low, high, label in odds_buckets_cfg:
+                            if low <= odds < high:
+                                cat_odds_b_stats[label]["count"] += 1
+                                cat_odds_b_stats[label]["total_odds"] += odds
+                                cat_odds_b_stats[label]["resolved"] += 1
+                                if _is_pick_hit(success): cat_odds_b_stats[label]["hits"] += 1
+                                break
 
-                    cat_conf_b_stats = cat_acc["conf_b_stats"]
-                    for low, high, label in conf_buckets_cfg:
-                        if low <= conf < high:
-                            cat_conf_b_stats[label]["count"] += 1  # type: ignore[bad-index]
-                            cat_conf_b_stats[label]["total_odds"] += odds  # type: ignore[bad-index]
-                            cat_conf_b_stats[label]["resolved"] += 1  # type: ignore[bad-index]
-                            if success: cat_conf_b_stats[label]["hits"] += 1  # type: ignore[bad-index]
-                            break
+                        cat_edge_b_stats = cat_acc["edge_b_stats"]
+                        for low, high, label in edge_buckets_cfg:
+                            if low <= edge_val < high:
+                                cat_edge_b_stats[label]["count"] += 1
+                                cat_edge_b_stats[label]["total_odds"] += odds
+                                cat_edge_b_stats[label]["resolved"] += 1
+                                if _is_pick_hit(success): cat_edge_b_stats[label]["hits"] += 1
+                                break
+
+                        cat_conf_b_stats = cat_acc["conf_b_stats"]
+                        for low, high, label in conf_buckets_cfg:
+                            if low <= conf < high:
+                                cat_conf_b_stats[label]["count"] += 1  # type: ignore[bad-index]
+                                cat_conf_b_stats[label]["total_odds"] += odds  # type: ignore[bad-index]
+                                cat_conf_b_stats[label]["resolved"] += 1  # type: ignore[bad-index]
+                                if _is_pick_hit(success): cat_conf_b_stats[label]["hits"] += 1  # type: ignore[bad-index]
+                                break
 
             except Exception as e:
                 print(f"Error in global stats loop: {e}")
                 continue
                 
     accuracy = (total_hits / total_picks * 100) if total_picks > 0 else 0.0
+    roi = (total_profit / total_staked_picks * 100) if total_staked_picks > 0 else 0.0
     avg_odds = (total_odds / total_picks) if total_picks > 0 else 0.0
     avg_winning_odds = (total_winning_odds / winning_picks_count) if winning_picks_count > 0 else 0.0
     
@@ -1349,6 +1349,7 @@ def get_global_stats(
         cat_hits = cat_acc["total_hits"]
         cat_pending = cat_acc["total_pending"]
         cat_accuracy = (cat_hits / cat_picks * 100) if cat_picks > 0 else 0.0
+        cat_roi = (cat_acc["total_profit"] / cat_acc["total_staked_picks"] * 100) if cat_acc["total_staked_picks"] > 0 else 0.0
         cat_avg_odds = (cat_acc["total_odds"] / cat_picks) if cat_picks > 0 else 0.0
         cat_winning_picks = cat_acc["winning_picks_count"]
         cat_avg_winning_odds = (cat_acc["total_winning_odds"] / cat_winning_picks) if cat_winning_picks > 0 else 0.0
@@ -1378,6 +1379,7 @@ def get_global_stats(
             "total_hits": cat_hits,
             "total_pending": cat_pending,
             "total_profit": round(cat_acc["total_profit"], 2),
+            "roi": round(cat_roi, 1),
             "accuracy": round(cat_accuracy, 1),
             "avg_odds": round(cat_avg_odds, 2),
             "avg_winning_odds": round(cat_avg_winning_odds, 2),
@@ -1415,6 +1417,7 @@ def get_global_stats(
         "avg_odds": avg_odds,
         "avg_winning_odds": avg_winning_odds,
         "total_profit": round(total_profit, 2),
+        "roi": round(roi, 1),
         "daily_profit_series": daily_profit_series,
         "best_markets": best_markets,
         "worst_markets": worst_markets,
@@ -1733,12 +1736,131 @@ def _check_projected_line_success(p_line: dict, res: dict, home_name: str, away_
     return None
 
 
-def _check_pick_success(pick: dict, res: dict) -> bool | None:
+PickOutcome = bool | str | None
+
+
+def _settle_total_line(total: float, line: float, side: str) -> str:
+    """Liquida over/under para una línea simple. Devuelve win/loss/push."""
+    if side == "over":
+        if total > line:
+            return "win"
+        if total < line:
+            return "loss"
+        return "push"
+    if total < line:
+        return "win"
+    if total > line:
+        return "loss"
+    return "push"
+
+
+def _combine_split_outcomes(results: list[str]) -> PickOutcome:
+    """Combina resultados de líneas asiáticas divididas (.25 / .75)."""
+    if len(results) == 1:
+        r = results[0]
+        if r == "win":
+            return True
+        if r == "loss":
+            return False
+        return "void"
+
+    if all(r == "win" for r in results):
+        return True
+    if all(r == "loss" for r in results):
+        return False
+    if all(r == "push" for r in results):
+        return "void"
+    if "win" in results and "push" in results:
+        return "half_win"
+    if "loss" in results and "push" in results:
+        return "half_loss"
+    return None
+
+
+def _resolve_ou_outcome(total: float | None, line: float | None, side: str) -> PickOutcome:
+    """Resuelve over/under incluyendo push y medias asiáticas."""
+    if total is None or line is None:
+        return None
+    lines = split_asian_line(line)
+    results = [_settle_total_line(total, l, side) for l in lines]
+    return _combine_split_outcomes(results)
+
+
+def _resolve_ah_outcome(h_score: int, a_score: int, line: float, for_home: bool) -> PickOutcome:
+    """Resuelve Asian Handicap para local o visitante."""
+    margin_base = (h_score - a_score) if for_home else (a_score - h_score)
+    lines = split_asian_line(line)
+    results = []
+    for l in lines:
+        margin = margin_base + l
+        if margin > 0:
+            results.append("win")
+        elif margin < 0:
+            results.append("loss")
+        else:
+            results.append("push")
+    return _combine_split_outcomes(results)
+
+
+def _parse_ah_line(selection: str) -> float | None:
+    """Extrae la línea de un pick AH, p.ej. 'AH -0.50 Real Madrid'."""
+    import re
+    match = re.search(r"ah\s*([+-]?\d+(?:\.\d+)?)", selection, re.IGNORECASE)
+    if match:
+        return float(match.group(1))
+    return None
+
+
+def _calculate_pick_profit(outcome: PickOutcome, odds: float) -> float:
+    """Calcula beneficio en unidades con stake plano de 1u."""
+    if outcome is None:
+        return 0.0
+    if outcome is True:
+        return odds - 1.0
+    if outcome is False:
+        return -1.0
+    if outcome == "void":
+        return 0.0
+    if outcome == "half_win":
+        return (odds - 1.0) / 2.0
+    if outcome == "half_loss":
+        return -0.5
+    return 0.0
+
+
+def _is_pick_hit(outcome: PickOutcome) -> bool:
+    """True si el pick cuenta como acierto (incluye half-win)."""
+    return outcome is True or outcome == "half_win"
+
+
+def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
     """Helper to verify if a pick was successful based on results."""
     sel = pick.get("selection", "").lower()
     
     h_score = res.get("final_score_home")
     a_score = res.get("final_score_away")
+
+    # DNB (Draw No Bet)
+    if "dnb" in sel:
+        if h_score is not None and a_score is not None:
+            if h_score == a_score:
+                return "void"
+            if "local" in sel or "home" in sel:
+                return h_score > a_score
+            if "visitante" in sel or "away" in sel:
+                return a_score > h_score
+
+    # Asian Handicap
+    if sel.startswith("ah ") or " ah " in sel:
+        if h_score is not None and a_score is not None:
+            line = _parse_ah_line(sel)
+            if line is not None:
+                home_name = (pick.get("home_team") or "").lower()
+                for_home = "local" in sel or "home" in sel or (home_name and home_name in sel)
+                if not for_home and not ("visitante" in sel or "away" in sel):
+                    # Inferir lado por el signo si no hay pista explícita
+                    for_home = line <= 0
+                return _resolve_ah_outcome(h_score, a_score, line, for_home=for_home)
     
     # 1X2 / Winner (Common for all sports)
     if sel == "local":
@@ -1766,10 +1888,10 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
         total_p = (h_score + a_score) if (h_score is not None and a_score is not None) else None
         if "over" in sel:
             line = _extract_line(sel, "over")
-            if line is not None and total_p is not None: return total_p > line
+            return _resolve_ou_outcome(total_p, line, "over")
         if "under" in sel:
             line = _extract_line(sel, "under")
-            if line is not None and total_p is not None: return total_p < line
+            return _resolve_ou_outcome(total_p, line, "under")
 
     # BTTS
     if "btts sí" in sel or "btts yes" in sel:
@@ -1782,10 +1904,10 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
         total_g = (h_score + a_score) if (h_score is not None and a_score is not None) else None
         if "over" in sel:
             line = _extract_line(sel, "over")
-            if line is not None and total_g is not None: return total_g > line
+            return _resolve_ou_outcome(total_g, line, "over")
         if "under" in sel:
             line = _extract_line(sel, "under")
-            if line is not None and total_g is not None: return total_g < line
+            return _resolve_ou_outcome(total_g, line, "under")
 
     # Corners
     h_corn = res.get("final_corners_home")
@@ -1794,10 +1916,10 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
         total_c = (h_corn + a_corn) if (h_corn is not None and a_corn is not None) else None
         if "over" in sel:
             line = _extract_line(sel, "over")
-            if line is not None and total_c is not None: return total_c > line
+            return _resolve_ou_outcome(total_c, line, "over")
         if "under" in sel:
             line = _extract_line(sel, "under")
-            if line is not None and total_c is not None: return total_c < line
+            return _resolve_ou_outcome(total_c, line, "under")
 
     # Cards
     h_y = res.get("final_yellow_cards_home") or 0
@@ -1808,33 +1930,33 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
     if "tarjetas" in sel or "cards" in sel:
         if "over" in sel:
             line = _extract_line(sel, "over")
-            if line is not None: return total_cards > line
+            return _resolve_ou_outcome(total_cards, line, "over")
         if "under" in sel:
             line = _extract_line(sel, "under")
-            if line is not None: return total_cards < line
+            return _resolve_ou_outcome(total_cards, line, "under")
 
     # Shots
     h_s = res.get("final_shots_home")
     a_s = res.get("final_shots_away")
     if "tiros" in sel or "shots" in sel:
-        total_s = (h_s + a_s) if (h_s is not None and a_s is not None) else None
         if "pta" in sel or "target" in sel:
             h_st = res.get("final_shots_on_target_home")
             a_st = res.get("final_shots_on_target_away")
             total_st = (h_st + a_st) if (h_st is not None and a_st is not None) else None
             if "over" in sel:
                 line = _extract_line(sel, "over")
-                if line is not None and total_st is not None: return total_st > line
+                return _resolve_ou_outcome(total_st, line, "over")
             if "under" in sel:
                 line = _extract_line(sel, "under")
-                if line is not None and total_st is not None: return total_st < line
+                return _resolve_ou_outcome(total_st, line, "under")
         else:
+            total_s = (h_s + a_s) if (h_s is not None and a_s is not None) else None
             if "over" in sel:
                 line = _extract_line(sel, "over")
-                if line is not None and total_s is not None: return total_s > line
+                return _resolve_ou_outcome(total_s, line, "over")
             if "under" in sel:
                 line = _extract_line(sel, "under")
-                if line is not None and total_s is not None: return total_s < line
+                return _resolve_ou_outcome(total_s, line, "under")
 
     # Fouls
     if "faltas" in sel or "fouls" in sel:
@@ -1843,10 +1965,10 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
         total_f = (h_f + a_f) if (h_f is not None and a_f is not None) else None
         if "over" in sel:
             line = _extract_line(sel, "over")
-            if line is not None and total_f is not None: return total_f > line
+            return _resolve_ou_outcome(total_f, line, "over")
         if "under" in sel:
             line = _extract_line(sel, "under")
-            if line is not None and total_f is not None: return total_f < line
+            return _resolve_ou_outcome(total_f, line, "under")
 
     # Offsides
     if "offsides" in sel or "fuera de juego" in sel or "fueras" in sel:
@@ -1855,10 +1977,10 @@ def _check_pick_success(pick: dict, res: dict) -> bool | None:
         total_o = (h_o + a_o) if (h_o is not None and a_o is not None) else None
         if "over" in sel:
             line = _extract_line(sel, "over")
-            if line is not None and total_o is not None: return total_o > line
+            return _resolve_ou_outcome(total_o, line, "over")
         if "under" in sel:
             line = _extract_line(sel, "under")
-            if line is not None and total_o is not None: return total_o < line
+            return _resolve_ou_outcome(total_o, line, "under")
 
     return None
 
@@ -1915,9 +2037,9 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) 
             total = 0
             for p in relevant_picks:
                 success = _check_pick_success(p, res_dict)
-                if success is not None:
+                if success is not None and success != "void":
                     total += 1
-                    if success:
+                    if _is_pick_hit(success):
                         hits += 1
             if total > 0:
                 out.picks_hits_summary = f"{hits}/{total}"

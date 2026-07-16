@@ -966,17 +966,20 @@ function renderHistoryList(entries) {
       let matchUnitsText = "";
       if (e.picks_calculados) {
         try {
-          const parsed = typeof e.picks_calculados === "string" ? JSON.parse(e.picks_calculados) : e.picks_calculados;
+          const parsed =
+            typeof e.picks_calculados === "string"
+              ? JSON.parse(e.picks_calculados)
+              : e.picks_calculados;
           const picks = Array.isArray(parsed) ? parsed : [];
           // Si el partido está resuelto, sumamos el beneficio de cada pick
           if (e.accuracy_percentage != null && picks.length > 0) {
             let totalProfit = 0;
             let countProfit = false;
-            picks.forEach(p => {
+            picks.forEach((p) => {
               if (p.success !== null) {
                 countProfit = true;
                 if (p.success === true) {
-                  totalProfit += (p.odds - 1);
+                  totalProfit += p.odds - 1;
                 } else if (p.success === false) {
                   totalProfit -= 1;
                 }
@@ -1446,8 +1449,14 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-league-goals", data.league_stats.avg_goals_per_game);
       setSafeValue("fb-league-corners", data.league_stats.avg_corners_per_game);
       setSafeValue("fb-league-cards", data.league_stats.avg_cards_per_game);
-      setSafeValue("fb-league-yellow-cards", data.league_stats.avg_yellow_cards_per_game);
-      setSafeValue("fb-league-red-cards", data.league_stats.avg_red_cards_per_game);
+      setSafeValue(
+        "fb-league-yellow-cards",
+        data.league_stats.avg_yellow_cards_per_game,
+      );
+      setSafeValue(
+        "fb-league-red-cards",
+        data.league_stats.avg_red_cards_per_game,
+      );
       setSafeValue("fb-referee-yellow", data.league_stats.referee_avg_yellow);
       setSafeValue("fb-referee-red", data.league_stats.referee_avg_red);
     }
@@ -2522,6 +2531,10 @@ function getModalDateParams() {
   } else if (range === "7days") {
     const d = new Date();
     d.setDate(d.getDate() - 7);
+    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+  } else if (range === "3days") {
+    const d = new Date();
+    d.setDate(d.getDate() - 3);
     dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
   } else if (range === "30days") {
     const d = new Date();

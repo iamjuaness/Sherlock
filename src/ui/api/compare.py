@@ -413,11 +413,12 @@ def _calculate_display_score(v: ValueIndicator) -> float:
     s_data = (v.data_quality_score or 50.0) * 0.1
     
     # 4. Estabilidad Histórica del Segmento (w=0.2)
-    # Por ahora basado en la cuota (las cuotas bajas son más estables)
-    s_stability = 70.0
+    # Basada en el peso de muestra de ambos equipos (más datos = más estable)
+    sample_w = v.sample_size_weight if v.sample_size_weight is not None else 0.5
+    s_stability = 40.0 + (sample_w * 50.0)  # 40–90 según muestra
     if v.odds:
-        if v.odds < 1.60: s_stability = 90.0
-        elif v.odds > 2.50: s_stability = 40.0
+        if v.odds < 1.60: s_stability = min(100.0, s_stability + 10.0)
+        elif v.odds > 2.50: s_stability = max(20.0, s_stability - 20.0)
     
     final_score = s_prob + s_edge + s_data + (s_stability * 0.2)
     return round(min(100.0, final_score), 1)
@@ -792,7 +793,10 @@ def _compute_team_shots_lambda(
 ) -> float:
     avg_team_shots = league.avg_shots_per_game / 2.0
     gen_str = team.shots_per_game
-    opp_def_factor = max((100.0 - opponent.possession_pct) / 50.0, 0.5)
+    # Factor defensivo del rival: hibrida posesión baja y xGA elevado
+    poss_factor = max((100.0 - opponent.possession_pct) / 50.0, 0.5)
+    xga_factor = opponent.xga_per_game / max(league.avg_goals_per_game / 2.0, 0.5)
+    opp_def_factor = 0.55 * poss_factor + 0.45 * min(max(xga_factor, 0.6), 1.5)
     
     lam = gen_str * opp_def_factor
     m_count = team.matches_home if is_home else team.matches_away
@@ -810,7 +814,9 @@ def _compute_team_shots_target_lambda(
 ) -> float:
     avg_team_sot = league.avg_shots_target_per_game / 2.0
     gen_str = team.shots_on_target_per_game
-    opp_def_factor = max((100.0 - opponent.possession_pct) / 50.0, 0.5)
+    poss_factor = max((100.0 - opponent.possession_pct) / 50.0, 0.5)
+    xga_factor = opponent.xga_per_game / max(league.avg_goals_per_game / 2.0, 0.5)
+    opp_def_factor = 0.55 * poss_factor + 0.45 * min(max(xga_factor, 0.6), 1.5)
     
     lam = gen_str * opp_def_factor
     m_count = team.matches_home if is_home else team.matches_away
@@ -2219,9 +2225,9 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     lam_shots   = _compute_shots_lambda(h, a, req.league_stats)
     lam_shots_target = _compute_shots_target_lambda(h, a, req.league_stats)
 
-    # ── Métricas por equipo ──────────────────────────────────────
-    h_goals_lam   = _compute_team_goals_lambda(h, a, req.league_stats, is_home=True)
-    a_goals_lam   = _compute_team_goals_lambda(a, h, req.league_stats, is_home=False)
+    # ── Métricas por equipo (reutilizan lambdas de goles ya calculados) ──
+    h_goals_lam   = h_lam
+    a_goals_lam   = a_lam
     h_corners_lam = _compute_team_corners_lambda(h, a, req.league_stats, is_home=True)
     a_corners_lam = _compute_team_corners_lambda(a, h, req.league_stats, is_home=False)
     h_cards_lam   = _compute_team_cards_lambda(h, a, req.league_stats, is_home=True)
