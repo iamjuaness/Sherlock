@@ -82,6 +82,15 @@ let currentResults = null;
 let loadedHistoryEntryId = null;
 let loadedHistoryEntryDate = null;
 
+// ── Restore use_general_stats preference from localStorage ──────
+(function initGeneralStatsCheckbox() {
+  const saved = localStorage.getItem("use_general_stats_system");
+  const el = document.getElementById("dashboard-use-general-stats");
+  if (el && saved !== null) {
+    el.checked = saved === "true";
+  }
+})();
+
 // ── Prefill polling (for browser extension integration) ─────────
 (function startPrefillPolling() {
   const POLL_INTERVAL = 2500; // ms
@@ -243,6 +252,29 @@ function renderMultiLineCards(values) {
       v.data_quality_score != null ? Math.round(v.data_quality_score) : null;
     const confTier = v.market_confidence_tier || "N/A";
 
+    const lrs =
+      v.league_reliability_score != null ? v.league_reliability_score : null;
+    const lrsPenalty =
+      v.league_reliability_penalty != null
+        ? v.league_reliability_penalty
+        : null;
+    const lrsColor =
+      lrs == null
+        ? "var(--color-muted, #94a3b8)"
+        : lrs >= 0.85
+          ? "var(--color-success)"
+          : lrs >= 0.65
+            ? "var(--color-warning)"
+            : "var(--color-error)";
+    const lrsLabel =
+      lrs == null
+        ? "—"
+        : lrs >= 0.85
+          ? `${Math.round(lrs * 100)}% ✅`
+          : lrs >= 0.65
+            ? `${Math.round(lrs * 100)}% ⚠️`
+            : `${Math.round(lrs * 100)}% 🔴`;
+
     // Success indicator
     let successHtml = "";
     let statusClass = "";
@@ -270,12 +302,20 @@ function renderMultiLineCards(values) {
         <span style="color: ${dqScore > 70 ? "var(--color-success)" : dqScore > 40 ? "var(--color-warning)" : "var(--color-error)"}">${dqScore ?? "—"}% (${confTier})</span>
       </div>
       <div class="value-line-card__row">
+        <span>Confiab. Liga (LRS)</span>
+        <span style="color: ${lrsColor}; font-weight: 600;">${lrsLabel}${lrsPenalty != null && lrsPenalty > 0.001 ? ` <span style="opacity:0.7; font-size:0.78em;">(-${(lrsPenalty * 100).toFixed(1)}% EV)</span>` : ""}</span>
+      </div>
+      <div class="value-line-card__row">
         <span>Prob. Modelo</span>
         <span>${probText}</span>
       </div>
       <div class="value-line-card__row">
         <span>Cuota Bookie</span>
         <span>${oddsText}</span>
+      </div>
+      <div class="value-line-card__row">
+        <span>Stake Recomendado</span>
+        <span style="font-weight: bold; color: var(--accent-light);">${v.kelly_fraction > 0 ? Math.max(1, Math.round(v.kelly_fraction * 100)) : 1}u</span>
       </div>
       <div class="value-line-card__edge" style="font-weight: bold; font-size: 1.1rem; margin-top: 0.5rem;">
         Edge ${edgeText}
@@ -1371,9 +1411,15 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-home-shots", home.shots_per_game);
       setSafeValue("fb-home-shots-target", home.shots_on_target_per_game);
       setSafeValue("fb-home-possession", home.possession_pct);
-      setSafeValue("fb-home-pass", home.passes_completed);
+      setSafeValue(
+        "fb-home-pass",
+        home.passes_completed_per_game || home.passes_completed,
+      );
       setSafeValue("fb-home-pass-acc", home.pass_accuracy);
-      setSafeValue("fb-home-pass-opp-half", home.passes_opp_half);
+      setSafeValue(
+        "fb-home-pass-opp-half",
+        home.passes_opp_half_per_game || home.passes_opp_half,
+      );
       setSafeValue("fb-home-pass-opp", home.pass_accuracy_opp_half);
       setSafeValue("fb-home-cross-completed", home.crosses_per_game);
       setSafeValue("fb-home-cross-acc", home.cross_accuracy);
@@ -1381,7 +1427,10 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-home-clean-sheets-home", home.clean_sheets_home);
       setSafeValue("fb-home-clean-sheets-away", home.clean_sheets_away);
       setSafeValue("fb-home-saves", home.saves_per_game);
-      setSafeValue("fb-home-balls-recovered", home.balls_recovered_per_game);
+      setSafeValue(
+        "fb-home-balls-recovered",
+        home.ball_recovery_per_game || home.balls_recovered_per_game,
+      );
       setSafeValue("fb-home-duels", home.duels_won_per_game);
       setSafeValue("fb-home-duels-ground", home.ground_duels_won_per_game);
       setSafeValue("fb-home-pen-conceded", home.penalties_conceded);
@@ -1393,6 +1442,323 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-home-xg", home.xg_per_game);
       setSafeValue("fb-home-xga", home.xga_per_game);
       setSafeValue("fb-home-corners-conceded", home.corners_conceded_per_game);
+
+      // Goles detallados
+      setSafeValue("fb-home-goals-inside", home.goals_inside_box);
+      setSafeValue("fb-home-goals-outside", home.goals_outside_box);
+      setSafeValue("fb-home-headed-goals", home.headed_goals);
+      setSafeValue("fb-home-free-kick-goals", home.free_kick_goals);
+      setSafeValue("fb-home-fast-break-goals", home.fast_break_goals);
+      setSafeValue("fb-home-penalty-goals", home.penalty_goals);
+      setSafeValue("fb-home-own-goals", home.own_goals);
+
+      // Tiros detallados
+      setSafeValue("fb-home-shots-blocked", home.shots_blocked);
+      setSafeValue("fb-home-shots-inside", home.shots_inside_box);
+      setSafeValue("fb-home-shots-outside", home.shots_outside_box);
+      setSafeValue("fb-home-hit-woodwork", home.hit_woodwork);
+      setSafeValue("fb-home-fast-break-shots", home.fast_break_shots);
+      setSafeValue("fb-home-free-kick-shots", home.free_kick_shots);
+      setSafeValue("fb-home-penalties-taken", home.penalties_taken);
+
+      // Calidad individual
+      setSafeValue("fb-home-dribble-success", home.dribble_success_pct);
+      setSafeValue("fb-home-fast-breaks", home.fast_breaks);
+      setSafeValue("fb-home-throw-ins", home.throw_ins);
+      setSafeValue("fb-home-possession-lost", home.possession_lost);
+
+      // Defensa avanzada
+      setSafeValue("fb-home-clearances-line", home.clearances_off_line);
+      setSafeValue("fb-home-last-man-tackles", home.last_man_tackles);
+      setSafeValue("fb-home-save-pct", home.save_pct);
+      setSafeValue("fb-home-goal-kicks", home.goal_kicks);
+
+      // Duelos avanzados
+      setSafeValue("fb-home-duels-total", home.duels_total_per_game);
+      setSafeValue("fb-home-aerial-duels", home.aerial_duels_won_per_game);
+      setSafeValue("fb-home-aerial-pct", home.aerial_duels_won_pct);
+
+      // Disciplina avanzada
+      setSafeValue("fb-home-pen-goals-conceded", home.penalty_goals_conceded);
+      setSafeValue("fb-home-errors-shot", home.errors_leading_to_shot);
+
+      // Físicas & Rating
+      setSafeValue("fb-home-km", home.kilometers_covered);
+      setSafeValue("fb-home-sprints", home.number_of_sprints);
+      setSafeValue("fb-home-rating", home.avg_rating);
+
+      // Estadísticas Adicionales
+      setSafeValue("fb-home-goals-scored", home.goals_scored);
+      setSafeValue("fb-home-goals-conceded-total", home.goals_conceded);
+      setSafeValue("fb-home-assists", home.assists);
+      setSafeValue("fb-home-left-foot-goals", home.left_foot_goals);
+      setSafeValue("fb-home-right-foot-goals", home.right_foot_goals);
+      setSafeValue("fb-home-shots-total", home.shots);
+      setSafeValue("fb-home-shots-on-target-total", home.shots_on_target);
+      setSafeValue("fb-home-shots-off-target", home.shots_off_target);
+      setSafeValue("fb-home-big-chances-total", home.big_chances);
+      setSafeValue("fb-home-big-chances-created", home.big_chances_created);
+      setSafeValue("fb-home-big-chances-missed-total", home.big_chances_missed);
+      setSafeValue(
+        "fb-home-shots-off-target-per-game",
+        home.shots_off_target_per_game,
+      );
+      setSafeValue(
+        "fb-home-shots-blocked-per-game",
+        home.shots_blocked_per_game,
+      );
+      setSafeValue(
+        "fb-home-shots-inside-per-game",
+        home.shots_inside_box_per_game,
+      );
+      setSafeValue(
+        "fb-home-shots-outside-per-game",
+        home.shots_outside_box_per_game,
+      );
+      setSafeValue(
+        "fb-home-big-chances-created-per-game",
+        home.big_chances_created_per_game,
+      );
+      setSafeValue("fb-home-hit-woodwork-per-game", home.hit_woodwork_per_game);
+      setSafeValue(
+        "fb-home-fast-break-shots-per-game",
+        home.fast_break_shots_per_game,
+      );
+      setSafeValue(
+        "fb-home-free-kick-shots-per-game",
+        home.free_kick_shots_per_game,
+      );
+      setSafeValue("fb-home-total-passes", home.total_passes);
+      setSafeValue("fb-home-accurate-passes", home.accurate_passes);
+      setSafeValue("fb-home-total-own-half-passes", home.total_own_half_passes);
+      setSafeValue(
+        "fb-home-accurate-own-half-passes",
+        home.accurate_own_half_passes,
+      );
+      setSafeValue(
+        "fb-home-pass-accuracy-own-half",
+        home.pass_accuracy_own_half,
+      );
+      setSafeValue("fb-home-total-opp-half-passes", home.total_opp_half_passes);
+      setSafeValue(
+        "fb-home-accurate-opp-half-passes",
+        home.accurate_opp_half_passes,
+      );
+      setSafeValue("fb-home-total-long-balls", home.total_long_balls);
+      setSafeValue("fb-home-accurate-long-balls", home.accurate_long_balls);
+      setSafeValue("fb-home-long-ball-accuracy", home.long_ball_accuracy);
+      setSafeValue("fb-home-total-crosses", home.total_crosses);
+      setSafeValue("fb-home-accurate-crosses", home.accurate_crosses);
+      setSafeValue(
+        "fb-home-passes-completed-per-game",
+        home.passes_completed_per_game,
+      );
+      setSafeValue(
+        "fb-home-passes-opp-half-per-game",
+        home.passes_opp_half_per_game,
+      );
+      setSafeValue(
+        "fb-home-long-balls-total-per-game",
+        home.long_balls_total_per_game,
+      );
+      setSafeValue("fb-home-long-balls-per-game", home.long_balls_per_game);
+      setSafeValue("fb-home-successful-dribbles", home.successful_dribbles);
+      setSafeValue("fb-home-dribble-attempts", home.dribble_attempts);
+      setSafeValue("fb-home-corners-total", home.corners);
+      setSafeValue("fb-home-fast-breaks-per-game", home.fast_breaks_per_game);
+      setSafeValue("fb-home-throw-ins-per-game", home.throw_ins_per_game);
+      setSafeValue("fb-home-ball-recovery", home.ball_recovery);
+      setSafeValue(
+        "fb-home-ball-recovery-per-game",
+        home.ball_recovery_per_game,
+      );
+      setSafeValue("fb-home-free-kicks", home.free_kicks);
+      setSafeValue("fb-home-free-kicks-per-game", home.free_kicks_per_game);
+      setSafeValue(
+        "fb-home-possession-lost-per-game",
+        home.possession_lost_per_game,
+      );
+      setSafeValue("fb-home-saves-total", home.saves);
+      setSafeValue("fb-home-goal-kicks-per-game", home.goal_kicks_per_game);
+      setSafeValue("fb-home-tackles", home.tackles);
+      setSafeValue("fb-home-tackles-per-game", home.tackles_per_game);
+      setSafeValue("fb-home-interceptions", home.interceptions);
+      setSafeValue(
+        "fb-home-interceptions-per-game",
+        home.interceptions_per_game,
+      );
+      setSafeValue("fb-home-clearances", home.clearances);
+      setSafeValue("fb-home-clearances-per-game", home.clearances_per_game);
+      setSafeValue(
+        "fb-home-clearances-off-line-per-game",
+        home.clearances_off_line_per_game,
+      );
+      setSafeValue(
+        "fb-home-last-man-tackles-per-game",
+        home.last_man_tackles_per_game,
+      );
+      setSafeValue("fb-home-total-duels", home.total_duels);
+      setSafeValue("fb-home-duels-won", home.duels_won);
+      setSafeValue("fb-home-duels-won-pct", home.duels_won_pct);
+      setSafeValue("fb-home-total-ground-duels", home.total_ground_duels);
+      setSafeValue("fb-home-ground-duels-won", home.ground_duels_won);
+      setSafeValue("fb-home-ground-duels-won-pct", home.ground_duels_won_pct);
+      setSafeValue("fb-home-total-aerial-duels", home.total_aerial_duels);
+      setSafeValue("fb-home-aerial-duels-won", home.aerial_duels_won);
+      setSafeValue("fb-home-fouls-total", home.fouls);
+      setSafeValue("fb-home-offsides-total", home.offsides);
+      setSafeValue("fb-home-yellow-cards-total", home.yellow_cards);
+      setSafeValue("fb-home-yellow-red-cards", home.yellow_red_cards);
+      setSafeValue("fb-home-red-cards-only", home.red_cards);
+      setSafeValue(
+        "fb-home-errors-leading-to-goal-per-game",
+        home.errors_leading_to_goal_per_game,
+      );
+      setSafeValue(
+        "fb-home-errors-leading-to-shot-per-game",
+        home.errors_leading_to_shot_per_game,
+      );
+      setSafeValue(
+        "fb-home-kilometers-covered-per-game",
+        home.kilometers_covered_per_game,
+      );
+      setSafeValue("fb-home-sprints-per-game", home.sprints_per_game);
+
+      // Estadísticas Contra
+      setSafeValue("fb-home-shots-against", home.shots_against);
+      setSafeValue(
+        "fb-home-shots-against-per-game",
+        home.shots_against_per_game,
+      );
+      setSafeValue(
+        "fb-home-shots-on-target-against",
+        home.shots_on_target_against,
+      );
+      setSafeValue(
+        "fb-home-shots-on-target-against-per-game",
+        home.shots_on_target_against_per_game,
+      );
+      setSafeValue(
+        "fb-home-shots-off-target-against",
+        home.shots_off_target_against,
+      );
+      setSafeValue(
+        "fb-home-shots-off-target-against-per-game",
+        home.shots_off_target_against_per_game,
+      );
+      setSafeValue("fb-home-shots-blocked-against", home.shots_blocked_against);
+      setSafeValue(
+        "fb-home-shots-blocked-against-per-game",
+        home.shots_blocked_against_per_game,
+      );
+      setSafeValue(
+        "fb-home-blocked-scoring-attempt-against",
+        home.blocked_scoring_attempt_against,
+      );
+      setSafeValue(
+        "fb-home-blocked-scoring-attempt-against-per-game",
+        home.blocked_scoring_attempt_against_per_game,
+      );
+      setSafeValue(
+        "fb-home-shots-inside-box-against",
+        home.shots_inside_box_against,
+      );
+      setSafeValue(
+        "fb-home-shots-inside-box-against-per-game",
+        home.shots_inside_box_against_per_game,
+      );
+      setSafeValue(
+        "fb-home-shots-outside-box-against",
+        home.shots_outside_box_against,
+      );
+      setSafeValue(
+        "fb-home-shots-outside-box-against-per-game",
+        home.shots_outside_box_against_per_game,
+      );
+      setSafeValue("fb-home-big-chances-against", home.big_chances_against);
+      setSafeValue(
+        "fb-home-big-chances-against-per-game",
+        home.big_chances_against_per_game,
+      );
+      setSafeValue(
+        "fb-home-big-chances-created-against",
+        home.big_chances_created_against,
+      );
+      setSafeValue(
+        "fb-home-big-chances-created-against-per-game",
+        home.big_chances_created_against_per_game,
+      );
+      setSafeValue(
+        "fb-home-big-chances-missed-against",
+        home.big_chances_missed_against,
+      );
+      setSafeValue(
+        "fb-home-big-chances-missed-against-per-game",
+        home.big_chances_missed_against_per_game,
+      );
+      setSafeValue("fb-home-hit-woodwork-against", home.hit_woodwork_against);
+      setSafeValue(
+        "fb-home-hit-woodwork-against-per-game",
+        home.hit_woodwork_against_per_game,
+      );
+      setSafeValue("fb-home-total-passes-against", home.total_passes_against);
+      setSafeValue(
+        "fb-home-accurate-passes-against",
+        home.accurate_passes_against,
+      );
+      setSafeValue(
+        "fb-home-total-own-half-passes-against",
+        home.total_own_half_passes_against,
+      );
+      setSafeValue(
+        "fb-home-accurate-own-half-passes-against",
+        home.accurate_own_half_passes_against,
+      );
+      setSafeValue(
+        "fb-home-total-opp-half-passes-against",
+        home.total_opp_half_passes_against,
+      );
+      setSafeValue(
+        "fb-home-accurate-opp-half-passes-against",
+        home.accurate_opp_half_passes_against,
+      );
+      setSafeValue(
+        "fb-home-total-final-third-passes-against",
+        home.total_final_third_passes_against,
+      );
+      setSafeValue(
+        "fb-home-accurate-final-third-passes-against",
+        home.accurate_final_third_passes_against,
+      );
+      setSafeValue("fb-home-crosses-total-against", home.crosses_total_against);
+      setSafeValue(
+        "fb-home-crosses-successful-against",
+        home.crosses_successful_against,
+      );
+      setSafeValue(
+        "fb-home-long-balls-total-against",
+        home.long_balls_total_against,
+      );
+      setSafeValue(
+        "fb-home-long-balls-successful-against",
+        home.long_balls_successful_against,
+      );
+      setSafeValue(
+        "fb-home-dribble-attempts-against",
+        home.dribble_attempts_against,
+      );
+      setSafeValue(
+        "fb-home-dribble-attempts-won-against",
+        home.dribble_attempts_won_against,
+      );
+      setSafeValue("fb-home-tackles-against", home.tackles_against);
+      setSafeValue("fb-home-interceptions-against", home.interceptions_against);
+      setSafeValue("fb-home-clearances-against", home.clearances_against);
+      setSafeValue("fb-home-key-passes-against", home.key_passes_against);
+      setSafeValue("fb-home-corners-against", home.corners_against);
+      setSafeValue("fb-home-offsides-against", home.offsides_against);
+      setSafeValue("fb-home-yellow-cards-against", home.yellow_cards_against);
+      setSafeValue("fb-home-red-cards-against", home.red_cards_against);
     }
 
     if (away) {
@@ -1418,9 +1784,15 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-away-shots", away.shots_per_game);
       setSafeValue("fb-away-shots-target", away.shots_on_target_per_game);
       setSafeValue("fb-away-possession", away.possession_pct);
-      setSafeValue("fb-away-pass", away.passes_completed);
+      setSafeValue(
+        "fb-away-pass",
+        away.passes_completed_per_game || away.passes_completed,
+      );
       setSafeValue("fb-away-pass-acc", away.pass_accuracy);
-      setSafeValue("fb-away-pass-opp-half", away.passes_opp_half);
+      setSafeValue(
+        "fb-away-pass-opp-half",
+        away.passes_opp_half_per_game || away.passes_opp_half,
+      );
       setSafeValue("fb-away-pass-opp", away.pass_accuracy_opp_half);
       setSafeValue("fb-away-cross-completed", away.crosses_per_game);
       setSafeValue("fb-away-cross-acc", away.cross_accuracy);
@@ -1428,7 +1800,10 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-away-clean-sheets-home", away.clean_sheets_home);
       setSafeValue("fb-away-clean-sheets-away", away.clean_sheets_away);
       setSafeValue("fb-away-saves", away.saves_per_game);
-      setSafeValue("fb-away-balls-recovered", away.balls_recovered_per_game);
+      setSafeValue(
+        "fb-away-balls-recovered",
+        away.ball_recovery_per_game || away.balls_recovered_per_game,
+      );
       setSafeValue("fb-away-duels", away.duels_won_per_game);
       setSafeValue("fb-away-duels-ground", away.ground_duels_won_per_game);
       setSafeValue("fb-away-pen-conceded", away.penalties_conceded);
@@ -1440,6 +1815,322 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-away-xg", away.xg_per_game);
       setSafeValue("fb-away-xga", away.xga_per_game);
       setSafeValue("fb-away-corners-conceded", away.corners_conceded_per_game);
+      // Goles detallados
+      setSafeValue("fb-away-goals-inside", away.goals_inside_box);
+      setSafeValue("fb-away-goals-outside", away.goals_outside_box);
+      setSafeValue("fb-away-headed-goals", away.headed_goals);
+      setSafeValue("fb-away-free-kick-goals", away.free_kick_goals);
+      setSafeValue("fb-away-fast-break-goals", away.fast_break_goals);
+      setSafeValue("fb-away-penalty-goals", away.penalty_goals);
+      setSafeValue("fb-away-own-goals", away.own_goals);
+
+      // Tiros detallados
+      setSafeValue("fb-away-shots-blocked", away.shots_blocked);
+      setSafeValue("fb-away-shots-inside", away.shots_inside_box);
+      setSafeValue("fb-away-shots-outside", away.shots_outside_box);
+      setSafeValue("fb-away-hit-woodwork", away.hit_woodwork);
+      setSafeValue("fb-away-fast-break-shots", away.fast_break_shots);
+      setSafeValue("fb-away-free-kick-shots", away.free_kick_shots);
+      setSafeValue("fb-away-penalties-taken", away.penalties_taken);
+
+      // Calidad individual
+      setSafeValue("fb-away-dribble-success", away.dribble_success_pct);
+      setSafeValue("fb-away-fast-breaks", away.fast_breaks);
+      setSafeValue("fb-away-throw-ins", away.throw_ins);
+      setSafeValue("fb-away-possession-lost", away.possession_lost);
+
+      // Defensa avanzada
+      setSafeValue("fb-away-clearances-line", away.clearances_off_line);
+      setSafeValue("fb-away-last-man-tackles", away.last_man_tackles);
+      setSafeValue("fb-away-save-pct", away.save_pct);
+      setSafeValue("fb-away-goal-kicks", away.goal_kicks);
+
+      // Duelos avanzados
+      setSafeValue("fb-away-duels-total", away.duels_total_per_game);
+      setSafeValue("fb-away-aerial-duels", away.aerial_duels_won_per_game);
+      setSafeValue("fb-away-aerial-pct", away.aerial_duels_won_pct);
+
+      // Disciplina avanzada
+      setSafeValue("fb-away-pen-goals-conceded", away.penalty_goals_conceded);
+      setSafeValue("fb-away-errors-shot", away.errors_leading_to_shot);
+
+      // Físicas & Rating
+      setSafeValue("fb-away-km", away.kilometers_covered);
+      setSafeValue("fb-away-sprints", away.number_of_sprints);
+      setSafeValue("fb-away-rating", away.avg_rating);
+
+      // Estadísticas Adicionales
+      setSafeValue("fb-away-goals-scored", away.goals_scored);
+      setSafeValue("fb-away-goals-conceded-total", away.goals_conceded);
+      setSafeValue("fb-away-assists", away.assists);
+      setSafeValue("fb-away-left-foot-goals", away.left_foot_goals);
+      setSafeValue("fb-away-right-foot-goals", away.right_foot_goals);
+      setSafeValue("fb-away-shots-total", away.shots);
+      setSafeValue("fb-away-shots-on-target-total", away.shots_on_target);
+      setSafeValue("fb-away-shots-off-target", away.shots_off_target);
+      setSafeValue("fb-away-big-chances-total", away.big_chances);
+      setSafeValue("fb-away-big-chances-created", away.big_chances_created);
+      setSafeValue("fb-away-big-chances-missed-total", away.big_chances_missed);
+      setSafeValue(
+        "fb-away-shots-off-target-per-game",
+        away.shots_off_target_per_game,
+      );
+      setSafeValue(
+        "fb-away-shots-blocked-per-game",
+        away.shots_blocked_per_game,
+      );
+      setSafeValue(
+        "fb-away-shots-inside-per-game",
+        away.shots_inside_box_per_game,
+      );
+      setSafeValue(
+        "fb-away-shots-outside-per-game",
+        away.shots_outside_box_per_game,
+      );
+      setSafeValue(
+        "fb-away-big-chances-created-per-game",
+        away.big_chances_created_per_game,
+      );
+      setSafeValue("fb-away-hit-woodwork-per-game", away.hit_woodwork_per_game);
+      setSafeValue(
+        "fb-away-fast-break-shots-per-game",
+        away.fast_break_shots_per_game,
+      );
+      setSafeValue(
+        "fb-away-free-kick-shots-per-game",
+        away.free_kick_shots_per_game,
+      );
+      setSafeValue("fb-away-total-passes", away.total_passes);
+      setSafeValue("fb-away-accurate-passes", away.accurate_passes);
+      setSafeValue("fb-away-total-own-half-passes", away.total_own_half_passes);
+      setSafeValue(
+        "fb-away-accurate-own-half-passes",
+        away.accurate_own_half_passes,
+      );
+      setSafeValue(
+        "fb-away-pass-accuracy-own-half",
+        away.pass_accuracy_own_half,
+      );
+      setSafeValue("fb-away-total-opp-half-passes", away.total_opp_half_passes);
+      setSafeValue(
+        "fb-away-accurate-opp-half-passes",
+        away.accurate_opp_half_passes,
+      );
+      setSafeValue("fb-away-total-long-balls", away.total_long_balls);
+      setSafeValue("fb-away-accurate-long-balls", away.accurate_long_balls);
+      setSafeValue("fb-away-long-ball-accuracy", away.long_ball_accuracy);
+      setSafeValue("fb-away-total-crosses", away.total_crosses);
+      setSafeValue("fb-away-accurate-crosses", away.accurate_crosses);
+      setSafeValue(
+        "fb-away-passes-completed-per-game",
+        away.passes_completed_per_game,
+      );
+      setSafeValue(
+        "fb-away-passes-opp-half-per-game",
+        away.passes_opp_half_per_game,
+      );
+      setSafeValue(
+        "fb-away-long-balls-total-per-game",
+        away.long_balls_total_per_game,
+      );
+      setSafeValue("fb-away-long-balls-per-game", away.long_balls_per_game);
+      setSafeValue("fb-away-successful-dribbles", away.successful_dribbles);
+      setSafeValue("fb-away-dribble-attempts", away.dribble_attempts);
+      setSafeValue("fb-away-corners-total", away.corners);
+      setSafeValue("fb-away-fast-breaks-per-game", away.fast_breaks_per_game);
+      setSafeValue("fb-away-throw-ins-per-game", away.throw_ins_per_game);
+      setSafeValue("fb-away-ball-recovery", away.ball_recovery);
+      setSafeValue(
+        "fb-away-ball-recovery-per-game",
+        away.ball_recovery_per_game,
+      );
+      setSafeValue("fb-away-free-kicks", away.free_kicks);
+      setSafeValue("fb-away-free-kicks-per-game", away.free_kicks_per_game);
+      setSafeValue(
+        "fb-away-possession-lost-per-game",
+        away.possession_lost_per_game,
+      );
+      setSafeValue("fb-away-saves-total", away.saves);
+      setSafeValue("fb-away-goal-kicks-per-game", away.goal_kicks_per_game);
+      setSafeValue("fb-away-tackles", away.tackles);
+      setSafeValue("fb-away-tackles-per-game", away.tackles_per_game);
+      setSafeValue("fb-away-interceptions", away.interceptions);
+      setSafeValue(
+        "fb-away-interceptions-per-game",
+        away.interceptions_per_game,
+      );
+      setSafeValue("fb-away-clearances", away.clearances);
+      setSafeValue("fb-away-clearances-per-game", away.clearances_per_game);
+      setSafeValue(
+        "fb-away-clearances-off-line-per-game",
+        away.clearances_off_line_per_game,
+      );
+      setSafeValue(
+        "fb-away-last-man-tackles-per-game",
+        away.last_man_tackles_per_game,
+      );
+      setSafeValue("fb-away-total-duels", away.total_duels);
+      setSafeValue("fb-away-duels-won", away.duels_won);
+      setSafeValue("fb-away-duels-won-pct", away.duels_won_pct);
+      setSafeValue("fb-away-total-ground-duels", away.total_ground_duels);
+      setSafeValue("fb-away-ground-duels-won", away.ground_duels_won);
+      setSafeValue("fb-away-ground-duels-won-pct", away.ground_duels_won_pct);
+      setSafeValue("fb-away-total-aerial-duels", away.total_aerial_duels);
+      setSafeValue("fb-away-aerial-duels-won", away.aerial_duels_won);
+      setSafeValue("fb-away-fouls-total", away.fouls);
+      setSafeValue("fb-away-offsides-total", away.offsides);
+      setSafeValue("fb-away-yellow-cards-total", away.yellow_cards);
+      setSafeValue("fb-away-yellow-red-cards", away.yellow_red_cards);
+      setSafeValue("fb-away-red-cards-only", away.red_cards);
+      setSafeValue(
+        "fb-away-errors-leading-to-goal-per-game",
+        away.errors_leading_to_goal_per_game,
+      );
+      setSafeValue(
+        "fb-away-errors-leading-to-shot-per-game",
+        away.errors_leading_to_shot_per_game,
+      );
+      setSafeValue(
+        "fb-away-kilometers-covered-per-game",
+        away.kilometers_covered_per_game,
+      );
+      setSafeValue("fb-away-sprints-per-game", away.sprints_per_game);
+
+      // Estadísticas Contra
+      setSafeValue("fb-away-shots-against", away.shots_against);
+      setSafeValue(
+        "fb-away-shots-against-per-game",
+        away.shots_against_per_game,
+      );
+      setSafeValue(
+        "fb-away-shots-on-target-against",
+        away.shots_on_target_against,
+      );
+      setSafeValue(
+        "fb-away-shots-on-target-against-per-game",
+        away.shots_on_target_against_per_game,
+      );
+      setSafeValue(
+        "fb-away-shots-off-target-against",
+        away.shots_off_target_against,
+      );
+      setSafeValue(
+        "fb-away-shots-off-target-against-per-game",
+        away.shots_off_target_against_per_game,
+      );
+      setSafeValue("fb-away-shots-blocked-against", away.shots_blocked_against);
+      setSafeValue(
+        "fb-away-shots-blocked-against-per-game",
+        away.shots_blocked_against_per_game,
+      );
+      setSafeValue(
+        "fb-away-blocked-scoring-attempt-against",
+        away.blocked_scoring_attempt_against,
+      );
+      setSafeValue(
+        "fb-away-blocked-scoring-attempt-against-per-game",
+        away.blocked_scoring_attempt_against_per_game,
+      );
+      setSafeValue(
+        "fb-away-shots-inside-box-against",
+        away.shots_inside_box_against,
+      );
+      setSafeValue(
+        "fb-away-shots-inside-box-against-per-game",
+        away.shots_inside_box_against_per_game,
+      );
+      setSafeValue(
+        "fb-away-shots-outside-box-against",
+        away.shots_outside_box_against,
+      );
+      setSafeValue(
+        "fb-away-shots-outside-box-against-per-game",
+        away.shots_outside_box_against_per_game,
+      );
+      setSafeValue("fb-away-big-chances-against", away.big_chances_against);
+      setSafeValue(
+        "fb-away-big-chances-against-per-game",
+        away.big_chances_against_per_game,
+      );
+      setSafeValue(
+        "fb-away-big-chances-created-against",
+        away.big_chances_created_against,
+      );
+      setSafeValue(
+        "fb-away-big-chances-created-against-per-game",
+        away.big_chances_created_against_per_game,
+      );
+      setSafeValue(
+        "fb-away-big-chances-missed-against",
+        away.big_chances_missed_against,
+      );
+      setSafeValue(
+        "fb-away-big-chances-missed-against-per-game",
+        away.big_chances_missed_against_per_game,
+      );
+      setSafeValue("fb-away-hit-woodwork-against", away.hit_woodwork_against);
+      setSafeValue(
+        "fb-away-hit-woodwork-against-per-game",
+        away.hit_woodwork_against_per_game,
+      );
+      setSafeValue("fb-away-total-passes-against", away.total_passes_against);
+      setSafeValue(
+        "fb-away-accurate-passes-against",
+        away.accurate_passes_against,
+      );
+      setSafeValue(
+        "fb-away-total-own-half-passes-against",
+        away.total_own_half_passes_against,
+      );
+      setSafeValue(
+        "fb-away-accurate-own-half-passes-against",
+        away.accurate_own_half_passes_against,
+      );
+      setSafeValue(
+        "fb-away-total-opp-half-passes-against",
+        away.total_opp_half_passes_against,
+      );
+      setSafeValue(
+        "fb-away-accurate-opp-half-passes-against",
+        away.accurate_opp_half_passes_against,
+      );
+      setSafeValue(
+        "fb-away-total-final-third-passes-against",
+        away.total_final_third_passes_against,
+      );
+      setSafeValue(
+        "fb-away-accurate-final-third-passes-against",
+        away.accurate_final_third_passes_against,
+      );
+      setSafeValue("fb-away-crosses-total-against", away.crosses_total_against);
+      setSafeValue(
+        "fb-away-crosses-successful-against",
+        away.crosses_successful_against,
+      );
+      setSafeValue(
+        "fb-away-long-balls-total-against",
+        away.long_balls_total_against,
+      );
+      setSafeValue(
+        "fb-away-long-balls-successful-against",
+        away.long_balls_successful_against,
+      );
+      setSafeValue(
+        "fb-away-dribble-attempts-against",
+        away.dribble_attempts_against,
+      );
+      setSafeValue(
+        "fb-away-dribble-attempts-won-against",
+        away.dribble_attempts_won_against,
+      );
+      setSafeValue("fb-away-tackles-against", away.tackles_against);
+      setSafeValue("fb-away-interceptions-against", away.interceptions_against);
+      setSafeValue("fb-away-clearances-against", away.clearances_against);
+      setSafeValue("fb-away-key-passes-against", away.key_passes_against);
+      setSafeValue("fb-away-corners-against", away.corners_against);
+      setSafeValue("fb-away-offsides-against", away.offsides_against);
+      setSafeValue("fb-away-yellow-cards-against", away.yellow_cards_against);
+      setSafeValue("fb-away-red-cards-against", away.red_cards_against);
     }
 
     if (data.competition) {
@@ -1527,6 +2218,13 @@ function populateAppForm(sport, data) {
         odds.shotsTargetOverOdds,
         odds.shotsTargetUnderOdds,
       );
+    }
+
+    // Restore use_general_stats checkbox from payload data
+    const useGeneralEl = document.getElementById("dashboard-use-general-stats");
+    if (useGeneralEl && data.use_general_stats !== undefined) {
+      useGeneralEl.checked = !!data.use_general_stats;
+      localStorage.setItem("use_general_stats_system", useGeneralEl.checked);
     }
   }
 }
@@ -1660,7 +2358,6 @@ function validatePayload(payload, sport) {
 }
 
 // ═══ FOOTBALL ═══
-// ═══ FOOTBALL ═══
 function _fbTeam(p) {
   return {
     name: val(`fb-${p}-name`),
@@ -1701,11 +2398,206 @@ function _fbTeam(p) {
     red_cards_total: val(`fb-${p}-red-cards`),
     offside_per_game: val(`fb-${p}-offsides`),
     errors_leading_to_goal: val(`fb-${p}-errors-goal`),
-    // Nuevos campos granularidad avanzada
     xg_per_game: val(`fb-${p}-xg`),
     xga_per_game: val(`fb-${p}-xga`),
     corners_conceded_per_game: val(`fb-${p}-corners-conceded`),
-    // Cálculos on-the-fly para enviar al backend
+
+    // ── NUEVOS CAMPOS v0.5 MEJORADO ──
+    // Goles detallados
+    goals_inside_box: val(`fb-${p}-goals-inside`),
+    goals_outside_box: val(`fb-${p}-goals-outside`),
+    headed_goals: val(`fb-${p}-headed-goals`),
+    free_kick_goals: val(`fb-${p}-free-kick-goals`),
+    fast_break_goals: val(`fb-${p}-fast-break-goals`),
+    penalty_goals: val(`fb-${p}-penalty-goals`),
+    own_goals: val(`fb-${p}-own-goals`),
+
+    // Tiros detallados
+    shots_blocked: val(`fb-${p}-shots-blocked`),
+    shots_inside_box: val(`fb-${p}-shots-inside`),
+    shots_outside_box: val(`fb-${p}-shots-outside`),
+    hit_woodwork: val(`fb-${p}-hit-woodwork`),
+    fast_break_shots: val(`fb-${p}-fast-break-shots`),
+    free_kick_shots: val(`fb-${p}-free-kick-shots`),
+    penalties_taken: val(`fb-${p}-penalties-taken`),
+
+    // Calidad individual
+    dribble_success_pct: val(`fb-${p}-dribble-success`),
+    fast_breaks: val(`fb-${p}-fast-breaks`),
+    throw_ins: val(`fb-${p}-throw-ins`),
+    possession_lost: val(`fb-${p}-possession-lost`),
+
+    // Defensa avanzada
+    clearances_off_line: val(`fb-${p}-clearances-line`),
+    last_man_tackles: val(`fb-${p}-last-man-tackles`),
+    save_pct: val(`fb-${p}-save-pct`),
+    goal_kicks: val(`fb-${p}-goal-kicks`),
+
+    // Duelos avanzados
+    duels_total_per_game: val(`fb-${p}-duels-total`),
+    aerial_duels_won_per_game: val(`fb-${p}-aerial-duels`),
+    aerial_duels_won_pct: val(`fb-${p}-aerial-pct`),
+
+    // Disciplina avanzada
+    penalty_goals_conceded: val(`fb-${p}-pen-goals-conceded`),
+    errors_leading_to_shot: val(`fb-${p}-errors-shot`),
+
+    // Físicas & Rating
+    kilometers_covered: val(`fb-${p}-km`),
+    number_of_sprints: val(`fb-${p}-sprints`),
+    avg_rating: val(`fb-${p}-rating`),
+
+    // Estadísticas Adicionales
+    goals_scored: val(`fb-${p}-goals-scored`),
+    goals_conceded: val(`fb-${p}-goals-conceded-total`),
+    assists: val(`fb-${p}-assists`),
+    left_foot_goals: val(`fb-${p}-left-foot-goals`),
+    right_foot_goals: val(`fb-${p}-right-foot-goals`),
+    shots: val(`fb-${p}-shots-total`),
+    shots_on_target: val(`fb-${p}-shots-on-target-total`),
+    shots_off_target: val(`fb-${p}-shots-off-target`),
+    big_chances: val(`fb-${p}-big-chances-total`),
+    big_chances_created: val(`fb-${p}-big-chances-created`),
+    big_chances_missed: val(`fb-${p}-big-chances-missed-total`),
+    shots_off_target_per_game: val(`fb-${p}-shots-off-target-per-game`),
+    shots_blocked_per_game: val(`fb-${p}-shots-blocked-per-game`),
+    shots_inside_box_per_game: val(`fb-${p}-shots-inside-per-game`),
+    shots_outside_box_per_game: val(`fb-${p}-shots-outside-per-game`),
+    big_chances_created_per_game: val(`fb-${p}-big-chances-created-per-game`),
+    hit_woodwork_per_game: val(`fb-${p}-hit-woodwork-per-game`),
+    fast_break_shots_per_game: val(`fb-${p}-fast-break-shots-per-game`),
+    free_kick_shots_per_game: val(`fb-${p}-free-kick-shots-per-game`),
+    total_passes: val(`fb-${p}-total-passes`),
+    accurate_passes: val(`fb-${p}-accurate-passes`),
+    total_own_half_passes: val(`fb-${p}-total-own-half-passes`),
+    accurate_own_half_passes: val(`fb-${p}-accurate-own-half-passes`),
+    pass_accuracy_own_half: val(`fb-${p}-pass-accuracy-own-half`),
+    total_opp_half_passes: val(`fb-${p}-total-opp-half-passes`),
+    accurate_opp_half_passes: val(`fb-${p}-accurate-opp-half-passes`),
+    total_long_balls: val(`fb-${p}-total-long-balls`),
+    accurate_long_balls: val(`fb-${p}-accurate-long-balls`),
+    long_ball_accuracy: val(`fb-${p}-long-ball-accuracy`),
+    total_crosses: val(`fb-${p}-total-crosses`),
+    accurate_crosses: val(`fb-${p}-accurate-crosses`),
+    passes_completed_per_game: val(`fb-${p}-passes-completed-per-game`),
+    passes_opp_half_per_game: val(`fb-${p}-passes-opp-half-per-game`),
+    long_balls_total_per_game: val(`fb-${p}-long-balls-total-per-game`),
+    long_balls_per_game: val(`fb-${p}-long-balls-per-game`),
+    successful_dribbles: val(`fb-${p}-successful-dribbles`),
+    dribble_attempts: val(`fb-${p}-dribble-attempts`),
+    corners: val(`fb-${p}-corners-total`),
+    fast_breaks_per_game: val(`fb-${p}-fast-breaks-per-game`),
+    throw_ins_per_game: val(`fb-${p}-throw-ins-per-game`),
+    ball_recovery: val(`fb-${p}-ball-recovery`),
+    ball_recovery_per_game: val(`fb-${p}-ball-recovery-per-game`),
+    free_kicks: val(`fb-${p}-free-kicks`),
+    free_kicks_per_game: val(`fb-${p}-free-kicks-per-game`),
+    possession_lost_per_game: val(`fb-${p}-possession-lost-per-game`),
+    saves: val(`fb-${p}-saves-total`),
+    goal_kicks_per_game: val(`fb-${p}-goal-kicks-per-game`),
+    tackles: val(`fb-${p}-tackles`),
+    tackles_per_game: val(`fb-${p}-tackles-per-game`),
+    interceptions: val(`fb-${p}-interceptions`),
+    interceptions_per_game: val(`fb-${p}-interceptions-per-game`),
+    clearances: val(`fb-${p}-clearances`),
+    clearances_per_game: val(`fb-${p}-clearances-per-game`),
+    clearances_off_line_per_game: val(`fb-${p}-clearances-off-line-per-game`),
+    last_man_tackles_per_game: val(`fb-${p}-last-man-tackles-per-game`),
+    total_duels: val(`fb-${p}-total-duels`),
+    duels_won: val(`fb-${p}-duels-won`),
+    duels_won_pct: val(`fb-${p}-duels-won-pct`),
+    total_ground_duels: val(`fb-${p}-total-ground-duels`),
+    ground_duels_won: val(`fb-${p}-ground-duels-won`),
+    ground_duels_won_pct: val(`fb-${p}-ground-duels-won-pct`),
+    total_aerial_duels: val(`fb-${p}-total-aerial-duels`),
+    aerial_duels_won: val(`fb-${p}-aerial-duels-won`),
+    fouls: val(`fb-${p}-fouls-total`),
+    offsides: val(`fb-${p}-offsides-total`),
+    yellow_cards: val(`fb-${p}-yellow-cards-total`),
+    yellow_red_cards: val(`fb-${p}-yellow-red-cards`),
+    red_cards: val(`fb-${p}-red-cards-only`),
+    errors_leading_to_goal_per_game: val(
+      `fb-${p}-errors-leading-to-goal-per-game`,
+    ),
+    errors_leading_to_shot_per_game: val(
+      `fb-${p}-errors-leading-to-shot-per-game`,
+    ),
+    kilometers_covered_per_game: val(`fb-${p}-kilometers-covered-per-game`),
+    sprints_per_game: val(`fb-${p}-sprints-per-game`),
+
+    // Estadísticas Contra
+    shots_against: val(`fb-${p}-shots-against`),
+    shots_against_per_game: val(`fb-${p}-shots-against-per-game`),
+    shots_on_target_against: val(`fb-${p}-shots-on-target-against`),
+    shots_on_target_against_per_game: val(
+      `fb-${p}-shots-on-target-against-per-game`,
+    ),
+    shots_off_target_against: val(`fb-${p}-shots-off-target-against`),
+    shots_off_target_against_per_game: val(
+      `fb-${p}-shots-off-target-against-per-game`,
+    ),
+    shots_blocked_against: val(`fb-${p}-shots-blocked-against`),
+    shots_blocked_against_per_game: val(
+      `fb-${p}-shots-blocked-against-per-game`,
+    ),
+    blocked_scoring_attempt_against: val(
+      `fb-${p}-blocked-scoring-attempt-against`,
+    ),
+    blocked_scoring_attempt_against_per_game: val(
+      `fb-${p}-blocked-scoring-attempt-against-per-game`,
+    ),
+    shots_inside_box_against: val(`fb-${p}-shots-inside-box-against`),
+    shots_inside_box_against_per_game: val(
+      `fb-${p}-shots-inside-box-against-per-game`,
+    ),
+    shots_outside_box_against: val(`fb-${p}-shots-outside-box-against`),
+    shots_outside_box_against_per_game: val(
+      `fb-${p}-shots-outside-box-against-per-game`,
+    ),
+    big_chances_against: val(`fb-${p}-big-chances-against`),
+    big_chances_against_per_game: val(`fb-${p}-big-chances-against-per-game`),
+    big_chances_created_against: val(`fb-${p}-big-chances-created-against`),
+    big_chances_created_against_per_game: val(
+      `fb-${p}-big-chances-created-against-per-game`,
+    ),
+    big_chances_missed_against: val(`fb-${p}-big-chances-missed-against`),
+    big_chances_missed_against_per_game: val(
+      `fb-${p}-big-chances-missed-against-per-game`,
+    ),
+    hit_woodwork_against: val(`fb-${p}-hit-woodwork-against`),
+    hit_woodwork_against_per_game: val(`fb-${p}-hit-woodwork-against-per-game`),
+    total_passes_against: val(`fb-${p}-total-passes-against`),
+    accurate_passes_against: val(`fb-${p}-accurate-passes-against`),
+    total_own_half_passes_against: val(`fb-${p}-total-own-half-passes-against`),
+    accurate_own_half_passes_against: val(
+      `fb-${p}-accurate-own-half-passes-against`,
+    ),
+    total_opp_half_passes_against: val(`fb-${p}-total-opp-half-passes-against`),
+    accurate_opp_half_passes_against: val(
+      `fb-${p}-accurate-opp-half-passes-against`,
+    ),
+    total_final_third_passes_against: val(
+      `fb-${p}-total-final-third-passes-against`,
+    ),
+    accurate_final_third_passes_against: val(
+      `fb-${p}-accurate-final-third-passes-against`,
+    ),
+    crosses_total_against: val(`fb-${p}-crosses-total-against`),
+    crosses_successful_against: val(`fb-${p}-crosses-successful-against`),
+    long_balls_total_against: val(`fb-${p}-long-balls-total-against`),
+    long_balls_successful_against: val(`fb-${p}-long-balls-successful-against`),
+    dribble_attempts_against: val(`fb-${p}-dribble-attempts-against`),
+    dribble_attempts_won_against: val(`fb-${p}-dribble-attempts-won-against`),
+    tackles_against: val(`fb-${p}-tackles-against`),
+    interceptions_against: val(`fb-${p}-interceptions-against`),
+    clearances_against: val(`fb-${p}-clearances-against`),
+    key_passes_against: val(`fb-${p}-key-passes-against`),
+    corners_against: val(`fb-${p}-corners-against`),
+    offsides_against: val(`fb-${p}-offsides-against`),
+    yellow_cards_against: val(`fb-${p}-yellow-cards-against`),
+    red_cards_against: val(`fb-${p}-red-cards-against`),
+
+    // Cálculos on-the-fly
     passes_total_per_game:
       (val(`fb-${p}-pass`) * 100) / (val(`fb-${p}-pass-acc`) || 1),
     passes_opp_half_total_per_game:
@@ -1848,7 +2740,27 @@ function buildFootballPayloadFromForm() {
     referee_avg_red: getSafeNumber("fb-referee-red", 0.0),
   };
 
-  return { home, away, odds, competition, league_stats };
+  const useGeneralEl = document.getElementById("dashboard-use-general-stats");
+  const use_general_stats = useGeneralEl ? useGeneralEl.checked : false;
+
+  return { home, away, odds, competition, league_stats, use_general_stats };
+}
+
+function onGeneralStatsChange() {
+  const useGeneralEl = document.getElementById("dashboard-use-general-stats");
+  if (useGeneralEl) {
+    localStorage.setItem("use_general_stats_system", useGeneralEl.checked);
+  }
+  // Auto-recalculate if results are currently displayed
+  const resultsEl = document.getElementById("results");
+  if (
+    currentSport === "football" &&
+    currentPayload &&
+    resultsEl &&
+    resultsEl.style.display !== "none"
+  ) {
+    analyzeFootball();
+  }
 }
 
 async function analyzeFootball() {

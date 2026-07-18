@@ -10,6 +10,28 @@ let dailyProfitChartInstance = null;
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
+  // Sync checkbox with localStorage
+  const useStakeCheck = document.getElementById("dashboard-use-stake");
+  if (useStakeCheck) {
+    const saved = localStorage.getItem("use_stake_system");
+    if (saved !== null) {
+      useStakeCheck.checked = (saved === "true");
+    } else {
+      localStorage.setItem("use_stake_system", "true");
+    }
+  }
+
+  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  if (useGeneralCheck) {
+    const savedGen = localStorage.getItem("use_general_stats_system");
+    if (savedGen !== null) {
+      useGeneralCheck.checked = (savedGen === "true");
+    } else {
+      localStorage.setItem("use_general_stats_system", "false");
+      useGeneralCheck.checked = false;
+    }
+  }
+
   fetchGlobalStats();
   startResultPolling();
 
@@ -57,6 +79,17 @@ function getDashboardDateParams() {
   let params = [];
   if (dateFrom) params.push(`date_from=${encodeURIComponent(dateFrom)}`);
   if (dateTo) params.push(`date_to=${encodeURIComponent(dateTo)}`);
+  
+  const useStakeCheck = document.getElementById("dashboard-use-stake");
+  if (useStakeCheck && useStakeCheck.checked) {
+    params.push("use_stake=true");
+  }
+
+  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  if (useGeneralCheck && useGeneralCheck.checked) {
+    params.push("use_general_stats=true");
+  }
+  
   return params.length > 0 ? "?" + params.join("&") : "";
 }
 
@@ -70,6 +103,14 @@ function handleDashboardDateRangeChange() {
 }
 
 async function reloadDashboardStats() {
+  const useStakeCheck = document.getElementById("dashboard-use-stake");
+  if (useStakeCheck) {
+    localStorage.setItem("use_stake_system", useStakeCheck.checked);
+  }
+  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  if (useGeneralCheck) {
+    localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
+  }
   await fetchGlobalStats();
 }
 
@@ -717,4 +758,10 @@ function startResultPolling() {
   }
 
   setTimeout(checkResult, 2000);
+}
+
+// Generar y descargar reporte detallado de Excel
+function downloadExcelReport() {
+  const queryParams = getDashboardDateParams();
+  window.location.href = `/api/v1/report/excel${queryParams}`;
 }

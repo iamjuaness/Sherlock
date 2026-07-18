@@ -217,7 +217,18 @@
       <div id="leagues-content" style="display: none;" class="leagues-layout">
         <!-- Columna Izquierda: Lista de Ligas -->
         <div class="sidebar-card">
-          <div class="sidebar-title">Competiciones</div>
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
+            <div class="sidebar-title" style="margin-bottom: 0; padding-bottom: 0; border: none;">Competiciones</div>
+            <label style="display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); font-weight: 500; user-select: none;">
+              <input
+                type="checkbox"
+                id="leagues-use-stake"
+                style="width: 13px; height: 13px; accent-color: var(--accent-light); cursor: pointer;"
+                onchange="toggleLeaguesStake()"
+              />
+              📈 Stakes
+            </label>
+          </div>
           <div id="leagues-list">
             <!-- Rellenado dinámicamente -->
           </div>

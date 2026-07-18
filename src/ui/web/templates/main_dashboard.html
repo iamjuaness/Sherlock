@@ -491,6 +491,90 @@
               onchange="reloadDashboardStats()"
             />
           </div>
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 0.5rem;
+              margin-left: 1rem;
+            "
+          >
+            <label
+              style="
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                cursor: pointer;
+                font-size: 0.85rem;
+                color: var(--text-muted);
+                font-weight: 500;
+                user-select: none;
+              "
+            >
+              <input
+                type="checkbox"
+                checked
+                id="dashboard-use-stake"
+                style="
+                  width: 15px;
+                  height: 15px;
+                  accent-color: var(--accent-light);
+                  cursor: pointer;
+                "
+                onchange="reloadDashboardStats()"
+              />
+              📈 Usar Stakes Variables
+            </label>
+          </div>
+          <div
+            style="
+              display: flex;
+              align-items: center;
+            "
+          >
+            <label
+              style="
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                cursor: pointer;
+                font-size: 0.85rem;
+                color: var(--text-muted);
+                font-weight: 500;
+                user-select: none;
+              "
+            >
+              <input
+                type="checkbox"
+                id="dashboard-use-general-stats"
+                style="
+                  width: 15px;
+                  height: 15px;
+                  accent-color: var(--accent-light);
+                  cursor: pointer;
+                "
+                onchange="reloadDashboardStats()"
+              />
+              📊 Stats Generales
+            </label>
+          </div>
+          <div style="margin-left: auto">
+            <button
+              id="btn-download-excel"
+              class="btn-primary"
+              style="
+                padding: 0.35rem 1rem;
+                font-size: 0.85rem;
+                border-radius: 6px;
+                display: flex;
+                align-items: center;
+                gap: 0.35rem;
+              "
+              onclick="downloadExcelReport()"
+            >
+              📊 Exportar Excel
+            </button>
+          </div>
         </div>
 
         <!-- ══ Grid de Resumen / Cards ══ -->

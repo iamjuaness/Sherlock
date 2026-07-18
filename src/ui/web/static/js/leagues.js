@@ -3,12 +3,23 @@ let leaguesData = [];
 let activeLeague = null;
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Sync checkbox with localStorage
+  const useStakeCheck = document.getElementById("leagues-use-stake");
+  if (useStakeCheck) {
+    const saved = localStorage.getItem("use_stake_system");
+    if (saved !== null) {
+      useStakeCheck.checked = saved === "true";
+    } else {
+      localStorage.setItem("use_stake_system", "true");
+    }
+  }
   fetchLeagues();
 });
 
 async function fetchLeagues() {
   try {
-    const res = await fetch("/api/v1/stats/leagues");
+    const useStake = localStorage.getItem("use_stake_system") === "true";
+    const res = await fetch(`/api/v1/stats/leagues?use_stake=${useStake}`);
     if (!res.ok) throw new Error("Error al cargar ligas");
     leaguesData = await res.json();
 
@@ -135,20 +146,31 @@ async function fetchMatchesForLeague(name) {
       );
 
       // Calculate total match profit/units considering all visible picks
+      const useStake = localStorage.getItem("use_stake_system") === "true";
       let totalProfit = 0;
       let hasResolvedPicks = false;
       visiblePicks.forEach((pick) => {
         const sel = pick.selection || "";
-        const odds = typeof pick.odds === "number" ? pick.odds : parseFloat(pick.odds) || 0;
+        const odds =
+          typeof pick.odds === "number"
+            ? pick.odds
+            : parseFloat(pick.odds) || 0;
         let success = pick.success;
         if (success === undefined || success === null) {
           success = successMap[sel.toLowerCase()];
         }
+
+        const pickStake = useStake
+          ? pick.kelly_fraction > 0
+            ? Math.max(1, Math.round(pick.kelly_fraction * 100))
+            : 1
+          : 1;
+
         if (success === true) {
-          totalProfit += (odds - 1);
+          totalProfit += (odds - 1) * pickStake;
           hasResolvedPicks = true;
         } else if (success === false) {
-          totalProfit -= 1;
+          totalProfit -= pickStake;
           hasResolvedPicks = true;
         }
       });
@@ -198,12 +220,22 @@ async function fetchMatchesForLeague(name) {
                 '<span style="font-size:0.7rem; color:#60a5fa; margin-left:4px;">🎯 Pro</span>';
             }
 
+            // Recommended stake
+            const pickStake =
+              pick.kelly_fraction > 0
+                ? Math.max(1, Math.round(pick.kelly_fraction * 100))
+                : 1;
+            const stakeHtml = useStake
+              ? `<span style="font-size:0.75rem; color:var(--accent-light); margin-left:6px; font-weight:bold;">Stake ${pickStake}</span>`
+              : "";
+
             return `
             <div class="pick-row">
               <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
                 <span style="font-weight: 600; color: #fff;">${escapeHtml(sel)}</span>
                 ${catBadge}
                 <span style="color: var(--text-muted); font-size: 0.8rem;">@${odds.toFixed(2)}</span>
+                ${stakeHtml}
               </div>
               <div>${badge}</div>
             </div>
@@ -262,4 +294,12 @@ function escapeHtml(str) {
 function escapeAttr(str) {
   if (str == null) return "";
   return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
+}
+
+function toggleLeaguesStake() {
+  const checkbox = document.getElementById("leagues-use-stake");
+  if (checkbox) {
+    localStorage.setItem("use_stake_system", checkbox.checked);
+  }
+  fetchLeagues();
 }

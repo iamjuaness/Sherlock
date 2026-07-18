@@ -726,6 +726,7 @@ def list_analysis(
 
 @app.get("/api/v1/stats/leagues", tags=["Stats"])
 def get_leagues_stats(
+    use_stake: bool = Query(False),
     db: Session = Depends(get_db)
 ):
     """
@@ -789,7 +790,12 @@ def get_leagues_stats(
                         if has_result:
                             success = _check_pick_success(pick, res_dict)
                             if success is not None:
-                                pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0))
+                                if use_stake:
+                                    kelly = float(pick.get("kelly_fraction") or 0.0)
+                                    stake = max(1, round(kelly * 100.0)) if kelly > 0 else 1
+                                else:
+                                    stake = 1
+                                pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
                                 leagues_data[comp_name]["total_profit"] += pick_profit
                                 if success != "void":
                                     leagues_data[comp_name]["total_picks"] += 1
@@ -976,6 +982,7 @@ def get_market_name(selection: str) -> str:
 def get_global_stats(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
+    use_stake: bool = Query(False),
     db: Session = Depends(get_db)
 ):
     """Calculate global performance metrics across all sports with advanced analytics."""
@@ -1150,13 +1157,18 @@ def get_global_stats(
                         continue
 
                     # --- Only resolved picks beyond this point ---
-                    pick_profit = _calculate_pick_profit(success, odds)
+                    if use_stake:
+                        kelly = float(pick.get("kelly_fraction") or 0.0)
+                        stake = max(1, round(kelly * 100.0)) if kelly > 0 else 1
+                    else:
+                        stake = 1
+                    pick_profit = _calculate_pick_profit(success, odds) * stake
                     total_profit += pick_profit
 
                     counts_for_accuracy = success != "void"
                     if counts_for_accuracy:
                         total_picks += 1
-                        total_staked_picks += 1
+                        total_staked_picks += stake
                         sport_stats[sport]["picks"] += 1
                         total_odds += odds
                     
@@ -1227,7 +1239,7 @@ def get_global_stats(
                     cat_acc["total_profit"] += pick_profit
                     if counts_for_accuracy:
                         cat_acc["total_picks"] += 1
-                        cat_acc["total_staked_picks"] += 1
+                        cat_acc["total_staked_picks"] += stake
                         cat_acc["total_odds"] += odds
                     
                     cat_market_counters = cat_acc["market_counters"]
@@ -1428,6 +1440,408 @@ def get_global_stats(
         "confidence_buckets": bucket_to_list(conf_b_stats),
         "category_stats": category_stats_out
     }
+
+
+@app.get("/api/v1/report/excel", tags=["Stats"])
+def export_excel_report(
+    date_from: str | None = Query(None),
+    date_to: str | None = Query(None),
+    use_stake: bool = Query(False),
+    db: Session = Depends(get_db)
+):
+    """Genera y descarga un reporte detallado en Excel (.xlsx) con los datos del modelo, partidos, picks y rentabilidad."""
+    import io
+    import json
+    import pandas as pd
+    import openpyxl
+    from openpyxl.utils import get_column_letter
+    from datetime import datetime
+
+    # 1. Consultar registros
+    query = db.query(AnalysisHistory)
+    if date_from:
+        try:
+            query = query.filter(AnalysisHistory.date >= datetime.fromisoformat(date_from))
+        except Exception:
+            pass
+    if date_to:
+        try:
+            query = query.filter(AnalysisHistory.date <= datetime.fromisoformat(date_to))
+        except Exception:
+            pass
+            
+    history = query.all()
+    
+    matches_data = []
+    picks_data = []
+    
+    # Métricas generales de resumen
+    total_matches = len(history)
+    matches_with_results = 0
+    total_picks = 0
+    total_hits = 0
+    total_pending = 0
+    total_profit = 0.0
+    total_odds = 0.0
+    total_staked_picks = 0
+    total_winning_odds = 0.0
+    winning_picks_count = 0
+    total_exact_scores_predicted = 0
+    total_exact_scores_hits = 0
+    
+    # Acumuladores de categorías
+    categories = ["professional", "underdog", "high_confidence"]
+    cat_accumulators = {
+        cat: {
+            "picks": 0,
+            "hits": 0,
+            "pending": 0,
+            "profit": 0.0,
+            "staked": 0,
+            "odds": 0.0,
+            "winning_odds": 0.0,
+            "winning_count": 0
+        }
+        for cat in categories
+    }
+    
+    # Acumuladores de ligas y mercados
+    league_counters = {}
+    market_counters = {}
+    
+    for h in history:
+        has_result = h.final_score_home is not None
+        if has_result:
+            matches_with_results += 1
+            
+        # Obtener liga del payload
+        league = "Desconocida"
+        if h.payload:
+            try:
+                p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
+                league = p_data.get("competition") or "Desconocida"
+            except:
+                pass
+                
+        # Obtener equipos del título del partido
+        teams = []
+        if h.match_title:
+            if " vs " in h.match_title:
+                teams = [t.strip() for t in h.match_title.split(" vs ")]
+            elif " - " in h.match_title:
+                teams = [t.strip() for t in h.match_title.split(" - ")]
+                
+        # Verificar marcador exacto
+        exact_score_pred = "N/A"
+        exact_score_hit = "N/A"
+        if h.final_score_home is not None and h.final_score_away is not None and h.compare_response_snapshot:
+            try:
+                snap = json.loads(h.compare_response_snapshot) if isinstance(h.compare_response_snapshot, str) else h.compare_response_snapshot
+                if isinstance(snap, dict) and snap.get("most_probable_score"):
+                    exact_score_pred = snap["most_probable_score"]
+                    total_exact_scores_predicted += 1
+                    predicted_parts = exact_score_pred.split("-")
+                    if len(predicted_parts) == 2:
+                        pred_h = int(predicted_parts[0].strip())
+                        pred_a = int(predicted_parts[1].strip())
+                        if pred_h == h.final_score_home and pred_a == h.final_score_away:
+                            total_exact_scores_hits += 1
+                            exact_score_hit = "Sí"
+                        else:
+                            exact_score_hit = "No"
+            except:
+                pass
+                
+        # Añadir datos de partidos
+        matches_data.append({
+            "ID Partido": h.id,
+            "Fecha de Análisis": h.date.strftime("%Y-%m-%d %H:%M") if h.date else "",
+            "Fecha de Partido": h.match_date.strftime("%Y-%m-%d %H:%M") if h.match_date else "",
+            "Deporte": h.sport.value if hasattr(h.sport, 'value') else str(h.sport),
+            "Partido": h.match_title,
+            "Goles Local": h.final_score_home,
+            "Goles Visitante": h.final_score_away,
+            "Corners Local": h.final_corners_home,
+            "Corners Visitante": h.final_corners_away,
+            "Tarjetas Amarillas Local": h.final_yellow_cards_home,
+            "Tarjetas Amarillas Visitante": h.final_yellow_cards_away,
+            "Tarjetas Rojas Local": h.final_red_cards_home,
+            "Tarjetas Rojas Visitante": h.final_red_cards_away,
+            "Remates Local": h.final_shots_home,
+            "Remates Visitante": h.final_shots_away,
+            "Remates al Arco Local": h.final_shots_on_target_home,
+            "Remates al Arco Visitante": h.final_shots_on_target_away,
+            "Faltas Local": h.final_fouls_home,
+            "Faltas Visitante": h.final_fouls_away,
+            "Fueras de Juego Local": h.final_offsides_home,
+            "Fueras de Juego Visitante": h.final_offsides_away,
+            "Predicción Marcador": exact_score_pred,
+            "Marcador Acertado": exact_score_hit,
+            "Precisión (%)": h.accuracy_percentage,
+            "Cuenta en Rentabilidad": "Sí" if getattr(h, "count_in_profitability", True) else "No",
+            "Tiene Stats Reales": "Sí" if getattr(h, "has_real_stats", True) else "No",
+        })
+        
+        # Procesar Picks
+        if h.picks_calculados:
+            try:
+                picks = json.loads(str(h.picks_calculados))
+                if isinstance(picks, list):
+                    results_dict = {
+                        "final_score_home": h.final_score_home,
+                        "final_score_away": h.final_score_away,
+                        "final_corners_home": h.final_corners_home,
+                        "final_corners_away": h.final_corners_away,
+                        "final_yellow_cards_home": h.final_yellow_cards_home,
+                        "final_yellow_cards_away": h.final_yellow_cards_away,
+                        "final_red_cards_home": h.final_red_cards_home,
+                        "final_red_cards_away": h.final_red_cards_away,
+                        "final_shots_home": h.final_shots_home,
+                        "final_shots_away": h.final_shots_away,
+                        "final_shots_on_target_home": h.final_shots_on_target_home,
+                        "final_shots_on_target_away": h.final_shots_on_target_away,
+                        "final_fouls_home": h.final_fouls_home,
+                        "final_fouls_away": h.final_fouls_away,
+                        "final_offsides_home": h.final_offsides_home,
+                        "final_offsides_away": h.final_offsides_away,
+                    }
+                    
+                    for pick in picks:
+                        is_pub = pick.get("is_publishable", False)
+                        is_und = pick.get("is_underdog", False)
+                        is_hc = pick.get("is_high_confidence", False)
+                        
+                        if not is_pub and not is_und and not is_hc:
+                            if pick.get("is_value", False):
+                                is_pub = True
+                                
+                        if not (is_pub or is_und or is_hc):
+                            continue
+                            
+                        cat = "professional" if is_pub else ("underdog" if is_und else "high_confidence")
+                        
+                        odds = float(pick.get("odds", 0.0))
+                        market = pick.get("market")
+                        if not market or market == "N/A" or market == "Otro":
+                            market = get_market_name(pick.get("selection", ""))
+                            
+                        success = None
+                        if has_result:
+                            success = _check_pick_success(pick, results_dict)
+                            
+                        counts_in_prof = getattr(h, "count_in_profitability", True)
+                        
+                        success_str = "Pendiente"
+                        pick_profit = 0.0
+                        
+                        if use_stake:
+                            kelly = float(pick.get("kelly_fraction") or 0.0)
+                            stake = max(1, round(kelly * 100.0)) if kelly > 0 else 1
+                        else:
+                            stake = 1
+                            
+                        if success is not None:
+                            if success is True:
+                                success_str = "Hit"
+                            elif success is False:
+                                success_str = "Miss"
+                            elif success == "void":
+                                success_str = "Void"
+                            elif success == "half_win":
+                                success_str = "Half Win"
+                            elif success == "half_loss":
+                                success_str = "Half Loss"
+                                
+                            if counts_in_prof:
+                                pick_profit = _calculate_pick_profit(success, odds) * stake
+                        
+                        if success is None:
+                            total_pending += 1
+                            cat_accumulators[cat]["pending"] += 1
+                        else:
+                            counts_for_accuracy = success != "void"
+                            if counts_in_prof:
+                                total_profit += pick_profit
+                                cat_accumulators[cat]["profit"] += pick_profit
+                                
+                            if counts_for_accuracy:
+                                if counts_in_prof:
+                                    total_picks += 1
+                                    total_staked_picks += stake
+                                    total_odds += odds
+                                    cat_accumulators[cat]["picks"] += 1
+                                    cat_accumulators[cat]["staked"] += stake
+                                    cat_accumulators[cat]["odds"] += odds
+                                    
+                                if counts_in_prof:
+                                    if league not in league_counters:
+                                        league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
+                                    league_counters[league]["picks"] += 1
+                                    league_counters[league]["profit"] += pick_profit
+                                    
+                                    if market not in market_counters:
+                                        market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
+                                    market_counters[market]["picks"] += 1
+                                    market_counters[market]["profit"] += pick_profit
+                                    
+                                if _is_pick_hit(success):
+                                    if counts_in_prof:
+                                        total_hits += 1
+                                        total_winning_odds += odds
+                                        winning_picks_count += 1
+                                        cat_accumulators[cat]["hits"] += 1
+                                        cat_accumulators[cat]["winning_odds"] += odds
+                                        cat_accumulators[cat]["winning_count"] += 1
+                                        
+                                        league_counters[league]["hits"] += 1
+                                        market_counters[market]["hits"] += 1
+                                        
+                        picks_data.append({
+                            "ID Partido": h.id,
+                            "Fecha": h.date.strftime("%Y-%m-%d %H:%M") if h.date else "",
+                            "Partido": h.match_title,
+                            "Deporte": h.sport.value if hasattr(h.sport, 'value') else str(h.sport),
+                            "Selección": pick.get("selection", ""),
+                            "Mercado": market,
+                            "Línea": pick.get("line"),
+                            "Cuota": odds,
+                            "Prob Calibrada (%)": float(pick.get("calibrated_prob", 0.0)) if pick.get("calibrated_prob") is not None else None,
+                            "Prob Modelo (%)": float(pick.get("model_prob", 0.0)) if pick.get("model_prob") is not None else None,
+                            "EV Edge (%)": float(pick.get("edge", 0.0)) if pick.get("edge") is not None else None,
+                            "Fracción Kelly (%)": float(pick.get("kelly_fraction", 0.0)) if pick.get("kelly_fraction") is not None else None,
+                            "Stake Sugerido (u)": max(1, round(float(pick.get("kelly_fraction", 0.0)) * 100.0)) if float(pick.get("kelly_fraction", 0.0)) > 0 else 1,
+                            "Resultado": success_str,
+                            "Beneficio (u)": pick_profit if success is not None else None,
+                            "Categoría": cat,
+                            "Cuenta en Rentabilidad": "Sí" if counts_in_prof else "No"
+                        })
+            except Exception as ex:
+                pass
+                
+    # 3. Crear DataFrames de Pandas
+    global_accuracy = (total_hits / total_picks * 100) if total_picks > 0 else 0.0
+    global_roi = (total_profit / total_staked_picks * 100) if total_staked_picks > 0 else 0.0
+    global_avg_odds = (total_odds / total_picks) if total_picks > 0 else 0.0
+    global_avg_winning_odds = (total_winning_odds / winning_picks_count) if winning_picks_count > 0 else 0.0
+    exact_hit_rate = (total_exact_scores_hits / total_exact_scores_predicted * 100) if total_exact_scores_predicted > 0 else 0.0
+    
+    summary_general_rows = [
+        {"Métrica": "Partidos Analizados Totales", "Valor": total_matches},
+        {"Métrica": "Partidos con Resultado", "Valor": matches_with_results},
+        {"Métrica": "Picks Evaluados Totales", "Valor": total_picks},
+        {"Métrica": "Picks Acertados (Hits)", "Valor": total_hits},
+        {"Métrica": "Picks Pendientes", "Valor": total_pending},
+        {"Métrica": "Precisión de Picks (%)", "Valor": round(global_accuracy, 2)},
+        {"Métrica": "Rentabilidad Total (unidades)", "Valor": round(total_profit, 2)},
+        {"Métrica": "ROI (%)", "Valor": round(global_roi, 2)},
+        {"Métrica": "Cuota Promedio Evaluada", "Valor": round(global_avg_odds, 2)},
+        {"Métrica": "Cuota Promedio Ganadora", "Valor": round(global_avg_winning_odds, 2)},
+        {"Métrica": "Predicciones Marcador Exacto", "Valor": total_exact_scores_predicted},
+        {"Métrica": "Aciertos Marcador Exacto", "Valor": total_exact_scores_hits},
+        {"Métrica": "Tasa Acierto Marcador Exacto (%)", "Valor": round(exact_hit_rate, 2)},
+    ]
+    df_summary_general = pd.DataFrame(summary_general_rows)
+    
+    category_summary_rows = []
+    for cat in categories:
+        cat_acc = cat_accumulators[cat]
+        cat_picks = cat_acc["picks"]
+        cat_hits = cat_acc["hits"]
+        cat_accuracy = (cat_hits / cat_picks * 100) if cat_picks > 0 else 0.0
+        cat_roi = (cat_acc["profit"] / cat_acc["staked"] * 100) if cat_acc["staked"] > 0 else 0.0
+        cat_avg_odds = (cat_acc["odds"] / cat_picks) if cat_picks > 0 else 0.0
+        cat_avg_winning_odds = (cat_acc["winning_odds"] / cat_acc["winning_count"]) if cat_acc["winning_count"] > 0 else 0.0
+        
+        category_summary_rows.append({
+            "Categoría": cat.capitalize(),
+            "Picks Evaluados": cat_picks,
+            "Aciertos (Hits)": cat_hits,
+            "Pendientes": cat_acc["pending"],
+            "Rentabilidad (u)": round(cat_acc["profit"], 2),
+            "ROI (%)": round(cat_roi, 2),
+            "Precisión (%)": round(cat_accuracy, 2),
+            "Cuota Promedio": round(cat_avg_odds, 2),
+            "Cuota Ganadora Promedio": round(cat_avg_winning_odds, 2)
+        })
+    df_summary_categories = pd.DataFrame(category_summary_rows)
+    
+    df_matches = pd.DataFrame(matches_data)
+    df_picks = pd.DataFrame(picks_data)
+    
+    # Desglose de Ligas
+    league_rows = []
+    for league, stats in league_counters.items():
+        l_picks = stats["picks"]
+        l_hits = stats["hits"]
+        l_acc = (l_hits / l_picks * 100) if l_picks > 0 else 0.0
+        league_rows.append({
+            "Liga / Competición": league,
+            "Picks Evaluados": l_picks,
+            "Aciertos (Hits)": l_hits,
+            "Precisión (%)": round(l_acc, 2),
+            "Rentabilidad (u)": round(stats["profit"], 2)
+        })
+    df_leagues = pd.DataFrame(league_rows)
+    if not df_leagues.empty:
+        df_leagues = df_leagues.sort_values(by="Rentabilidad (u)", ascending=False)
+        
+    # Desglose de Mercados
+    market_rows = []
+    for market, stats in market_counters.items():
+        m_picks = stats["picks"]
+        m_hits = stats["hits"]
+        m_acc = (m_hits / m_picks * 100) if m_picks > 0 else 0.0
+        market_rows.append({
+            "Mercado": market,
+            "Picks Evaluados": m_picks,
+            "Aciertos (Hits)": m_hits,
+            "Precisión (%)": round(m_acc, 2),
+            "Rentabilidad (u)": round(stats["profit"], 2)
+        })
+    df_markets = pd.DataFrame(market_rows)
+    if not df_markets.empty:
+        df_markets = df_markets.sort_values(by="Rentabilidad (u)", ascending=False)
+        
+    # 4. Escribir archivo Excel en memoria
+    output = io.BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df_summary_general.to_excel(writer, sheet_name="Resumen", index=False, startrow=1)
+        df_summary_categories.to_excel(writer, sheet_name="Resumen", index=False, startrow=18)
+        
+        df_matches.to_excel(writer, sheet_name="Partidos Analizados", index=False)
+        df_picks.to_excel(writer, sheet_name="Detalle de Picks", index=False)
+        df_leagues.to_excel(writer, sheet_name="Rentabilidad por Liga", index=False)
+        df_markets.to_excel(writer, sheet_name="Rentabilidad por Mercado", index=False)
+        
+        workbook = writer.book
+        
+        # Formatos en pestaña Resumen
+        resumen_ws = workbook["Resumen"]
+        resumen_ws["A1"] = "Estadísticas Generales Sherlock"
+        resumen_ws["A1"].font = openpyxl.styles.Font(size=14, bold=True)
+        resumen_ws["A17"] = "Desglose por Categoría"
+        resumen_ws["A17"].font = openpyxl.styles.Font(size=14, bold=True)
+        
+        for sheet_name in workbook.sheetnames:
+            ws = workbook[sheet_name]
+            for col in ws.columns:
+                max_len = 0
+                for cell in col:
+                    if cell.value:
+                        if sheet_name == "Resumen" and cell.coordinate in ["A1", "A17"]:
+                            continue
+                        max_len = max(max_len, len(str(cell.value)))
+                col_letter = get_column_letter(col[0].column)
+                ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
+                
+    output.seek(0)
+    
+    filename = f"Reporte_Sherlock_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
 
 
 @app.get("/api/v1/stats/picks", response_model=list[PickStat], tags=["Stats"])
