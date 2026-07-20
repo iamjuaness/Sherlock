@@ -280,6 +280,14 @@ class LeagueStats(BaseModel):
     # Si se deja en 0.0 (por defecto) el sistema lo autocalibrará con _compute_league_reliability_score().
     league_reliability_score:  float = Field(0.0,  description="Confiabilidad histórica de la liga (0–1). 0 = autocalibrarse.")
 
+    # Historical performance data (optional – used to compute LRS from real pick history)
+    historical_matches:  int   = Field(0,   description="Partidos analizados históricamente en esta liga")
+    historical_picks:    int   = Field(0,   description="Picks resueltos históricamente en esta liga")
+    historical_hits:     int   = Field(0,   description="Picks acertados históricamente en esta liga")
+    historical_profit:   float = Field(0.0, description="Beneficio histórico acumulado en esta liga (unidades)")
+    # Per-market win rates (family → hits/total dict serialized as JSON string; parsed internally)
+    market_hit_rates: Dict[str, float] = Field(default_factory=dict, description="Tasa de acierto por mercado {family: rate}")
+
 
 class FootballOdds(BaseModel):
     model_config = ConfigDict(
@@ -601,47 +609,89 @@ def _fair_probabilities_from_odds(*odds_list: float | None) -> list[float]:
 def _compute_league_reliability_score(league: "LeagueStats") -> float:
     """
     Calcula un score de confiabilidad de la liga en rango [0.25, 1.0].
-    Se basa en la coherencia interna de los datos de la liga:
-      - Distribución 1X2 (home/draw/away deben sumar ~100)
-      - Promedio de goles dentro de rangos razonables
-      - Promedio de corners dentro de rangos razonables
-      - Coherencia de tarjetas
+
+    Combina dos fuentes:
+    A) Coherencia estadística interna (rangos razonables de goles, corners, tarjetas)
+    B) Rendimiento histórico real (acierto + beneficio), con peso Bayesiano proporcional
+       al número de partidos/picks analizados. Con pocos datos (<10 picks), el peso
+       histórico se reduce drásticamente para evitar que 1 partido = 100% confianza.
+
     Un score bajo (<0.6) penaliza el EV efectivo de los picks.
     """
-    score = 1.0
+    # ── A. Coherencia estadística (igual que antes) ──────────────
+    stat_score = 1.0
 
-    # 1. Coherencia de distribución 1X2
     pct_sum = league.home_win_pct + league.draw_pct + league.away_win_pct
     if pct_sum > 0:
         deviation = abs(pct_sum - 100.0) / 100.0
-        score -= min(0.20, deviation * 2.0)  # hasta -0.20 si muy desviado
+        stat_score -= min(0.20, deviation * 2.0)
 
-    # 2. Validez del promedio de goles (rango razonable: 1.5 – 4.5)
     g = league.avg_goals_per_game
     if g < 1.5 or g > 4.5:
-        score -= 0.10  # valores extremos = menor confianza
+        stat_score -= 0.10
     elif g < 2.0 or g > 3.8:
-        score -= 0.05
+        stat_score -= 0.05
 
-    # 3. Validez del promedio de corners (rango: 6 – 14)
     c = league.avg_corners_per_game
     if c < 6.0 or c > 14.0:
-        score -= 0.08
+        stat_score -= 0.08
     elif c < 7.5 or c > 12.0:
-        score -= 0.03
+        stat_score -= 0.03
 
-    # 4. Home advantage fuera de rango típico (1.10 – 1.40)
     ha = league.home_advantage_factor
     if ha < 1.05 or ha > 1.50:
-        score -= 0.07
+        stat_score -= 0.07
 
-    # 5. Tarjetas: coherencia amarillas vs rojas
     if league.avg_yellow_cards_per_game > 0 and league.avg_red_cards_per_game > 0:
         ratio = league.avg_red_cards_per_game / max(league.avg_yellow_cards_per_game, 0.1)
-        if ratio > 0.15:  # más de 1 roja cada 7 amarillas = liga muy volátil
-            score -= 0.05
+        if ratio > 0.15:
+            stat_score -= 0.05
 
-    return round(max(0.25, min(1.0, score)), 3)
+    stat_score = max(0.25, min(1.0, stat_score))
+
+    # ── B. Rendimiento histórico real ────────────────────────────
+    # Solo se activa si hay suficientes picks resueltos.
+    # Peso Bayesiano: el histórico va ganando influencia conforme crece el nº de picks.
+    # Con N_MIN picks se tiene 50% de influencia histórica; con el doble, ~75%, etc.
+    hist_picks = league.historical_picks  # picks resueltos (no pendientes)
+    if hist_picks <= 0:
+        # Sin historial: solo usamos la coherencia estadística
+        return round(stat_score, 3)
+
+    N_MIN = 20.0  # número de picks para 50% de peso histórico
+    hist_weight = hist_picks / (hist_picks + N_MIN)   # ∈ [0, 1)
+    stat_weight = 1.0 - hist_weight
+
+    # Componente de acierto: acierto esperado en apuestas value ≈ 55%.
+    # Normalizar alrededor de 0.55 → score 1.0 si acierto ≥ 0.60, 0.5 si = 0.45, etc.
+    accuracy_rate = league.historical_hits / hist_picks
+    ACC_REF = 0.50          # mínimo aceptable
+    ACC_IDEAL = 0.62        # nivel excelente
+    acc_score = (accuracy_rate - ACC_REF) / max(ACC_IDEAL - ACC_REF, 0.01)
+    acc_score = max(0.0, min(1.0, acc_score))  # [0, 1]
+
+    # Componente de beneficio: normalizado a picks (ROI por pick).
+    # +0.15u/pick = excelente (score 1.0); -0.15u/pick = malo (score 0.0).
+    roi_per_pick = league.historical_profit / hist_picks
+    PROFIT_LOW  = -0.15
+    PROFIT_HIGH =  0.20
+    profit_score = (roi_per_pick - PROFIT_LOW) / max(PROFIT_HIGH - PROFIT_LOW, 0.01)
+    profit_score = max(0.0, min(1.0, profit_score))
+
+    # Muestra suficiente: bonus si hay ≥ 30 partidos analizados
+    sample_bonus = 0.0
+    if league.historical_matches >= 30:
+        sample_bonus = 0.05
+    elif league.historical_matches >= 15:
+        sample_bonus = 0.02
+
+    # Score histórico combinado (50% acierto, 50% beneficio)
+    hist_score = acc_score * 0.50 + profit_score * 0.50 + sample_bonus
+    hist_score = max(0.0, min(1.0, hist_score))
+
+    # ── Combinar A + B ────────────────────────────────────────────
+    final_score = stat_score * stat_weight + hist_score * hist_weight
+    return round(max(0.25, min(1.0, final_score)), 3)
 
 
 def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float:
@@ -841,12 +891,33 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     else:
         lrs = 1.0  # sin datos de liga = sin penalización
 
+    # ── Penalización por mercado específico (market-level LRS) ────
+    # Si la liga tiene historial de acierto por tipo de mercado, aplicar ajuste
+    # adicional para los mercados que peor se comportan en esa liga.
+    market_lrs_factor = 1.0
+    if league is not None and league.market_hit_rates:
+        market_rate = league.market_hit_rates.get(family)
+        if market_rate is not None and league.historical_picks >= 5:
+            # Tasa de acierto de referencia por familia de mercado
+            # (Tasas razonables de referencia cuando el modelo funciona bien)
+            MARKET_REF = {
+                "corners": 0.52, "cards": 0.52, "shots": 0.52, "fouls": 0.52,
+                "goals": 0.55,   "btts": 0.54,  "result": 0.55,
+                "handicap": 0.54, "double_chance": 0.57, "dnb": 0.56, "generic": 0.53,
+            }
+            ref_rate = MARKET_REF.get(family, 0.53)
+            # Penalizar mercados que rinden peor que la referencia en esta liga
+            # Peso Bayesiano: solo aplica con suficientes picks en esa familia
+            market_dev = market_rate - ref_rate   # negativo → peor que ref
+            market_lrs_factor = 1.0 + max(-0.35, min(0.15, market_dev * 1.5))
+
     # Penalización: ev_adj = ev * lrs  (lrs=1 → sin cambio; lrs=0.5 → EV a la mitad)
     # La penalización es más agresiva para mercados secundarios (corners, cards, shots)
-    if family in {"corners", "cards", "shots"}:
+    if family in {"corners", "cards", "shots", "fouls"}:
         lrs_factor = lrs ** 1.5  # penalización extra en mercados de alta varianza
     else:
         lrs_factor = lrs
+    lrs_factor *= market_lrs_factor
     ev_adj = ev * lrs_factor
     lrs_penalty = round(ev - ev_adj, 4)  # cuánto se descontó
     ev = ev_adj
@@ -910,18 +981,50 @@ def _compute_team_goals_lambda(
     prior_def_xga = defender.xga_per_game
     actual_def_g = defender.goals_conceded_per_game
 
+    # ── Determinar nº de partidos (att_n, def_n) — necesario para conversiones por juego
     if general:
-        # Stats generales: usar partidos totales para shrinkage
         att_n = max(attacker.matches_played, 1)
         def_n = max(defender.matches_played, 1)
     else:
-        # Stats segmentadas por localía
         if is_home:
             att_n = max(attacker.matches_home, 1)
             def_n = max(defender.matches_away, 1)
         else:
             att_n = max(attacker.matches_away, 1)
             def_n = max(defender.matches_home, 1)
+
+    # ── 1b. Corrección de xga por "suerte defensiva" (Big Chances Concedidas vs Falladas) ──
+    bc_conceded = defender.big_chances_against_per_game
+    bc_missed = defender.big_chances_missed_against_per_game
+    if bc_conceded > 0.1:
+        bc_scored_against = max(0.0, bc_conceded - bc_missed)
+        bc_conv_against = bc_scored_against / bc_conceded
+        # Tasa de conversión promedio típica de big chances es ~0.45.
+        # Si la tasa es > 0.45, es mala suerte defensiva (goles inflados). Si es < 0.45, es buena suerte.
+        luck_adjustment = (bc_conv_against - 0.45) * 0.15
+        luck_adjustment = max(-0.10, min(0.10, luck_adjustment))
+        # Ajustamos el prior xGa (si hubo mala suerte, restamos para corregir a la media)
+        prior_def_xga = prior_def_xga * (1.0 - luck_adjustment)
+
+    # ── 1c. Corrección xga por tiros al palo del rival (hit_woodwork_against)
+    # Muchos tiros al palo = mala suerte defensiva real → la defensa es más frágil de lo que muestran los goles
+    hw_against = defender.hit_woodwork_against  # totales en el período
+    if hw_against > 0:
+        hw_per_game = hw_against / def_n
+        # Referencia: ~0.5 tiros/palo por juego es normal. Más = defensa con mala suerte real.
+        hw_boost = min((hw_per_game - 0.5) * 0.08, 0.10)  # hasta +10% xga
+        if hw_boost > 0:
+            prior_def_xga = prior_def_xga * (1.0 + hw_boost)
+
+    # ── 1d. Factor de pases clave del rival contra esta defensa (key_passes_against)
+    # Muchos pases clave concedidos → defensa que permite creación de juego → más goles esperados
+    kp_against = defender.key_passes_against  # totales en el período
+    kp_factor = 1.0
+    if kp_against > 0:
+        kp_per_game = kp_against / def_n
+        # Referencia: ~4-5 pases clave concedidos/juego es promedio
+        kp_dev = (kp_per_game - 4.5) / 4.5
+        kp_factor = 1.0 + max(-0.08, min(0.10, kp_dev * 0.18))
 
     beta_prior = 5.0 
 
@@ -980,7 +1083,23 @@ def _compute_team_goals_lambda(
         keeper_factor = 1.0 - (defender.save_pct - 0.70) * 0.20
         keeper_factor = max(0.85, min(1.15, keeper_factor))
 
-    lam_adjusted = lam_base * tactical_mult * poss_lost_factor * error_boost * rating_factor * keeper_factor
+    # 5h. Presión defensiva del rival (interceptions + tackles)
+    def_pressure = defender.interceptions_per_game + defender.tackles_per_game
+    pressure_factor = 1.0 - (def_pressure - 28.0) * 0.01  # ±1% por cada tackle/intercepción de diferencia
+    pressure_factor = max(0.88, min(1.12, pressure_factor))
+
+    # 5i. Perfil colectivo del atacante (assists): más asistencias = juego más predecible y fluido
+    # Un equipo con muchas asistencias genera situaciones más construidas → +% conversión esperado
+    att_assists = attacker.assists  # totales en el período
+    assists_factor = 1.0
+    if att_assists > 0 and att_n > 0:
+        assists_per_game = att_assists / att_n
+        assists_ref = attacker.goals_per_game * 0.75  # ~75% de goles deberían tener asistencia
+        if assists_per_game > assists_ref:
+            assists_factor = 1.0 + min((assists_per_game - assists_ref) / max(assists_ref, 0.5) * 0.06, 0.06)
+        assists_factor = max(0.96, min(1.06, assists_factor))
+
+    lam_adjusted = lam_base * tactical_mult * poss_lost_factor * error_boost * rating_factor * keeper_factor * pressure_factor * kp_factor * assists_factor
 
     # ── 6. Shrinkage Global a la Liga ──
     total_n = min(att_n, def_n)
@@ -1020,6 +1139,14 @@ def _compute_team_corners_lambda(
     # ── 4. Lambda base cruzada ──
     lam = gen_base * opp_def_weakness
 
+    # ── Determinar conteo de partidos para cálculos por juego ──
+    if general:
+        att_n_c = max(team.matches_played, 1)
+        opp_n_c = max(opponent.matches_played, 1)
+    else:
+        att_n_c = max(team.matches_home if is_home else team.matches_away, 1)
+        opp_n_c = max(opponent.matches_away if is_home else opponent.matches_home, 1)
+
     # ── Factores avanzados de corners (con caps reducidos) ──
     # 4a. Duelos aéreos
     aerial_factor = 1.0
@@ -1042,9 +1169,37 @@ def _compute_team_corners_lambda(
     if opponent.clearances_off_line > 0.3:
         opp_def_weakness *= 0.95
 
-    # Cap global de boosts avanzados: máximo +10%
+    # 4f. Despejes totales del rival (clearances): proxy de presión sufrida
+    # Un rival que despeja mucho → recibe mucho ataque → genera corners para este equipo
+    opp_clearances = opponent.clearances  # totales en el período
+    if opp_clearances > 0:
+        opp_clear_per_game = opp_clearances / opp_n_c
+        # Referencia: ~25 despejes/juego es promedio bajo presión
+        clear_boost = 1.0 + max(0.0, min((opp_clear_per_game - 22.0) / 22.0 * 0.10, 0.10))
+        lam = lam * clear_boost
+
+    # 4g. Despejes concedidos del equipo atacante (clearances_against en la defensa del rival)
+    # Si el equipo atacante tiene muchos despejes contra (el rival despeja mucho ante él)
+    # → el equipo genera mucho ataque → más corners.
+    team_clearances_against = team.clearances_against  # totales del rival despejando ante este equipo
+    if team_clearances_against > 0:
+        tca_per_game = team_clearances_against / att_n_c
+        # Más despejes del rival ante este equipo → más presión ejercida → más corners
+        tca_boost = 1.0 + max(0.0, min((tca_per_game - 20.0) / 20.0 * 0.08, 0.08))
+        lam = lam * tca_boost
+
+    # 4h. Pases precisos del rival: rival con muchos pases exitosos → más posesión → menos corners
+    # (un rival que domina la posesión mediante pases genera menos situaciones de corner)
+    opp_acc_passes = opponent.accurate_passes_against  # pases completados del rival en partidos vs este equipo
+    if opp_acc_passes > 0:
+        opp_acc_per_game = opp_acc_passes / opp_n_c
+        # >400 pases precisos del rival/juego → domina posesión → menos corners para el atacante
+        pass_penalty = 1.0 - max(0.0, min((opp_acc_per_game - 350.0) / 350.0 * 0.07, 0.07))
+        lam = lam * pass_penalty
+
+    # Cap global de boosts avanzados: máximo +12%
     raw_boost = aerial_factor * possession_factor * fastbreak_factor * blocked_factor
-    capped_boost = max(0.93, min(1.10, raw_boost))
+    capped_boost = max(0.90, min(1.12, raw_boost))
     lam = lam * capped_boost
 
     # ── 5. Shrinkage bayesiana fortalecida ──
@@ -1195,12 +1350,22 @@ def _compute_team_shots_lambda(
     xga_factor = opponent.xga_per_game / max(league.avg_goals_per_game / 2.0, 0.5)
     xga_factor = max(0.60, min(1.40, xga_factor))
 
-    # Factor de tiros concedidos por el rival (centrado en 1.0)
-    shots_against_factor = opponent.shots_against_per_game / max(avg_team_shots, 1.0)
+    # Factor de tiros concedidos por el rival (centrado en 1.0, ponderando dentro/fuera del área)
+    opp_shots_conceded = opponent.shots_inside_box_against_per_game * 1.3 + opponent.shots_outside_box_against_per_game * 0.7
+    if opp_shots_conceded <= 0:
+        opp_shots_conceded = opponent.shots_against_per_game
+
+    shots_against_factor = opp_shots_conceded / max(avg_team_shots, 1.0)
     shots_against_factor = max(0.50, min(1.50, shots_against_factor))
 
+    # Ajuste por defensas proactivas (bloquean muchos tiros) vs pasivas
+    opp_blocks = max(opponent.shots_blocked_against_per_game, opponent.blocked_scoring_attempt_against_per_game)
+    block_ratio = opp_blocks / max(opponent.shots_against_per_game, 1.0)
+    block_mult = 1.0 - (block_ratio - 0.22) * 0.20  # ajuste de hasta ±8%
+    block_mult = max(0.92, min(1.08, block_mult))
+
     # Factor compuesto centrado en ~0.87 para rival promedio (reduce tiros esperados)
-    opp_def_factor = (0.30 * poss_factor + 0.30 * xga_factor + 0.40 * shots_against_factor) * 0.87
+    opp_def_factor = (0.30 * poss_factor + 0.30 * xga_factor + 0.40 * shots_against_factor) * 0.87 * block_mult
     opp_def_factor = max(0.50, min(1.15, opp_def_factor))
 
     lam = gen_str * opp_def_factor
@@ -1780,8 +1945,14 @@ def _team_strength_score(team) -> float:
     outside_goals = _safe_num(team.goals_outside_box)
     big_created = _safe_num(team.big_chances_created)
     dribble = _safe_num(team.dribble_success_pct)
-    duels = _safe_num(team.duels_won_per_game)
-    aerial = _safe_num(team.aerial_duels_won_per_game)
+    duels_pct = _safe_num(team.duels_won_pct)
+    if 0.0 < duels_pct <= 1.0:
+        duels_pct *= 100.0
+
+    aerial_pct = _safe_num(team.aerial_duels_won_pct)
+    if 0.0 < aerial_pct <= 1.0:
+        aerial_pct *= 100.0
+
     errors = _safe_num(team.errors_leading_to_goal)
 
     base = (
@@ -1801,8 +1972,8 @@ def _team_strength_score(team) -> float:
         + outside_goals * 8.0  # Goles de fuera = impredecibilidad
         + big_created * 6.0    # Creación de chances
         + dribble * 0.15       # Calidad individual
-        + duels * 0.8          # Dominio físico
-        + aerial * 0.6         # Dominio aéreo
+        + (duels_pct - 50.0) * 1.5  # Dominio físico (porcentaje centrado en 50%)
+        + (aerial_pct - 50.0) * 1.0  # Dominio aéreo (porcentaje centrado en 50%)
         - errors * 10.0        # Penaliza errores graves
     )
 

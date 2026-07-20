@@ -177,6 +177,82 @@
         transform: translateY(-1px);
         box-shadow: 0 4px 12px rgba(245, 158, 11, 0.3);
       }
+      /* ── Sección Betano ── */
+      .betano-card {
+        background: linear-gradient(135deg, #1a120a, #2d1a00);
+        border: 2px solid #f59e0b;
+        border-radius: 12px;
+        padding: 16px;
+        margin-bottom: 14px;
+        position: relative;
+        overflow: hidden;
+      }
+      .betano-card::before {
+        content: "";
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        height: 3px;
+        background: linear-gradient(90deg, #f59e0b, #d97706, #f59e0b);
+        background-size: 200% 100%;
+        animation: betanoShine 2s linear infinite;
+      }
+      @keyframes betanoShine {
+        0% {
+          background-position: 200% 0;
+        }
+        100% {
+          background-position: -200% 0;
+        }
+      }
+      .betano-card h3 {
+        font-size: 13px;
+        color: #f59e0b;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .betano-match {
+        font-size: 15px;
+        font-weight: 700;
+        color: #fef3c7;
+        margin: 6px 0;
+      }
+      .betano-status-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .betano-badge {
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        padding: 3px 8px;
+        border-radius: 20px;
+        border: 1px solid;
+      }
+      .betano-badge.scanning {
+        background: rgba(245, 158, 11, 0.1);
+        color: #f59e0b;
+        border-color: rgba(245, 158, 11, 0.4);
+      }
+      .betano-badge.captured {
+        background: rgba(16, 185, 129, 0.1);
+        color: #34d399;
+        border-color: rgba(16, 185, 129, 0.4);
+      }
+      .betano-hint {
+        font-size: 11px;
+        color: #92400e;
+        margin-top: 6px;
+        line-height: 1.4;
+      }
       .status {
         margin-top: 12px;
         padding: 10px 14px;
@@ -282,13 +358,222 @@
         transition: width 0.3s ease;
         width: 0%;
       }
+      /* ── Sección histórica ── */
+      .competition-card {
+        background: linear-gradient(135deg, #1e293b, #0f2040);
+        border: 1px solid #3b82f6;
+        border-radius: 12px;
+        padding: 14px;
+        margin-bottom: 14px;
+      }
+      .competition-card h3 {
+        font-size: 13px;
+        color: #60a5fa;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 6px;
+      }
+      .competition-name {
+        font-size: 16px;
+        font-weight: 700;
+        color: #f1f5f9;
+      }
+      .competition-id {
+        font-size: 11px;
+        color: #64748b;
+        font-family: monospace;
+        margin-top: 3px;
+      }
+      .progress-detail {
+        background: #0f172a;
+        border-radius: 8px;
+        padding: 10px 12px;
+        margin-top: 8px;
+        font-size: 12px;
+        color: #94a3b8;
+        min-height: 36px;
+        border: 1px solid #1e293b;
+        line-height: 1.6;
+      }
+      .progress-detail .phase {
+        color: #60a5fa;
+        font-weight: 600;
+      }
+      .progress-counters {
+        display: flex;
+        gap: 12px;
+        margin-top: 8px;
+      }
+      .counter-badge {
+        flex: 1;
+        background: #1e293b;
+        border-radius: 8px;
+        padding: 8px;
+        text-align: center;
+        border: 1px solid #334155;
+      }
+      .counter-badge .counter-value {
+        font-size: 18px;
+        font-weight: 700;
+        color: #f1f5f9;
+      }
+      .counter-badge .counter-label {
+        font-size: 10px;
+        color: #64748b;
+        text-transform: uppercase;
+        margin-top: 2px;
+      }
+      .counter-badge.saved .counter-value {
+        color: #34d399;
+      }
+      .counter-badge.error .counter-value {
+        color: #f87171;
+      }
+      .btn-actions-row {
+        display: flex;
+        gap: 8px;
+      }
+      .btn-actions-row .btn {
+        flex: 1;
+      }
+      .btn-danger {
+        background: linear-gradient(135deg, #ef4444, #dc2626);
+        color: white;
+      }
+      .btn-danger:hover:not(:disabled) {
+        background: linear-gradient(135deg, #dc2626, #b91c1c);
+      }
+      .matches-section {
+        margin-top: 12px;
+      }
+      .matches-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 8px;
+      }
+      .matches-header h4 {
+        font-size: 12px;
+        color: #94a3b8;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .matches-toggle {
+        font-size: 11px;
+        color: #3b82f6;
+        cursor: pointer;
+        background: none;
+        border: none;
+        padding: 2px 6px;
+      }
+      .matches-toggle:hover {
+        color: #60a5fa;
+      }
+      .matches-list {
+        max-height: 240px;
+        overflow-y: auto;
+        display: none;
+      }
+      .matches-list.open {
+        display: block;
+      }
+      .matches-list::-webkit-scrollbar {
+        width: 4px;
+      }
+      .matches-list::-webkit-scrollbar-thumb {
+        background: #334155;
+        border-radius: 2px;
+      }
+      .match-row {
+        display: flex;
+        align-items: center;
+        padding: 7px 10px;
+        border-bottom: 1px solid #1e293b;
+        gap: 8px;
+        font-size: 12px;
+      }
+      .match-row:last-child {
+        border-bottom: none;
+      }
+      .match-row:hover {
+        background: #1e293b;
+        border-radius: 6px;
+      }
+      .match-date {
+        color: #64748b;
+        font-size: 10px;
+        min-width: 52px;
+        flex-shrink: 0;
+      }
+      .match-season {
+        background: #1e3a5f;
+        color: #60a5fa;
+        font-size: 9px;
+        padding: 1px 5px;
+        border-radius: 4px;
+        flex-shrink: 0;
+      }
+      .match-teams {
+        flex: 1;
+        color: #e2e8f0;
+        font-weight: 500;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .match-score {
+        color: #60a5fa;
+        font-weight: 700;
+        font-size: 13px;
+        min-width: 36px;
+        text-align: center;
+        flex-shrink: 0;
+      }
+      .matches-empty {
+        text-align: center;
+        color: #475569;
+        padding: 20px;
+        font-size: 12px;
+      }
+      .search-box {
+        width: 100%;
+        background: #0f172a;
+        border: 1px solid #334155;
+        border-radius: 6px;
+        padding: 7px 10px;
+        color: #e2e8f0;
+        font-size: 12px;
+        margin-bottom: 6px;
+        outline: none;
+      }
+      .search-box:focus {
+        border-color: #3b82f6;
+      }
+      .search-box::placeholder {
+        color: #475569;
+      }
     </style>
     <base target="_blank" />
   </head>
   <body>
-    <div class="header">
+    <div class="header" id="mainHeader">
       <h1>⚽ Watson</h1>
       <div class="subtitle">Extracción de estadísticas de equipos</div>
+    </div>
+    <!-- Header naranja para modo Betano -->
+    <div
+      class="header"
+      id="betanoHeader"
+      style="
+        display: none;
+        background: linear-gradient(135deg, #2d1a00 0%, #1a0d00 100%);
+        border-bottom: 2px solid #f59e0b;
+      "
+    >
+      <h1 style="color: #f59e0b">🎰 Watson · Betano</h1>
+      <div class="subtitle" style="color: #d97706">
+        Captura de cuotas activa
+      </div>
     </div>
 
     <div class="content">
@@ -303,6 +588,53 @@
             Betano: URL debe contener <code>/cuotas-de-partido/</code>
           </p>
         </div>
+      </div>
+
+      <!-- SECCIÓN BETANO -->
+      <div id="betanoContainer" style="display: none">
+        <div class="betano-card">
+          <h3>🎰 Betano detectado</h3>
+          <div class="betano-match" id="betanoMatchName">
+            Escaneando partido...
+          </div>
+          <div class="betano-status-row">
+            <span class="betano-badge scanning" id="betanoBadge"
+              >Capturando cuotas</span
+            >
+          </div>
+          <p class="betano-hint" id="betanoHint">
+            Watson está capturando las cuotas automáticamente. Las cuotas se
+            inyectarán en el comparador de Sherlock.
+          </p>
+        </div>
+
+        <div class="endpoint-config">
+          <label>🔗 Endpoint Configurado</label>
+          <div class="url not-set" id="betanoEndpointUrl">
+            No configurado - Ve a Settings
+          </div>
+        </div>
+
+        <div class="actions">
+          <button
+            class="btn btn-betano"
+            id="btnSendBetanoOdds"
+            disabled
+            style="width: 100%; margin-bottom: 8px"
+          >
+            <span>🚀 Enviar Cuotas a Sherlock</span>
+          </button>
+
+          <button
+            class="btn btn-settings"
+            id="btnBetanoSettings"
+            style="background: #334155; color: #e2e8f0; width: 100%"
+          >
+            ⚙️ Configurar Endpoint
+          </button>
+        </div>
+
+        <div class="status" id="betanoStatus"></div>
       </div>
 
       <div id="statsContainer" style="display: none">
@@ -366,11 +698,14 @@
           >
             <span>📊 Obtener Resultados Finales</span>
           </button>
-          
+
           <button
             class="btn btn-secondary"
             id="btnSaveMatch"
-            style="background: linear-gradient(135deg, #0284c7, #0369a1); color: white;"
+            style="
+              background: linear-gradient(135deg, #0284c7, #0369a1);
+              color: white;
+            "
           >
             <span>💾 Guardar Partido (Sin Stats)</span>
           </button>
@@ -399,7 +734,93 @@
       <div class="settings-link">
         <a href="#" id="btnSettings">⚙️ Configurar Endpoint</a>
       </div>
+
+      <!-- SECCIÓN HISTÓRICA (competición) -->
+      <div id="historicalContainer" style="display: none">
+        <div class="competition-card">
+          <h3>🏆 Competición detectada</h3>
+          <div class="competition-name" id="competitionName">-</div>
+          <div class="competition-id" id="competitionId">-</div>
+        </div>
+
+        <div class="endpoint-config">
+          <label>🔗 Endpoint Configurado</label>
+          <div class="url not-set" id="historicalEndpointUrl">
+            No configurado - Ve a Settings
+          </div>
+        </div>
+
+        <!-- Contadores -->
+        <div
+          class="progress-counters"
+          id="historicalCounters"
+          style="display: none"
+        >
+          <div class="counter-badge">
+            <div class="counter-value" id="cntProcessed">0</div>
+            <div class="counter-label">Procesados</div>
+          </div>
+          <div class="counter-badge saved">
+            <div class="counter-value" id="cntSaved">0</div>
+            <div class="counter-label">Guardados</div>
+          </div>
+          <div class="counter-badge error">
+            <div class="counter-value" id="cntErrors">0</div>
+            <div class="counter-label">Errores</div>
+          </div>
+        </div>
+
+        <!-- Progreso detallado -->
+        <div
+          class="progress-detail"
+          id="historicalProgressDetail"
+          style="display: none"
+        >
+          <span class="phase" id="progressPhase">-</span>
+          <br /><span id="progressMessage">-</span>
+        </div>
+
+        <!-- Barra de progreso -->
+        <div
+          class="progress-bar"
+          id="historicalProgressBar"
+          style="display: none; margin-top: 8px"
+        >
+          <div class="fill" id="historicalProgressFill"></div>
+        </div>
+
+        <!-- Acciones -->
+        <div class="actions" style="margin-top: 12px">
+          <div class="btn-actions-row">
+            <button class="btn btn-primary" id="btnExtractHistorical">
+              <span>📥 Extraer Data Histórica</span>
+            </button>
+            <button class="btn btn-danger" id="btnCancelHistorical" disabled>
+              <span>⏹ Cancelar</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Sección de partidos -->
+        <div class="matches-section" id="matchesSection" style="display: none">
+          <div class="matches-header">
+            <h4>📅 Partidos (<span id="matchesCount">0</span>)</h4>
+            <button class="matches-toggle" id="matchesToggle">▼ Mostrar</button>
+          </div>
+          <input
+            type="text"
+            class="search-box"
+            id="matchesSearch"
+            placeholder="🔍 Buscar equipo..."
+            style="display: none"
+          />
+          <div class="matches-list" id="matchesList"></div>
+        </div>
+
+        <div class="status" id="historicalStatus"></div>
+      </div>
     </div>
+    <!-- /.content -->
 
     <script src="sofaScoreToSherlock.js"></script>
     <script src="popup.js"></script>

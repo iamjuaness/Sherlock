@@ -22,6 +22,7 @@ document.addEventListener("DOMContentLoaded", () => {
   }
 
   const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
   if (useGeneralCheck) {
     const savedGen = localStorage.getItem("use_general_stats_system");
     if (savedGen !== null) {
@@ -29,6 +30,17 @@ document.addEventListener("DOMContentLoaded", () => {
     } else {
       localStorage.setItem("use_general_stats_system", "false");
       useGeneralCheck.checked = false;
+    }
+
+    if (generalStatsDate) {
+      const savedDate = localStorage.getItem("general_stats_threshold_date");
+      if (savedDate) {
+        generalStatsDate.value = savedDate;
+      } else {
+        generalStatsDate.value = "2026-07-01";
+        localStorage.setItem("general_stats_threshold_date", "2026-07-01");
+      }
+      generalStatsDate.style.display = useGeneralCheck.checked ? "inline-block" : "none";
     }
   }
 
@@ -112,6 +124,54 @@ async function reloadDashboardStats() {
     localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
   }
   await fetchGlobalStats();
+}
+
+async function triggerRecalculateAndFetch() {
+  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
+  const useGeneral = useGeneralCheck ? useGeneralCheck.checked : false;
+  const thresholdDate = generalStatsDate ? generalStatsDate.value : "2026-07-01";
+
+  const loader = document.getElementById("loader");
+  const content = document.getElementById("dashboard-content");
+  if (loader) {
+    loader.style.display = "flex";
+    loader.innerHTML = '<div class="spinner"></div><span>Recalculando acierto y rentabilidad de partidos...</span>';
+  }
+  if (content) {
+    content.style.display = "none";
+  }
+
+  try {
+    const res = await fetch(`/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}&threshold_date=${thresholdDate}`, {
+      method: "POST"
+    });
+    if (!res.ok) throw new Error("Error al recalcular");
+  } catch (error) {
+    console.error("Recalculate failed:", error);
+  }
+
+  await fetchGlobalStats();
+}
+
+function handleDashboardGeneralStatsChange() {
+  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
+  if (useGeneralCheck) {
+    localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
+    if (generalStatsDate) {
+      generalStatsDate.style.display = useGeneralCheck.checked ? "inline-block" : "none";
+    }
+  }
+  triggerRecalculateAndFetch();
+}
+
+function handleDashboardGeneralStatsDateChange() {
+  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
+  if (generalStatsDate) {
+    localStorage.setItem("general_stats_threshold_date", generalStatsDate.value);
+  }
+  triggerRecalculateAndFetch();
 }
 
 // Fetch stats from backend

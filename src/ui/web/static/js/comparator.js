@@ -91,6 +91,21 @@ let loadedHistoryEntryDate = null;
   }
 })();
 
+// ── Check if load_id is passed in url parameters ────────────────
+(function initLoadFromUrlParam() {
+  window.addEventListener("load", () => {
+    const params = new URLSearchParams(window.location.search);
+    const loadId = params.get("load_id") || params.get("id");
+    if (loadId) {
+      setTimeout(() => {
+        if (typeof loadHistoryEntry === "function") {
+          loadHistoryEntry(loadId);
+        }
+      }, 300);
+    }
+  });
+})();
+
 // ── Prefill polling (for browser extension integration) ─────────
 (function startPrefillPolling() {
   const POLL_INTERVAL = 2500; // ms
@@ -104,6 +119,13 @@ let loadedHistoryEntryDate = null;
       if (data.pending && data.payload) {
         const payload = data.payload;
         const sport = payload.sport || "football";
+
+        // Preserve the real match date from the extension
+        if (payload.start_timestamp) {
+          loadedHistoryEntryDate = new Date(
+            payload.start_timestamp * 1000 - 18000000,
+          ).toISOString();
+        }
 
         // Show notification banner
         showPrefillBanner(sport, payload);
@@ -878,10 +900,7 @@ async function saveAnalysisDataToDB(sport, payload, results = null) {
         (payload.home?.name || payload.player1?.name || "Local") +
         " vs " +
         (payload.away?.name || payload.player2?.name || "Visitante"),
-      match_date:
-        loadedHistoryEntryDate ||
-        payload.match_date ||
-        new Date().toISOString(),
+      match_date: loadedHistoryEntryDate,
       payload: payload,
       picks_calculados: results ? results.values : [],
       user_context: payload.context || "",
@@ -900,7 +919,6 @@ async function saveAnalysisDataToDB(sport, payload, results = null) {
       body: JSON.stringify(entry),
     });
     const data = await res.json();
-    console.log("Analysis persisted:", data.id);
     // Actualizar el ID cargado con el retornado y limpiar edición
     loadedHistoryEntryId = data.id;
     cancelEditing();
@@ -1213,7 +1231,8 @@ async function deleteHistoryEntry(id) {
 function setSafeValue(id, value) {
   const el = document.getElementById(id);
   if (el) {
-    el.value = value !== null && value !== undefined ? value : "";
+    if (value === undefined) return;
+    el.value = value !== null ? value : "";
   }
 }
 
@@ -1361,39 +1380,47 @@ function populateAppForm(sport, data) {
   if (sport === "football") {
     const { home, away, odds } = data;
 
-    // Update prefill banner state to "Loaded"
-    const banner = document.getElementById("prefill-banner");
-    if (banner) {
-      banner.style.background =
-        "linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.2))";
-      banner.style.border = "1px solid rgba(16, 185, 129, 0.3)";
-    }
-    const bannerIcon = document.getElementById("prefill-icon");
-    if (bannerIcon) {
-      bannerIcon.textContent = "⚡";
-      bannerIcon.style.color = "#10b981";
-      bannerIcon.style.opacity = "1";
-    }
-    const bannerTitle = document.getElementById("prefill-title");
-    if (bannerTitle) {
-      bannerTitle.style.color = "#10b981";
-      bannerTitle.innerHTML = `
-        Datos Cargados Automáticamente
-        <span id="prefill-badge" style="background: #10b981; color: #fff; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px;">Prefill Activo</span>
-      `;
-    }
-    const bannerDesc = document.getElementById("prefill-desc");
-    if (bannerDesc) {
-      bannerDesc.textContent =
-        "El comparador ha inyectado el historial del partido. Puedes revisar directamente los paneles abajo.";
+    // Update prefill banner state to "Loaded" — only when real stats arrived (SofaScore),
+    // not when only odds were loaded from Betano/Watson.
+    const hasRealStats = home && home.matches_home !== undefined;
+    if (hasRealStats) {
+      const banner = document.getElementById("prefill-banner");
+      if (banner) {
+        banner.style.background =
+          "linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(5, 150, 105, 0.2))";
+        banner.style.border = "1px solid rgba(16, 185, 129, 0.3)";
+      }
+      const bannerIcon = document.getElementById("prefill-icon");
+      if (bannerIcon) {
+        bannerIcon.textContent = "⚡";
+        bannerIcon.style.color = "#10b981";
+        bannerIcon.style.opacity = "1";
+      }
+      const bannerTitle = document.getElementById("prefill-title");
+      if (bannerTitle) {
+        bannerTitle.style.color = "#10b981";
+        bannerTitle.innerHTML = `
+          Datos Cargados Automáticamente
+          <span id="prefill-badge" style="background: #10b981; color: #fff; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px;">Prefill Activo</span>
+        `;
+      }
+      const bannerDesc = document.getElementById("prefill-desc");
+      if (bannerDesc) {
+        bannerDesc.textContent =
+          "El comparador ha inyectado el historial del partido. Puedes revisar directamente los paneles abajo.";
+      }
     }
 
     if (home) {
-      setSafeValue("fb-home-name", home.name);
-      const prefillHome = document.getElementById("prefill-home-team");
-      if (prefillHome) {
-        prefillHome.textContent = home.name || "Local";
-        prefillHome.style.color = "var(--text-primary)";
+      const currentHomeName =
+        document.getElementById("fb-home-name")?.value || "";
+      if (!currentHomeName || hasRealStats) {
+        setSafeValue("fb-home-name", home.name);
+        const prefillHome = document.getElementById("prefill-home-team");
+        if (prefillHome) {
+          prefillHome.textContent = home.name || "Local";
+          prefillHome.style.color = "var(--text-primary)";
+        }
       }
       setSafeValue("fb-home-matches-home", home.matches_home);
       setSafeValue("fb-home-matches-away", home.matches_away);
@@ -1762,11 +1789,15 @@ function populateAppForm(sport, data) {
     }
 
     if (away) {
-      setSafeValue("fb-away-name", away.name);
-      const prefillAway = document.getElementById("prefill-away-team");
-      if (prefillAway) {
-        prefillAway.textContent = away.name || "Visitante";
-        prefillAway.style.color = "var(--text-primary)";
+      const currentAwayName =
+        document.getElementById("fb-away-name")?.value || "";
+      if (!currentAwayName || hasRealStats) {
+        setSafeValue("fb-away-name", away.name);
+        const prefillAway = document.getElementById("prefill-away-team");
+        if (prefillAway) {
+          prefillAway.textContent = away.name || "Visitante";
+          prefillAway.style.color = "var(--text-primary)";
+        }
       }
       setSafeValue("fb-away-matches-home", away.matches_home);
       setSafeValue("fb-away-matches-away", away.matches_away);
@@ -2864,7 +2895,7 @@ async function saveToDB() {
       id: loadedHistoryEntryId,
       sport: sport,
       match_title: matchTitle,
-      match_date: loadedHistoryEntryDate || payload.match_date || null,
+      match_date: loadedHistoryEntryDate,
       payload: payload,
       count_in_profitability: document.getElementById("fb-count-profit")
         ? document.getElementById("fb-count-profit").checked

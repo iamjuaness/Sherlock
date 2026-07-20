@@ -530,6 +530,7 @@
             style="
               display: flex;
               align-items: center;
+              gap: 0.5rem;
             "
           >
             <label
@@ -553,10 +554,25 @@
                   accent-color: var(--accent-light);
                   cursor: pointer;
                 "
-                onchange="reloadDashboardStats()"
+                onchange="handleDashboardGeneralStatsChange()"
               />
               📊 Stats Generales
             </label>
+            <input
+              type="date"
+              id="dashboard-general-stats-date"
+              style="
+                background: var(--bg-card);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                padding: 0.25rem 0.5rem;
+                border-radius: 6px;
+                font-size: 0.85rem;
+                color: var(--text-primary);
+                outline: none;
+                display: none;
+              "
+              onchange="handleDashboardGeneralStatsDateChange()"
+            />
           </div>
           <div style="margin-left: auto">
             <button

@@ -28,6 +28,8 @@
       dc1X: null,
       dcX2: null,
       dc12: null,
+      dnbHome: null,
+      dnbAway: null,
 
       goalsLines: [],
       goalsOverOdds: {},
@@ -49,21 +51,12 @@
       handicapAwayOdds: {},
     };
 
-    if (!eventData || !Array.isArray(eventData.markets)) {
-      console.warn("[Watson] eventData sin markets:", eventData);
-      return odds;
-    }
-
     // Extraer nombres de equipos del nombre del evento
     const nameParts = (eventData.name || eventData.shortName || "")
       .split(" - ")
       .map((s) => s.trim());
     odds.homeTeam = nameParts[0] || "Local";
     odds.awayTeam = nameParts[1] || "Visitante";
-
-    console.log(
-      `[Watson] Partido: "${odds.homeTeam}" vs "${odds.awayTeam}" — ${eventData.markets.length} mercados`,
-    );
 
     // ── Helper: Over/Under ───────────────────────────────────────
     // Regla Betano: columnIndex === 0 → over  |  columnIndex === 1 → under
@@ -81,6 +74,9 @@
 
         if (!line || line === 0) return;
 
+        // Solo enviar líneas que sean .5 (e.g. 0.5, 1.5, etc.)
+        if (Math.abs((line % 1) - 0.5) > 0.001) return;
+
         const key = line.toString();
         if (!linesArr.includes(line)) linesArr.push(line);
 
@@ -89,7 +85,7 @@
         else if (sel.columnIndex === 1) underDict[key] = sel.price;
       });
     };
-    a;
+    // ── Helper: Draw No Bet (DNOB) ─────────────────────────────
     // ── Helper: Hándicap (FHMR / FHH1) ─────────────────────────
     const extractHandicap = (market, linesArr, homeDict, awayDict) => {
       const homeL = odds.homeTeam.toLowerCase();
@@ -146,9 +142,6 @@
         odds.home = sorted[0]?.price ?? null;
         odds.draw = sorted[1]?.price ?? null;
         odds.away = sorted[2]?.price ?? null;
-        console.log(
-          `[Watson] MRES → 1:${odds.home} X:${odds.draw} 2:${odds.away}`,
-        );
       }
 
       // ── Doble Oportunidad ──
@@ -164,9 +157,6 @@
           else if (hasAway && hasEmpate && !hasHome) odds.dcX2 = sel.price;
           else if (hasHome && hasAway && !hasEmpate) odds.dc12 = sel.price;
         });
-        console.log(
-          `[Watson] DBLC → 1X:${odds.dc1X} X2:${odds.dcX2} 12:${odds.dc12}`,
-        );
       }
 
       // ── Ambos anotan ──
@@ -177,7 +167,6 @@
             odds.bttsYes = sel.price;
           else if (n === "no") odds.bttsNo = sel.price;
         });
-        console.log(`[Watson] BTSC → Sí:${odds.bttsYes} No:${odds.bttsNo}`);
       }
 
       // ── Goles Totales Más/Menos (HCTG) ──
@@ -195,7 +184,6 @@
           odds.goalsOverOdds,
           odds.goalsUnderOdds,
         );
-        console.log(`[Watson] Goles Totales → líneas: [${odds.goalsLines}]`);
       }
 
       // ── Tiros de Esquina (CNOU) ──
@@ -212,7 +200,6 @@
           odds.cornersOverOdds,
           odds.cornersUnderOdds,
         );
-        console.log(`[Watson] Corners → líneas: [${odds.cornersLines}]`);
       }
 
       // ── Tarjetas ──
@@ -230,11 +217,12 @@
         );
       }
 
-      // ── Tiros a Puerta ──
+      // ── Tiros al Arco / Tiros a Puerta ──
       else if (
-        mName.includes("tiros") &&
-        mName.includes("puerta") &&
-        (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos"))
+        mType === "X002" ||
+        (mName.includes("tiros") &&
+          (mName.includes("puerta") || mName.includes("arco")) &&
+          (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos")))
       ) {
         extractOverUnder(
           m,
@@ -244,12 +232,15 @@
         );
       }
 
-      // ── Tiros (generales) ──
+      // ── Tiros (generales) / Remates totales ──
       else if (
-        mName.includes("tiros") &&
-        !mName.includes("puerta") &&
-        !mName.includes("esquina") &&
-        (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos"))
+        mType === "4159" ||
+        (mName.includes("remates") && mName.includes("totales")) ||
+        (mName.includes("tiros") &&
+          !mName.includes("puerta") &&
+          !mName.includes("arco") &&
+          !mName.includes("esquina") &&
+          (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos")))
       ) {
         extractOverUnder(
           m,
@@ -257,6 +248,21 @@
           odds.shotsOverOdds,
           odds.shotsUnderOdds,
         );
+      }
+
+      // ── Draw No Bet / Apuesta sin Empate (DNOB) ──
+      else if (
+        mType === "DNOB" ||
+        mName.includes("sin empate") ||
+        mName.includes("draw no bet")
+      ) {
+        if (Array.isArray(m.selections)) {
+          m.selections.forEach((sel) => {
+            // columnIndex 0 = Local, columnIndex 1 = Visitante
+            if (sel.columnIndex === 0) odds.dnbHome = sel.price;
+            else if (sel.columnIndex === 1) odds.dnbAway = sel.price;
+          });
+        }
       }
 
       // ── Hándicap ──
@@ -276,6 +282,48 @@
       }
     });
 
+    // ── Eliminar líneas O/U sin contraparte ─────────────────────
+    // Si una línea tiene over pero no under (o viceversa), se descarta.
+    function filterPaired(linesArr, overDict, underDict) {
+      const paired = linesArr.filter((line) => {
+        const key = line.toString();
+        return overDict[key] !== undefined && underDict[key] !== undefined;
+      });
+      // Eliminar entradas huérfanas de los diccionarios
+      linesArr.length = 0;
+      paired.forEach((l) => linesArr.push(l));
+      Object.keys(overDict).forEach((k) => {
+        if (!paired.map(String).includes(k)) delete overDict[k];
+      });
+      Object.keys(underDict).forEach((k) => {
+        if (!paired.map(String).includes(k)) delete underDict[k];
+      });
+    }
+
+    filterPaired(odds.goalsLines, odds.goalsOverOdds, odds.goalsUnderOdds);
+    filterPaired(
+      odds.cornersLines,
+      odds.cornersOverOdds,
+      odds.cornersUnderOdds,
+    );
+    filterPaired(odds.cardsLines, odds.cardsOverOdds, odds.cardsUnderOdds);
+    filterPaired(odds.shotsLines, odds.shotsOverOdds, odds.shotsUnderOdds);
+    filterPaired(
+      odds.shotsTargetLines,
+      odds.shotsTargetOverOdds,
+      odds.shotsTargetUnderOdds,
+    );
+
+    // Descartar líneas de corners < 4.5 (líneas muy bajas no son útiles)
+    const MIN_CORNERS = 4.5;
+    odds.cornersLines = odds.cornersLines.filter((l) => l >= MIN_CORNERS);
+    Object.keys(odds.cornersOverOdds).forEach((k) => {
+      if (parseFloat(k) < MIN_CORNERS) delete odds.cornersOverOdds[k];
+    });
+    Object.keys(odds.cornersUnderOdds).forEach((k) => {
+      if (parseFloat(k) < MIN_CORNERS) delete odds.cornersUnderOdds[k];
+    });
+
     // Ordenar líneas
     odds.goalsLines.sort((a, b) => a - b);
     odds.cornersLines.sort((a, b) => a - b);
@@ -288,12 +336,9 @@
   }
 
   // ── Mapeo al formato que espera el endpoint /api/v1/prefill/odds ─
+  // Usa snake_case coincidente con FootballOdds de Sherlock.
+  // El backend normaliza: goals_over → goalsOverOdds (camelCase) para el comparador.
   function buildSherlockPayload(parsed) {
-    const over25 = parsed.goalsOverOdds["2.5"] ?? null;
-    const under25 = parsed.goalsUnderOdds["2.5"] ?? null;
-    const over15 = parsed.goalsOverOdds["1.5"] ?? null;
-    const under15 = parsed.goalsUnderOdds["1.5"] ?? null;
-
     return {
       bookmaker: parsed.bookmaker,
       home_team: parsed.homeTeam,
@@ -301,15 +346,13 @@
       home: parsed.home,
       draw: parsed.draw,
       away: parsed.away,
-      over_25: over25,
-      under_25: under25,
-      over_15: over15,
-      under_15: under15,
       btts_yes: parsed.bttsYes,
       btts_no: parsed.bttsNo,
       dc_1x: parsed.dc1X,
       dc_x2: parsed.dcX2,
       dc_12: parsed.dc12,
+      dnb_home: parsed.dnbHome,
+      dnb_away: parsed.dnbAway,
       goals_lines: parsed.goalsLines.map(String),
       goals_over: parsed.goalsOverOdds,
       goals_under: parsed.goalsUnderOdds,
@@ -333,9 +376,7 @@
 
   // ── Fetch principal ──────────────────────────────────────────────
   async function fetchAndSendOdds(matchInfo) {
-    console.log("[Watson] Detectado partido Betano:", matchInfo);
-
-    const apiUrl = `https://www.betano.co/api/cuotas-de-partido/${matchInfo.slug}/${matchInfo.id}?bt=10&req=s,stnf,c,mb,mbl`;
+    const apiUrl = `https://www.betano.co/api/cuotas-de-partido/${matchInfo.slug}/${matchInfo.id}?bt=13&req=s,stnf,c,mb,mbl`;
 
     try {
       const response = await fetch(apiUrl, {
@@ -351,10 +392,6 @@
       }
 
       const betanoData = await response.json();
-      console.log(
-        "[Watson] Respuesta API keys:",
-        Object.keys(betanoData || {}),
-      );
 
       // La API devuelve: { data: { event: { ... } } }
       // Probar ambos paths por si cambia la estructura
@@ -376,18 +413,8 @@
         eventData = eventData.event;
       }
 
-      console.log(
-        `[Watson] eventData.name: ${eventData.name || eventData.shortName}`,
-      );
-      console.log(`[Watson] markets count: ${eventData.markets?.length}`);
-
       const parsedOdds = parseBetanoOdds(eventData);
       const payload = { odds: buildSherlockPayload(parsedOdds) };
-
-      console.log(
-        "[Watson] Payload a Sherlock:",
-        JSON.stringify(payload, null, 2),
-      );
 
       // Leer endpoint configurado en la extensión (o usar default)
       const stored = await chrome.storage.sync.get(["endpointUrl"]);
@@ -395,7 +422,7 @@
         /\/+$/,
         "",
       );
-      const sherlockUrl = `${base}/api/v1/prefill/odds`;
+      const sherlockUrl = `${base}/odds`;
 
       const sherlockResponse = await fetch(sherlockUrl, {
         method: "POST",
@@ -404,12 +431,32 @@
       });
 
       if (sherlockResponse.ok) {
-        console.log("[Watson] ✅ Cuotas enviadas a Sherlock correctamente");
+        console.log("[Watson] ✅");
       } else {
         console.error(
           "[Watson] ❌ Error enviando a Sherlock:",
           sherlockResponse.status,
         );
+      }
+
+      // Guardar en chrome.storage.local para que el popup lo pueda enviar manualmente
+      const betanoStorage = {
+        url: location.href,
+        timestamp: new Date().toISOString(),
+        payload: payload,
+        homeTeam: parsedOdds.homeTeam,
+        awayTeam: parsedOdds.awayTeam,
+      };
+      await chrome.storage.local.set({ lastBetanoOdds: betanoStorage });
+
+      // Notificar al popup para que actualice la vista si está abierto
+      try {
+        chrome.runtime.sendMessage({
+          action: "betanoOddsCaptured",
+          data: betanoStorage,
+        });
+      } catch (_) {
+        // Ignorar si el popup está cerrado
       }
     } catch (err) {
       console.error("[Watson] ❌ Excepción:", err);
@@ -435,6 +482,4 @@
       checkCurrentUrl();
     }
   }).observe(document, { subtree: true, childList: true });
-
-  console.log("[Watson] betano_content.js v3 inicializado");
 })();

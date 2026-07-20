@@ -1111,6 +1111,7 @@ function buildSherlockPayload(extractedData) {
     generate_llm_analysis: false,
     user_context: "",
     has_real_stats: !!(homeStats && awayStats),
+    start_timestamp: match.startTimestamp,
   };
 }
 

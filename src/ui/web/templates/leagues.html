@@ -62,6 +62,9 @@
         border-color: var(--accent);
         color: var(--accent-light);
       }
+      .league-list-item--pending {
+        border-left: 4px solid #eab308 !important;
+      }
       .league-list-item__name {
         font-size: 0.9rem;
         font-weight: 600;
@@ -231,6 +234,28 @@
           </div>
           <div id="leagues-list">
             <!-- Rellenado dinámicamente -->
+          </div>
+          
+          <!-- Filtro de Temporadas -->
+          <div id="season-filter-card" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); display: none;">
+            <div class="sidebar-title" style="font-size: 0.95rem; margin-bottom: 0.75rem; border: none; padding-bottom: 0;">Temporada</div>
+            <select
+              id="selected-season"
+              style="
+                width: 100%;
+                background: rgba(0, 0, 0, 0.4);
+                border: 1px solid var(--border);
+                padding: 0.5rem;
+                border-radius: var(--radius-sm);
+                font-size: 0.85rem;
+                color: #fff;
+                cursor: pointer;
+                outline: none;
+              "
+              onchange="changeSelectedSeason()"
+            >
+              <option value="all">Todas las temporadas</option>
+            </select>
           </div>
         </div>
 

@@ -7,6 +7,8 @@ let currentUrl = null;
 let extractedData = null;
 let sherlockEndpoint = "";
 let currentMatchData = null;
+let isBetanoMode = false;
+let betanoOddsPayload = null;
 // ═══════════════════════════════════════════════════════════════
 // REFERENCIAS DOM
 // ═══════════════════════════════════════════════════════════════
@@ -35,6 +37,28 @@ const els = {
   status: document.getElementById("status"),
   progressBar: document.getElementById("progressBar"),
   progressFill: document.getElementById("progressFill"),
+  // Histórico
+  historicalContainer: document.getElementById("historicalContainer"),
+  competitionName: document.getElementById("competitionName"),
+  competitionId: document.getElementById("competitionId"),
+  historicalEndpointUrl: document.getElementById("historicalEndpointUrl"),
+  historicalCounters: document.getElementById("historicalCounters"),
+  cntProcessed: document.getElementById("cntProcessed"),
+  cntSaved: document.getElementById("cntSaved"),
+  cntErrors: document.getElementById("cntErrors"),
+  historicalProgressDetail: document.getElementById("historicalProgressDetail"),
+  progressPhase: document.getElementById("progressPhase"),
+  progressMessage: document.getElementById("progressMessage"),
+  historicalProgressBar: document.getElementById("historicalProgressBar"),
+  historicalProgressFill: document.getElementById("historicalProgressFill"),
+  btnExtractHistorical: document.getElementById("btnExtractHistorical"),
+  btnCancelHistorical: document.getElementById("btnCancelHistorical"),
+  matchesSection: document.getElementById("matchesSection"),
+  matchesCount: document.getElementById("matchesCount"),
+  matchesToggle: document.getElementById("matchesToggle"),
+  matchesSearch: document.getElementById("matchesSearch"),
+  matchesList: document.getElementById("matchesList"),
+  historicalStatus: document.getElementById("historicalStatus"),
 };
 // ═══════════════════════════════════════════════════════════════
 // INICIALIZACIÓN
@@ -50,11 +74,31 @@ document.addEventListener("DOMContentLoaded", async () => {
       active: true,
       currentWindow: true,
     });
+
+    // ── Detectar si es URL de Betano ──
+    if (tab.url && tab.url.includes("betano.co")) {
+      isBetanoMode = true;
+      currentUrl = tab.url;
+      await showBetanoMode(tab.url);
+      return;
+    }
+
     if (!tab.url || !tab.url.includes("sofascore.com")) {
       showNoMatch();
       return;
     }
     currentUrl = tab.url;
+
+    // ── Detectar si es URL de competición ──
+    // Las URLs de competición tienen /tournament/ en el path.
+    // El #id:XXXX en estas URLs es el seasonId, NO un eventId de partido.
+    const tournamentId = extractTournamentIdFromUrl(currentUrl);
+    if (tournamentId) {
+      await initHistoricalSection(tournamentId, currentUrl);
+      setupHistoricalEventListeners();
+      return;
+    }
+
     currentEventId = extractEventIdFromUrl(currentUrl);
     if (!currentEventId) {
       showNoMatch();
@@ -75,6 +119,36 @@ document.addEventListener("DOMContentLoaded", async () => {
   } catch (error) {
     console.error("Error inicializando popup:", error);
     showNoMatch();
+  }
+});
+
+// Escuchar mensaje de betano_content.js cuando las cuotas fueron capturadas
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg.action === "betanoOddsCaptured" && isBetanoMode) {
+    const data = msg.data || {};
+    const { homeTeam, awayTeam, payload } = data;
+    betanoOddsPayload = payload;
+
+    const matchEl = document.getElementById("betanoMatchName");
+    const badgeEl = document.getElementById("betanoBadge");
+    const hintEl = document.getElementById("betanoHint");
+    const btnSend = document.getElementById("btnSendBetanoOdds");
+
+    if (matchEl && homeTeam) {
+      matchEl.textContent = `${homeTeam} vs ${awayTeam}`;
+    }
+    if (badgeEl) {
+      badgeEl.textContent = "Listo para enviar";
+      badgeEl.className = "betano-badge scanning";
+    }
+    if (hintEl) {
+      hintEl.textContent =
+        "Cuotas cargadas en Watson. Presiona el botón para enviarlas a Sherlock.";
+      hintEl.style.color = "#f59e0b";
+    }
+    if (btnSend) {
+      btnSend.disabled = false;
+    }
   }
 });
 // ═══════════════════════════════════════════════════════════════
@@ -144,12 +218,17 @@ async function handleSaveMatchWithoutStats() {
   showProgress(25);
   try {
     // build minimum payload with match data
-    const payload = buildSherlockPayload({ match: currentMatchData.event || currentMatchData });
+    const payload = buildSherlockPayload({
+      match: currentMatchData.event || currentMatchData,
+    });
     payload.has_real_stats = false;
     // We send to `/api/v1/analysis/quick-save` endpoint
     let quickSaveUrl = sherlockEndpoint;
     if (quickSaveUrl.includes("/api/v1/prefill")) {
-      quickSaveUrl = quickSaveUrl.replace("/api/v1/prefill", "/api/v1/analysis/quick-save");
+      quickSaveUrl = quickSaveUrl.replace(
+        "/api/v1/prefill",
+        "/api/v1/analysis/quick-save",
+      );
     } else {
       quickSaveUrl = quickSaveUrl + "/analysis/quick-save";
     }
@@ -170,7 +249,10 @@ async function handleSaveMatchWithoutStats() {
       throw new Error(`Error ${response.status}: ${errorText}`);
     }
     const result = await response.json();
-    showStatus("success", `✅ Partido guardado: ${result.match_title || "Correctamente"}`);
+    showStatus(
+      "success",
+      `✅ Partido guardado: ${result.match_title || "Correctamente"}`,
+    );
   } catch (error) {
     showStatus("error", `❌ Error: ${error.message}`);
     console.error("Error guardando partido:", error);
@@ -310,7 +392,7 @@ async function showMatchInfo(eventId, url) {
         awayTeamId: event.awayTeam?.id,
         tournamentId: event.tournament?.uniqueTournament?.id,
         seasonId: event.season?.id,
-        timestamp: new Date().toISOString(),
+        start_timestamp: event.startTimestamp,
       };
       // Mostrar equipos
       els.homeTeam.textContent = event.homeTeam?.name || "Local";
@@ -356,6 +438,152 @@ async function showMatchInfo(eventId, url) {
     els.eventId.textContent = `Event ID: ${eventId}`;
   }
 }
+// ═══════════════════════════════════════════════════════════════
+// MODO BETANO
+// ═══════════════════════════════════════════════════════════════
+async function showBetanoMode(url) {
+  // Ocultar header normal, mostrar header naranja
+  const mainHeader = document.getElementById("mainHeader");
+  const betanoHeader = document.getElementById("betanoHeader");
+  if (mainHeader) mainHeader.style.display = "none";
+  if (betanoHeader) betanoHeader.style.display = "block";
+
+  // Ocultar las otras vistas, mostrar la Betano
+  const matchContainer = document.getElementById("matchContainer");
+  const statsContainer = document.getElementById("statsContainer");
+  const historicalContainer = document.getElementById("historicalContainer");
+  const betanoContainer = document.getElementById("betanoContainer");
+  if (matchContainer) matchContainer.style.display = "none";
+  if (statsContainer) statsContainer.style.display = "none";
+  if (historicalContainer) historicalContainer.style.display = "none";
+  if (betanoContainer) betanoContainer.style.display = "block";
+
+  // Mostrar endpoint
+  const endpointEl = document.getElementById("betanoEndpointUrl");
+  if (endpointEl) {
+    if (sherlockEndpoint) {
+      endpointEl.textContent = sherlockEndpoint;
+      endpointEl.classList.remove("not-set");
+    } else {
+      endpointEl.textContent = "No configurado - Ve a Settings";
+      endpointEl.classList.add("not-set");
+    }
+  }
+
+  // Intenta extraer nombre del partido de la URL para mostrar algo inmediato
+  const slugMatch = url.match(/\/cuotas-de-partido\/([^\/]+)/);
+  if (slugMatch) {
+    const matchEl = document.getElementById("betanoMatchName");
+    if (matchEl) {
+      // Slug ej: "mushuc-runa-orense" → "Mushuc Runa vs Orense" (aproximado)
+      const readable = slugMatch[1]
+        .replace(/-vs-/, " vs ")
+        .replace(/-/g, " ")
+        .replace(/\b\w/g, (c) => c.toUpperCase());
+      matchEl.textContent = readable;
+    }
+  }
+
+  // Botón de settings
+  const btnSettings = document.getElementById("btnBetanoSettings");
+  if (btnSettings) {
+    btnSettings.addEventListener("click", () =>
+      chrome.runtime.openOptionsPage(),
+    );
+  }
+
+  // Cargar datos cacheados
+  const cached = await chrome.storage.local.get(["lastBetanoOdds"]);
+  const btnSend = document.getElementById("btnSendBetanoOdds");
+
+  if (cached.lastBetanoOdds && cached.lastBetanoOdds.url === url) {
+    const data = cached.lastBetanoOdds;
+    betanoOddsPayload = data.payload;
+
+    const matchEl = document.getElementById("betanoMatchName");
+    const badgeEl = document.getElementById("betanoBadge");
+    const hintEl = document.getElementById("betanoHint");
+
+    if (matchEl && data.homeTeam) {
+      matchEl.textContent = `${data.homeTeam} vs ${data.awayTeam}`;
+    }
+    if (badgeEl) {
+      badgeEl.textContent = "Listo para enviar";
+      badgeEl.className = "betano-badge scanning";
+    }
+    if (hintEl) {
+      hintEl.textContent =
+        "Cuotas cargadas en Watson. Presiona el botón para enviarlas a Sherlock.";
+      hintEl.style.color = "#f59e0b";
+    }
+    if (btnSend) {
+      btnSend.disabled = false;
+    }
+  }
+
+  // Listener para envío manual
+  if (btnSend) {
+    btnSend.replaceWith(btnSend.cloneNode(true)); // Limpiar listeners previos
+    const newBtnSend = document.getElementById("btnSendBetanoOdds");
+    newBtnSend.addEventListener("click", async () => {
+      if (!betanoOddsPayload) return;
+      if (!sherlockEndpoint) {
+        showBetanoStatus("error", "Configura el endpoint en Settings");
+        return;
+      }
+
+      showBetanoStatus("loading", "Enviando cuotas...");
+      newBtnSend.disabled = true;
+
+      try {
+        const base = sherlockEndpoint.replace(/\/+$/, "");
+        const urlPrefill = `${base}/odds`;
+
+        const response = await fetch(urlPrefill, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(betanoOddsPayload),
+        });
+
+        if (response.ok) {
+          showBetanoStatus(
+            "success",
+            "✅ Cuotas enviadas a Sherlock correctamente",
+          );
+          const badgeEl = document.getElementById("betanoBadge");
+          if (badgeEl) {
+            badgeEl.textContent = "Enviado ✅";
+            badgeEl.className = "betano-badge captured";
+          }
+          const hintEl = document.getElementById("betanoHint");
+          if (hintEl) {
+            hintEl.textContent =
+              "Las cuotas fueron inyectadas en Sherlock. Abre el comparador.";
+            hintEl.style.color = "#065f46";
+          }
+        } else {
+          throw new Error(`HTTP ${response.status}`);
+        }
+      } catch (err) {
+        showBetanoStatus("error", `❌ Error al enviar: ${err.message}`);
+        newBtnSend.disabled = false;
+      }
+    });
+  }
+}
+
+function showBetanoStatus(type, message) {
+  const statusEl = document.getElementById("betanoStatus");
+  if (!statusEl) return;
+  statusEl.textContent = message;
+  statusEl.className = `status show ${type}`;
+  if (type === "success" || type === "error") {
+    setTimeout(() => {
+      statusEl.classList.remove("show");
+    }, 5000);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MOSTRAR VISTA "NO HAY PARTIDO"
 // ═══════════════════════════════════════════════════════════════
@@ -442,4 +670,260 @@ async function fetchSofaScoreAPI(path) {
     throw new Error(`HTTP ${response.status}`);
   }
   return await response.json();
+}
+
+// ═══════════════════════════════════════════════════════════════
+// SECCIÓN HISTÓRICA — COMPETICIÓN
+// ═══════════════════════════════════════════════════════════════
+
+let _currentTournamentId = null;
+let _currentTournamentName = null;
+let _allMatchesCache = [];
+
+/** Detecta el ID de torneo en URLs de competición de SofaScore.
+ *  Ejemplos:
+ *    /football/tournament/brazil/brasileirao-serie-b/390
+ *    /football/tournament/brazil/brasileirao-serie-b/390#id:89840  ← #id es la temporada
+ *  Devuelve el tournamentId (390) o null si no es URL de competición.
+ */
+function extractTournamentIdFromUrl(url) {
+  // La clave: si la URL tiene /tournament/ en el path es una página de liga/copa
+  const m = url.match(/\/tournament\/[^/]+\/[^/]+\/(\d+)/);
+  return m ? m[1] : null;
+}
+
+/** Extrae el seasonId del hash #id:XXXX en URLs de competición (opcional). */
+function extractSeasonIdFromTournamentUrl(url) {
+  const m = url.match(/#id:(\d+)/);
+  return m ? m[1] : null;
+}
+
+/** Inicializa la sección histórica cuando se detecta una competición */
+async function initHistoricalSection(tournamentId, url) {
+  _currentTournamentId = tournamentId;
+
+  // Ocultar UI de partido, mostrar UI de competición
+  els.matchContainer.style.display = "none";
+  els.statsContainer.style.display = "none";
+  els.historicalContainer.style.display = "block";
+
+  // Mostrar endpoint
+  if (sherlockEndpoint) {
+    els.historicalEndpointUrl.textContent = sherlockEndpoint;
+    els.historicalEndpointUrl.classList.remove("not-set");
+  }
+
+  // Intentar obtener nombre de la competición
+  try {
+    const info = await fetchSofaScoreAPI(
+      `/api/v1/unique-tournament/${tournamentId}`,
+    );
+    _currentTournamentName =
+      info?.uniqueTournament?.name || info?.tournament?.name || "Competición";
+    els.competitionName.textContent = _currentTournamentName;
+  } catch (e) {
+    _currentTournamentName = "Competición";
+    els.competitionName.textContent = "Competición";
+  }
+  els.competitionId.textContent = `Tournament ID: ${tournamentId}`;
+
+  // Cargar partidos ya guardados en storage
+  const storageKey = `tournament_${tournamentId}_events`;
+  const stored = await chrome.storage.local.get([storageKey]);
+  if (stored[storageKey] && stored[storageKey].length > 0) {
+    _allMatchesCache = stored[storageKey];
+    showMatchesSection(_allMatchesCache);
+  }
+
+  // Listener de progreso desde background
+  chrome.runtime.onMessage.addListener(onHistoricalProgress);
+}
+
+function setupHistoricalEventListeners() {
+  els.btnExtractHistorical.addEventListener("click", handleExtractHistorical);
+  els.btnCancelHistorical.addEventListener("click", handleCancelHistorical);
+  els.btnSettings.addEventListener("click", () =>
+    chrome.runtime.openOptionsPage(),
+  );
+
+  // Toggle lista de partidos
+  els.matchesToggle.addEventListener("click", () => {
+    const list = els.matchesList;
+    const isOpen = list.classList.contains("open");
+    list.classList.toggle("open", !isOpen);
+    els.matchesSearch.style.display = isOpen ? "none" : "block";
+    els.matchesToggle.textContent = isOpen ? "▼ Mostrar" : "▲ Ocultar";
+  });
+
+  // Búsqueda de equipos
+  els.matchesSearch.addEventListener("input", () => {
+    const q = els.matchesSearch.value.toLowerCase().trim();
+    renderMatchesList(_allMatchesCache, q);
+  });
+}
+
+async function handleExtractHistorical() {
+  if (!sherlockEndpoint) {
+    showHistoricalStatus(
+      "error",
+      "Configura el endpoint de Sherlock en Settings",
+    );
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+
+  els.btnExtractHistorical.disabled = true;
+  els.btnCancelHistorical.disabled = false;
+  els.historicalCounters.style.display = "flex";
+  els.historicalProgressDetail.style.display = "block";
+  els.historicalProgressBar.style.display = "block";
+  els.historicalProgressFill.style.width = "2%";
+  els.cntProcessed.textContent = "0";
+  els.cntSaved.textContent = "0";
+  els.cntErrors.textContent = "0";
+  showHistoricalStatus("loading", "Iniciando extracción histórica...");
+
+  let baseUrl = sherlockEndpoint;
+  if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
+
+  try {
+    const result = await chrome.runtime.sendMessage({
+      action: "extractHistoricalData",
+      data: {
+        tournamentId: _currentTournamentId,
+        tournamentName: _currentTournamentName,
+        baseUrl,
+      },
+    });
+
+    if (result && result.success) {
+      showHistoricalStatus(
+        "success",
+        `✅ Completado: ${result.totalSaved} guardados, ${result.totalErrors} errores`,
+      );
+    } else if (result && result.cancelled) {
+      showHistoricalStatus("error", "⏹ Cancelado por el usuario");
+    } else {
+      showHistoricalStatus(
+        "error",
+        `❌ ${result?.error || "Error desconocido"}`,
+      );
+    }
+  } catch (e) {
+    showHistoricalStatus("error", `❌ ${e.message}`);
+  } finally {
+    els.btnExtractHistorical.disabled = false;
+    els.btnCancelHistorical.disabled = true;
+    els.historicalProgressFill.style.width = "100%";
+  }
+}
+
+async function handleCancelHistorical() {
+  els.btnCancelHistorical.disabled = true;
+  showHistoricalStatus("loading", "⏳ Cancelando...");
+  await chrome.runtime.sendMessage({ action: "cancelHistoricalExtraction" });
+}
+
+/** Recibe mensajes de progreso desde el background */
+function onHistoricalProgress(msg) {
+  if (msg.action !== "historicalProgress") return;
+  const d = msg.data;
+
+  // Fase
+  const phases = {
+    seasons: "Obteniendo temporadas",
+    season_start: "Procesando temporada",
+    season_skipped: "⏭ Temporada omitida",
+    fetching_events: "Descargando partidos",
+    processing_event: "Guardando partido",
+    season_saved: "✅ Temporada guardada",
+    done: "Completado",
+    cancelled: "Cancelado",
+  };
+  els.progressPhase.textContent = phases[d.phase] || d.phase || "";
+  els.progressMessage.textContent = d.message || "";
+
+  // Contadores
+  if (d.totalProcessed !== undefined)
+    els.cntProcessed.textContent = d.totalProcessed;
+  if (d.totalSaved !== undefined) els.cntSaved.textContent = d.totalSaved;
+  if (d.totalErrors !== undefined) els.cntErrors.textContent = d.totalErrors;
+
+  // Barra de progreso basada en temporadas
+  if (d.totalSeasons && d.seasonIndex !== undefined) {
+    const pct = Math.min(((d.seasonIndex + 1) / d.totalSeasons) * 100, 98);
+    els.historicalProgressFill.style.width = pct + "%";
+  }
+
+  // Actualizar lista de partidos al terminar cada temporada (season_saved o done)
+  if ((d.phase === "season_saved" || d.phase === "done") && d.allEvents) {
+    _allMatchesCache = d.allEvents;
+    showMatchesSection(d.allEvents);
+  }
+}
+
+/** Muestra la sección de partidos y renderiza la lista */
+function showMatchesSection(events) {
+  if (!events || events.length === 0) return;
+  els.matchesSection.style.display = "block";
+  els.matchesCount.textContent = events.length;
+  renderMatchesList(events, "");
+}
+
+/** Renderiza la lista de partidos filtrada, ordenada por start_timestamp desc */
+function renderMatchesList(events, filter) {
+  const q = (filter || "").toLowerCase();
+  let filtered = events;
+  if (q) {
+    filtered = events.filter(
+      (e) =>
+        (e.homeTeam?.name || "").toLowerCase().includes(q) ||
+        (e.awayTeam?.name || "").toLowerCase().includes(q),
+    );
+  }
+
+  // Ordenar por fecha descendente (más reciente primero)
+  filtered = [...filtered].sort(
+    (a, b) => (b.start_timestamp || 0) - (a.start_timestamp || 0),
+  );
+
+  if (filtered.length === 0) {
+    els.matchesList.innerHTML = `<div class="matches-empty">${q ? 'Sin resultados para "' + q + '"' : "No hay partidos"}</div>`;
+    return;
+  }
+
+  const rows = filtered.map((e) => {
+    const date = e.start_timestamp ? formatTimestamp(e.start_timestamp) : "?";
+    const home = e.homeTeam?.name || "Local";
+    const away = e.awayTeam?.name || "Visitante";
+    const hs = e.homeScore?.current ?? "?";
+    const as = e.awayScore?.current ?? "?";
+    const season = e._seasonYear || "";
+    return `
+      <div class="match-row">
+        <span class="match-date">${date}</span>
+        ${season ? `<span class="match-season">${season}</span>` : ""}
+        <span class="match-teams">${home} vs ${away}</span>
+        <span class="match-score">${hs}-${as}</span>
+      </div>`;
+  });
+
+  els.matchesList.innerHTML = rows.join("");
+}
+
+/** Formatea un Unix timestamp a fecha legible (DD/MM/YY) */
+function formatTimestamp(ts) {
+  const d = new Date(ts * 1000);
+  const day = String(d.getDate()).padStart(2, "0");
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const year = String(d.getFullYear()).slice(-2);
+  return `${day}/${month}/${year}`;
+}
+
+function showHistoricalStatus(type, message) {
+  els.historicalStatus.textContent = message;
+  els.historicalStatus.className = `status show ${type}`;
+  if (type === "success" || type === "error") {
+    setTimeout(() => els.historicalStatus.classList.remove("show"), 6000);
+  }
 }

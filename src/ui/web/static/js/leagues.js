@@ -55,11 +55,13 @@ function renderLeaguesList() {
     .map((league) => {
       const activeClass =
         activeLeague === league.name ? "league-list-item--active" : "";
+      const pendingClass =
+        league.has_pending_matches ? "league-list-item--pending" : "";
       const profitClass =
         league.total_profit >= 0 ? "profit--positive" : "profit--negative";
       const profitSign = league.total_profit >= 0 ? "+" : "";
       return `
-      <div class="league-list-item ${activeClass}" onclick="selectLeague('${escapeAttr(league.name)}')">
+      <div class="league-list-item ${activeClass} ${pendingClass}" onclick="selectLeague('${escapeAttr(league.name)}')">
         <span class="league-list-item__name" title="${escapeHtml(league.name)}">🏆 ${escapeHtml(league.name)}</span>
         <span class="league-list-item__profit ${profitClass}">${profitSign}${league.total_profit.toFixed(2)}u</span>
       </div>
@@ -68,8 +70,12 @@ function renderLeaguesList() {
     .join("");
 }
 
+let activeSeason = "all";
+let currentMatchesCache = [];
+
 function selectLeague(name) {
   activeLeague = name;
+  activeSeason = "all"; // reset season on league change
   renderLeaguesList();
 
   const leagueInfo = leaguesData.find((l) => l.name === name);
@@ -103,133 +109,213 @@ async function fetchMatchesForLeague(name) {
       `/api/v1/analysis?competition=${encodeURIComponent(name)}`,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const matches = await res.json();
+    currentMatchesCache = await res.json();
 
-    if (matches.length === 0) {
-      matchesContainer.innerHTML = `<div style="color: var(--text-muted); padding: 2rem; text-align: center;">No hay partidos registrados.</div>`;
-      return;
+    // Populate Season selector dropdown
+    populateSeasonDropdown();
+
+    renderFilteredMatches();
+  } catch (error) {
+    console.error("Error cargando partidos:", error);
+    matchesContainer.innerHTML = `<div style="color: var(--red); padding: 2rem; text-align: center;">❌ Error al cargar partidos: ${escapeHtml(error.message)}</div>`;
+  }
+}
+
+function populateSeasonDropdown() {
+  const select = document.getElementById("selected-season");
+  const container = document.getElementById("season-filter-card");
+  if (!select || !container) return;
+
+  // Extract all distinct season_years from matches payload
+  const seasons = new Set();
+  currentMatchesCache.forEach((m) => {
+    let sYear = null;
+    if (m.payload) {
+      try {
+        const p =
+          typeof m.payload === "string" ? JSON.parse(m.payload) : m.payload;
+        sYear = p.season_year || p.season;
+      } catch (e) {}
+    }
+    if (sYear) {
+      seasons.add(String(sYear));
+    }
+  });
+
+  if (seasons.size > 0) {
+    container.style.display = "block";
+
+    // Sort seasons descending (e.g. 2026, 2025...)
+    const sortedSeasons = Array.from(seasons).sort((a, b) =>
+      b.localeCompare(a),
+    );
+
+    let html = '<option value="all">Todas las temporadas</option>';
+    sortedSeasons.forEach((s) => {
+      html += `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`;
+    });
+    select.innerHTML = html;
+    select.value = activeSeason;
+  } else {
+    container.style.display = "none";
+  }
+}
+
+function changeSelectedSeason() {
+  const select = document.getElementById("selected-season");
+  if (!select) return;
+  activeSeason = select.value;
+  renderFilteredMatches();
+}
+
+function renderFilteredMatches() {
+  const matchesContainer = document.getElementById("matches-list");
+  if (!matchesContainer) return;
+
+  // Filter matches based on activeSeason
+  let filtered = currentMatchesCache;
+  if (activeSeason !== "all") {
+    filtered = currentMatchesCache.filter((m) => {
+      let sYear = null;
+      if (m.payload) {
+        try {
+          const p =
+            typeof m.payload === "string" ? JSON.parse(m.payload) : m.payload;
+          sYear = p.season_year || p.season;
+        } catch (e) {}
+      }
+      return String(sYear) === activeSeason;
+    });
+  }
+
+  // Sort matches by match_date desc
+  filtered.sort(
+    (a, b) => new Date(b.match_date || 0) - new Date(a.match_date || 0),
+  );
+
+  // Update stats summary for the selected season dynamically
+  updateStatsSummaryForFiltered(filtered);
+
+  if (filtered.length === 0) {
+    matchesContainer.innerHTML = `<div style="color: var(--text-muted); padding: 2rem; text-align: center;">No hay partidos registrados para esta temporada.</div>`;
+    return;
+  }
+
+  const cards = filtered.map((match) => {
+    let scoreText = "-";
+    if (match.final_score_home != null && match.final_score_away != null) {
+      scoreText = `${match.final_score_home} - ${match.final_score_away}`;
     }
 
-    const cards = matches.map((match) => {
-      let scoreText = "-";
-      if (match.final_score_home != null && match.final_score_away != null) {
-        scoreText = `${match.final_score_home} - ${match.final_score_away}`;
+    const statsBadge =
+      match.has_real_stats === false
+        ? `<span class="badge-stats-missing" style="margin-left: 8px;">Sin stats de temporada</span>`
+        : "";
+
+    // Build a success map from compare_response_snapshot if available
+    const successMap = {};
+    try {
+      const snap = match.compare_response_snapshot;
+      if (snap && snap.values && Array.isArray(snap.values)) {
+        snap.values.forEach((v) => {
+          const key = (v.selection || "").toLowerCase();
+          if (key) successMap[key] = v.success;
+        });
+      }
+    } catch (_) {}
+
+    const rawPicks = Array.isArray(match.picks_calculados)
+      ? match.picks_calculados
+      : [];
+
+    const visiblePicks = rawPicks.filter(
+      (p) =>
+        p.is_publishable || p.is_underdog || p.is_high_confidence || p.is_value,
+    );
+
+    // Calculate total match profit/units considering all visible picks
+    const useStake = localStorage.getItem("use_stake_system") === "true";
+    let totalProfit = 0;
+    let hasResolvedPicks = false;
+    visiblePicks.forEach((pick) => {
+      const sel = pick.selection || "";
+      const odds =
+        typeof pick.odds === "number" ? pick.odds : parseFloat(pick.odds) || 0;
+      let success = pick.success;
+      if (success === undefined || success === null) {
+        success = successMap[sel.toLowerCase()];
       }
 
-      const statsBadge =
-        match.has_real_stats === false
-          ? `<span class="badge-stats-missing" style="margin-left: 8px;">Sin stats de temporada</span>`
-          : "";
+      const pickStake = useStake
+        ? pick.kelly_fraction > 0
+          ? Math.max(1, Math.round(pick.kelly_fraction * 100))
+          : 1
+        : 1;
 
-      // Build a success map from compare_response_snapshot if available
-      const successMap = {};
-      try {
-        const snap = match.compare_response_snapshot;
-        if (snap && snap.values && Array.isArray(snap.values)) {
-          snap.values.forEach((v) => {
-            const key = (v.selection || "").toLowerCase();
-            if (key) successMap[key] = v.success;
-          });
-        }
-      } catch (_) {}
-
-      const rawPicks = Array.isArray(match.picks_calculados)
-        ? match.picks_calculados
-        : [];
-
-      const visiblePicks = rawPicks.filter(
-        (p) =>
-          p.is_publishable ||
-          p.is_underdog ||
-          p.is_high_confidence ||
-          p.is_value,
-      );
-
-      // Calculate total match profit/units considering all visible picks
-      const useStake = localStorage.getItem("use_stake_system") === "true";
-      let totalProfit = 0;
-      let hasResolvedPicks = false;
-      visiblePicks.forEach((pick) => {
-        const sel = pick.selection || "";
-        const odds =
-          typeof pick.odds === "number"
-            ? pick.odds
-            : parseFloat(pick.odds) || 0;
-        let success = pick.success;
-        if (success === undefined || success === null) {
-          success = successMap[sel.toLowerCase()];
-        }
-
-        const pickStake = useStake
-          ? pick.kelly_fraction > 0
-            ? Math.max(1, Math.round(pick.kelly_fraction * 100))
-            : 1
-          : 1;
-
-        if (success === true) {
-          totalProfit += (odds - 1) * pickStake;
-          hasResolvedPicks = true;
-        } else if (success === false) {
-          totalProfit -= pickStake;
-          hasResolvedPicks = true;
-        }
-      });
-
-      let matchUnitsText = "";
-      if (hasResolvedPicks) {
-        const sign = totalProfit >= 0 ? "+" : "";
-        const color = totalProfit >= 0 ? "var(--green)" : "var(--red)";
-        matchUnitsText = `<span style="color: ${color}; font-weight: bold; margin-left: 6px; font-size: 0.9em;">(${sign}${totalProfit.toFixed(2)}u)</span>`;
+      if (success === true) {
+        totalProfit += (odds - 1) * pickStake;
+        hasResolvedPicks = true;
+      } else if (success === false) {
+        totalProfit -= pickStake;
+        hasResolvedPicks = true;
       }
+    });
 
-      let picksHtml = "";
-      if (visiblePicks.length > 0) {
-        picksHtml = visiblePicks
-          .map((pick) => {
-            const sel = pick.selection || "N/A";
-            const odds =
-              typeof pick.odds === "number"
-                ? pick.odds
-                : parseFloat(pick.odds) || 0;
+    let matchUnitsText = "";
+    if (hasResolvedPicks) {
+      const sign = totalProfit >= 0 ? "+" : "";
+      const color = totalProfit >= 0 ? "var(--green)" : "var(--red)";
+      matchUnitsText = `<span style="color: ${color}; font-weight: bold; margin-left: 6px; font-size: 0.9em;">(${sign}${totalProfit.toFixed(2)}u)</span>`;
+    }
 
-            // Use success injected by _populate_history_extra_fields, or look up from snapshot
-            let success = pick.success;
-            if (success === undefined || success === null) {
-              success = successMap[sel.toLowerCase()];
-            }
+    let picksHtml = "";
+    if (visiblePicks.length > 0) {
+      picksHtml = visiblePicks
+        .map((pick) => {
+          const sel = pick.selection || "N/A";
+          const odds =
+            typeof pick.odds === "number"
+              ? pick.odds
+              : parseFloat(pick.odds) || 0;
 
-            let badge;
-            if (success === true) {
-              badge = `<span class="badge-success">✅ Acertado</span>`;
-            } else if (success === false) {
-              badge = `<span class="badge-fail">❌ Fallo</span>`;
-            } else {
-              badge = `<span class="badge-pending">⏳ Pendiente</span>`;
-            }
+          // Use success injected by _populate_history_extra_fields, or look up from snapshot
+          let success = pick.success;
+          if (success === undefined || success === null) {
+            success = successMap[sel.toLowerCase()];
+          }
 
-            // Category badge
-            let catBadge = "";
-            if (pick.is_high_confidence) {
-              catBadge =
-                '<span style="font-size:0.7rem; color:#f59e0b; margin-left:4px;">🔥 HC</span>';
-            } else if (pick.is_underdog) {
-              catBadge =
-                '<span style="font-size:0.7rem; color:#a78bfa; margin-left:4px;">🐕 Dog</span>';
-            } else if (pick.is_publishable || pick.is_value) {
-              catBadge =
-                '<span style="font-size:0.7rem; color:#60a5fa; margin-left:4px;">🎯 Pro</span>';
-            }
+          let badge;
+          if (success === true) {
+            badge = `<span class="badge-success">✅ Acertado</span>`;
+          } else if (success === false) {
+            badge = `<span class="badge-fail">❌ Fallo</span>`;
+          } else {
+            badge = `<span class="badge-pending">⏳ Pendiente</span>`;
+          }
 
-            // Recommended stake
-            const pickStake =
-              pick.kelly_fraction > 0
-                ? Math.max(1, Math.round(pick.kelly_fraction * 100))
-                : 1;
-            const stakeHtml = useStake
-              ? `<span style="font-size:0.75rem; color:var(--accent-light); margin-left:6px; font-weight:bold;">Stake ${pickStake}</span>`
-              : "";
+          // Category badge
+          let catBadge = "";
+          if (pick.is_high_confidence) {
+            catBadge =
+              '<span style="font-size:0.7rem; color:#f59e0b; margin-left:4px;">🔥 HC</span>';
+          } else if (pick.is_underdog) {
+            catBadge =
+              '<span style="font-size:0.7rem; color:#a78bfa; margin-left:4px;">🐕 Dog</span>';
+          } else if (pick.is_publishable || pick.is_value) {
+            catBadge =
+              '<span style="font-size:0.7rem; color:#60a5fa; margin-left:4px;">🎯 Pro</span>';
+          }
 
-            return `
+          // Recommended stake
+          const pickStake =
+            pick.kelly_fraction > 0
+              ? Math.max(1, Math.round(pick.kelly_fraction * 100))
+              : 1;
+          const stakeHtml = useStake
+            ? `<span style="font-size:0.75rem; color:var(--accent-light); margin-left:6px; font-weight:bold;">Stake ${pickStake}</span>`
+            : "";
+
+          return `
             <div class="pick-row">
               <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
                 <span style="font-weight: 600; color: #fff;">${escapeHtml(sel)}</span>
@@ -240,27 +326,34 @@ async function fetchMatchesForLeague(name) {
               <div>${badge}</div>
             </div>
           `;
-          })
-          .join("");
-      } else {
-        picksHtml = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">Sin picks de valor registrados.</div>`;
-      }
+        })
+        .join("");
+    } else {
+      picksHtml = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">Sin picks de valor registrados.</div>`;
+    }
 
-      const matchDateStr = match.match_date
-        ? new Date(match.match_date).toLocaleString("es-ES", {
-            dateStyle: "short",
-            timeStyle: "short",
-          })
-        : "Fecha no disponible";
+    const matchDateStr = match.match_date
+      ? new Date(match.match_date).toLocaleString("es-ES", {
+          dateStyle: "short",
+          timeStyle: "short",
+        })
+      : "Fecha no disponible";
 
-      return `
+    return `
         <div class="match-card">
           <div class="match-card__header">
             <div>
-              <span class="match-card__title">${escapeHtml(match.match_title)}</span>${matchUnitsText}
+              <a href="/compare?load_id=${match.id}" style="color: inherit; text-decoration: none;">
+                <span class="match-card__title" style="cursor: pointer; transition: color 0.2s;" onmouseover="this.style.color='var(--accent-light)'" onmouseout="this.style.color=''">${escapeHtml(match.match_title)}</span>
+              </a>
+              ${matchUnitsText}
               ${statsBadge}
             </div>
-            <div style="display: flex; align-items: center; gap: 1rem;">
+            <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+              <label style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; user-select: none;">
+                <input type="checkbox" ${match.count_in_profitability !== false ? 'checked' : ''} onchange="toggleMatchProfitability('${match.id}', this.checked)" style="width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer;">
+                Rentabilidad
+              </label>
               <span style="font-weight: 800; color: var(--accent-light); font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">${scoreText}</span>
               <span class="match-card__date">${matchDateStr}</span>
             </div>
@@ -271,13 +364,9 @@ async function fetchMatchesForLeague(name) {
           </div>
         </div>
       `;
-    });
+  });
 
-    matchesContainer.innerHTML = cards.join("");
-  } catch (error) {
-    console.error("Error cargando partidos:", error);
-    matchesContainer.innerHTML = `<div style="color: var(--red); padding: 2rem; text-align: center;">❌ Error al cargar partidos: ${escapeHtml(error.message)}</div>`;
-  }
+  matchesContainer.innerHTML = cards.join("");
 }
 
 function escapeHtml(str) {
@@ -296,10 +385,110 @@ function escapeAttr(str) {
   return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
+function updateStatsSummaryForFiltered(filteredMatches) {
+  let totalMatches = filteredMatches.length;
+  let totalPicks = 0;
+  let hits = 0;
+  let resolvedPicks = 0;
+  let totalProfit = 0;
+
+  const useStake = localStorage.getItem("use_stake_system") === "true";
+
+  filteredMatches.forEach((match) => {
+    // successMap
+    const successMap = {};
+    try {
+      const snap = match.compare_response_snapshot;
+      if (snap && snap.values && Array.isArray(snap.values)) {
+        snap.values.forEach((v) => {
+          const key = (v.selection || "").toLowerCase();
+          if (key) successMap[key] = v.success;
+        });
+      }
+    } catch (_) {}
+
+    const rawPicks = Array.isArray(match.picks_calculados)
+      ? match.picks_calculados
+      : [];
+    const visiblePicks = rawPicks.filter(
+      (p) =>
+        p.is_publishable || p.is_underdog || p.is_high_confidence || p.is_value,
+    );
+
+    totalPicks += visiblePicks.length;
+
+    visiblePicks.forEach((pick) => {
+      const sel = pick.selection || "";
+      const odds =
+        typeof pick.odds === "number" ? pick.odds : parseFloat(pick.odds) || 0;
+      let success = pick.success;
+      if (success === undefined || success === null) {
+        success = successMap[sel.toLowerCase()];
+      }
+
+      const pickStake = useStake
+        ? pick.kelly_fraction > 0
+          ? Math.max(1, Math.round(pick.kelly_fraction * 100))
+          : 1
+        : 1;
+
+      if (success === true) {
+        totalProfit += (odds - 1) * pickStake;
+        hits++;
+        resolvedPicks++;
+      } else if (success === false) {
+        totalProfit -= pickStake;
+        resolvedPicks++;
+      }
+    });
+  });
+
+  const accuracy =
+    resolvedPicks > 0 ? Math.round((hits / resolvedPicks) * 100) : 0;
+
+  document.getElementById("lbl-total-matches").textContent = totalMatches;
+  document.getElementById("lbl-total-picks").textContent = totalPicks;
+  document.getElementById("lbl-accuracy").textContent = `${accuracy}%`;
+
+  const profitEl = document.getElementById("lbl-profit");
+  profitEl.textContent = `${totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)} u`;
+  profitEl.style.color = totalProfit >= 0 ? "var(--green)" : "var(--red)";
+}
+
 function toggleLeaguesStake() {
   const checkbox = document.getElementById("leagues-use-stake");
   if (checkbox) {
     localStorage.setItem("use_stake_system", checkbox.checked);
   }
   fetchLeagues();
+}
+
+async function toggleMatchProfitability(matchId, countInProfitability) {
+  try {
+    const res = await fetch(`/api/v1/analysis/${matchId}/profitability?count_in_profitability=${countInProfitability}`, {
+      method: "POST"
+    });
+    if (!res.ok) throw new Error("Error al actualizar");
+    
+    // Update local cache item
+    const match = currentMatchesCache.find(m => m.id === matchId);
+    if (match) {
+      match.count_in_profitability = countInProfitability;
+    }
+    
+    // Recalculate stats dynamically for active list and update UI
+    renderFilteredMatches();
+    
+    // Also, fetch the main leagues again to update the left sidebar profit values!
+    const useStake = localStorage.getItem("use_stake_system") === "true";
+    const resLeagues = await fetch(`/api/v1/stats/leagues?use_stake=${useStake}`);
+    if (resLeagues.ok) {
+      leaguesData = await resLeagues.json();
+      leaguesData.sort((a, b) => b.total_profit - a.total_profit);
+      renderLeaguesList();
+    }
+  } catch (error) {
+    console.error("Failed to toggle profitability:", error);
+    alert("Error al actualizar la rentabilidad: " + error.message);
+  }
 }
