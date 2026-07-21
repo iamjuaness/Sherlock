@@ -1,6 +1,10 @@
 /* ═══════════════════════════════════════════════════════════════
    Sherlock v0.5 – Comparator Engine (Frontend)
    ═══════════════════════════════════════════════════════════════ */
+
+const MAX_STAKE = 5;
+const MIN_STAKE = 1;
+
 function renderMarkdown(text) {
   return (
     text
@@ -337,7 +341,7 @@ function renderMultiLineCards(values) {
       </div>
       <div class="value-line-card__row">
         <span>Stake Recomendado</span>
-        <span style="font-weight: bold; color: var(--accent-light);">${v.kelly_fraction > 0 ? Math.max(1, Math.round(v.kelly_fraction * 100)) : 1}u</span>
+        <span style="font-weight: bold; color: var(--accent-light);">${v.kelly_fraction > 0 ? Math.min(MAX_STAKE, Math.max(MIN_STAKE, Math.round(v.kelly_fraction * 100))) : MIN_STAKE}u</span>
       </div>
       <div class="value-line-card__edge" style="font-weight: bold; font-size: 1.1rem; margin-top: 0.5rem;">
         Edge ${edgeText}

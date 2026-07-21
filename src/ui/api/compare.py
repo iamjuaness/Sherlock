@@ -921,7 +921,10 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     ev_adj = ev * lrs_factor
     lrs_penalty = round(ev - ev_adj, 4)  # cuánto se descontó
     ev = ev_adj
-    kelly = (ev / (odds - 1)) * 0.125 if ev > 0 else 0
+    p = calibrated_p / 100.0
+    kelly_full = (p * odds - 1.0) / (odds - 1.0) if ev > 0 else 0
+
+
     # ─────────────────────────────────────────────────────────────
 
     conf_tier = get_market_confidence_tier(sel)
@@ -932,6 +935,16 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     elif ev > 0.07:  rating = "✅ VALUE"
     elif ev > 0.02:  rating = "⚖️ MARGINAL"
     else:            rating = "❌ NO VALUE"
+
+    # Aplicar fracción conservadora según confianza
+    kelly_fraction = {
+        "🔥 STRONG VALUE": 0.25,   # 1/4 Kelly
+        "✅ VALUE": 0.125,         # 1/8 Kelly  
+        "⚖️ MARGINAL": 0.0625,     # 1/16 Kelly
+        "❌ NO VALUE": 0.0,
+    }[rating]
+
+    kelly = kelly_full * kelly_fraction
 
     v = ValueIndicator(
         selection=sel,

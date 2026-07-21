@@ -72,6 +72,10 @@
             ? Number(sel.handicap)
             : null;
 
+        const price = sel.price;
+
+        if (price < 1.1) return; // Solo tomar cuotas mayores a 1.1
+
         if (!line || line === 0) return;
 
         // Solo enviar líneas que sean .5 (e.g. 0.5, 1.5, etc.)
@@ -170,14 +174,7 @@
       }
 
       // ── Goles Totales Más/Menos (HCTG) ──
-      else if (
-        mType === "HCTG" ||
-        (mName.includes("goles") &&
-          (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos")) &&
-          !mName.includes("primer tiempo") &&
-          !mName.includes("segundo tiempo") &&
-          !mName.includes("equipo"))
-      ) {
+      else if (mType === "HCTG") {
         extractOverUnder(
           m,
           odds.goalsLines,
@@ -187,13 +184,7 @@
       }
 
       // ── Tiros de Esquina (CNOU) ──
-      else if (
-        mType === "CNOU" ||
-        (mName.includes("esquina") &&
-          (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos")) &&
-          !mName.includes("primer") &&
-          !mName.includes("segundo"))
-      ) {
+      else if (mType === "CNOU") {
         extractOverUnder(
           m,
           odds.cornersLines,
@@ -203,12 +194,7 @@
       }
 
       // ── Tarjetas ──
-      else if (
-        mName.includes("tarjeta") &&
-        (mName.includes("m\u00e1s/menos") ||
-          mName.includes("mas/menos") ||
-          mName.includes("total"))
-      ) {
+      else if (mType === "TCOU") {
         extractOverUnder(
           m,
           odds.cardsLines,
@@ -218,12 +204,7 @@
       }
 
       // ── Tiros al Arco / Tiros a Puerta ──
-      else if (
-        mType === "X002" ||
-        (mName.includes("tiros") &&
-          (mName.includes("puerta") || mName.includes("arco")) &&
-          (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos")))
-      ) {
+      else if (mType === "X002") {
         extractOverUnder(
           m,
           odds.shotsTargetLines,
@@ -233,15 +214,7 @@
       }
 
       // ── Tiros (generales) / Remates totales ──
-      else if (
-        mType === "4159" ||
-        (mName.includes("remates") && mName.includes("totales")) ||
-        (mName.includes("tiros") &&
-          !mName.includes("puerta") &&
-          !mName.includes("arco") &&
-          !mName.includes("esquina") &&
-          (mName.includes("m\u00e1s/menos") || mName.includes("mas/menos")))
-      ) {
+      else if (mType === "4159") {
         extractOverUnder(
           m,
           odds.shotsLines,
@@ -251,11 +224,7 @@
       }
 
       // ── Draw No Bet / Apuesta sin Empate (DNOB) ──
-      else if (
-        mType === "DNOB" ||
-        mName.includes("sin empate") ||
-        mName.includes("draw no bet")
-      ) {
+      else if (mType === "DNOB") {
         if (Array.isArray(m.selections)) {
           m.selections.forEach((sel) => {
             // columnIndex 0 = Local, columnIndex 1 = Visitante
@@ -266,13 +235,7 @@
       }
 
       // ── Hándicap ──
-      else if (
-        mType === "FHMR" ||
-        mType === "AHRF" ||
-        mType === "FHH1" ||
-        mName.includes("h\u00e1ndicap") ||
-        mName.includes("handicap")
-      ) {
+      else if (mType === "FHMR" || mType === "AHRF" || mType === "FHH1") {
         extractHandicap(
           m,
           odds.handicapLines,

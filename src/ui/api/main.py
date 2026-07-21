@@ -81,6 +81,9 @@ async def disable_cache_in_dev(request: Request, call_next):
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 
+MAX_STAKE = 5
+MIN_STAKE = 1
+
 app.mount("/static", StaticFiles(directory=os.path.join(WEB_DIR, "static")), name="static")
 templates = Jinja2Templates(directory=os.path.join(WEB_DIR, "templates"))
 
@@ -1119,16 +1122,16 @@ def get_leagues_stats(
                                 
                         if not (is_pub or is_und or is_hc):
                             continue
-                            
+                        
                         # If resolving success
                         if has_result:
                             success = _check_pick_success(pick, res_dict)
                             if success is not None:
                                 if use_stake:
                                     kelly = float(pick.get("kelly_fraction") or 0.0)
-                                    stake = max(1, round(kelly * 100.0)) if kelly > 0 else 1
+                                    stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
                                 else:
-                                    stake = 1
+                                    stake = MIN_STAKE
                                 pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
                                 leagues_data[comp_name]["total_profit"] += pick_profit
                                 if success != "void":
@@ -1571,9 +1574,9 @@ def get_global_stats(
                     # --- Only resolved picks beyond this point ---
                     if use_stake:
                         kelly = float(pick.get("kelly_fraction") or 0.0)
-                        stake = max(1, round(kelly * 100.0)) if kelly > 0 else 1
+                        stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
                     else:
-                        stake = 1
+                        stake = MIN_STAKE
                     pick_profit = _calculate_pick_profit(success, odds) * stake
                     total_profit += pick_profit
 
@@ -2048,9 +2051,9 @@ def export_excel_report(
                         
                         if use_stake:
                             kelly = float(pick.get("kelly_fraction") or 0.0)
-                            stake = max(1, round(kelly * 100.0)) if kelly > 0 else 1
+                            stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
                         else:
-                            stake = 1
+                            stake = MIN_STAKE
                             
                         if success is not None:
                             if success is True:

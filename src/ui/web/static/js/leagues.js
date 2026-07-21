@@ -1,6 +1,8 @@
 // leagues.js - Control de la sección de ligas en Sherlock
 let leaguesData = [];
 let activeLeague = null;
+const MAX_STAKE = 5;
+const MIN_STAKE = 1;
 
 document.addEventListener("DOMContentLoaded", () => {
   // Sync checkbox with localStorage
@@ -55,8 +57,9 @@ function renderLeaguesList() {
     .map((league) => {
       const activeClass =
         activeLeague === league.name ? "league-list-item--active" : "";
-      const pendingClass =
-        league.has_pending_matches ? "league-list-item--pending" : "";
+      const pendingClass = league.has_pending_matches
+        ? "league-list-item--pending"
+        : "";
       const profitClass =
         league.total_profit >= 0 ? "profit--positive" : "profit--negative";
       const profitSign = league.total_profit >= 0 ? "+" : "";
@@ -248,9 +251,12 @@ function renderFilteredMatches() {
 
       const pickStake = useStake
         ? pick.kelly_fraction > 0
-          ? Math.max(1, Math.round(pick.kelly_fraction * 100))
-          : 1
-        : 1;
+          ? Math.min(
+              MAX_STAKE,
+              Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+            )
+          : MIN_STAKE
+        : MIN_STAKE;
 
       if (success === true) {
         totalProfit += (odds - 1) * pickStake;
@@ -309,8 +315,11 @@ function renderFilteredMatches() {
           // Recommended stake
           const pickStake =
             pick.kelly_fraction > 0
-              ? Math.max(1, Math.round(pick.kelly_fraction * 100))
-              : 1;
+              ? Math.min(
+                  MAX_STAKE,
+                  Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+                )
+              : MIN_STAKE;
           const stakeHtml = useStake
             ? `<span style="font-size:0.75rem; color:var(--accent-light); margin-left:6px; font-weight:bold;">Stake ${pickStake}</span>`
             : "";
@@ -351,7 +360,7 @@ function renderFilteredMatches() {
             </div>
             <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
               <label style="display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; user-select: none;">
-                <input type="checkbox" ${match.count_in_profitability !== false ? 'checked' : ''} onchange="toggleMatchProfitability('${match.id}', this.checked)" style="width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer;">
+                <input type="checkbox" ${match.count_in_profitability !== false ? "checked" : ""} onchange="toggleMatchProfitability('${match.id}', this.checked)" style="width: 14px; height: 14px; accent-color: var(--accent); cursor: pointer;">
                 Rentabilidad
               </label>
               <span style="font-weight: 800; color: var(--accent-light); font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">${scoreText}</span>
@@ -465,23 +474,28 @@ function toggleLeaguesStake() {
 
 async function toggleMatchProfitability(matchId, countInProfitability) {
   try {
-    const res = await fetch(`/api/v1/analysis/${matchId}/profitability?count_in_profitability=${countInProfitability}`, {
-      method: "POST"
-    });
+    const res = await fetch(
+      `/api/v1/analysis/${matchId}/profitability?count_in_profitability=${countInProfitability}`,
+      {
+        method: "POST",
+      },
+    );
     if (!res.ok) throw new Error("Error al actualizar");
-    
+
     // Update local cache item
-    const match = currentMatchesCache.find(m => m.id === matchId);
+    const match = currentMatchesCache.find((m) => m.id === matchId);
     if (match) {
       match.count_in_profitability = countInProfitability;
     }
-    
+
     // Recalculate stats dynamically for active list and update UI
     renderFilteredMatches();
-    
+
     // Also, fetch the main leagues again to update the left sidebar profit values!
     const useStake = localStorage.getItem("use_stake_system") === "true";
-    const resLeagues = await fetch(`/api/v1/stats/leagues?use_stake=${useStake}`);
+    const resLeagues = await fetch(
+      `/api/v1/stats/leagues?use_stake=${useStake}`,
+    );
     if (resLeagues.ok) {
       leaguesData = await resLeagues.json();
       leaguesData.sort((a, b) => b.total_profit - a.total_profit);
