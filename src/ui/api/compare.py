@@ -257,6 +257,7 @@ class FootballTeamStats(BaseModel):
 
 
 class LeagueStats(BaseModel):
+    name:                      str   = Field("",  description="Nombre de la liga")
     avg_goals_per_game:        float = Field(2.5,  description="Promedio total goles liga")
     avg_corners_per_game:      float = Field(9.5,  description="Promedio corners liga")
     avg_cards_per_game:        float = Field(4.5,  description="Promedio tarjetas liga")
@@ -285,6 +286,8 @@ class LeagueStats(BaseModel):
     historical_picks:    int   = Field(0,   description="Picks resueltos históricamente en esta liga")
     historical_hits:     int   = Field(0,   description="Picks acertados históricamente en esta liga")
     historical_profit:   float = Field(0.0, description="Beneficio histórico acumulado en esta liga (unidades)")
+    accuracy:            float = Field(0.0, description="Precisión de picks histórica de la liga")
+    roi:                 float = Field(0.0, description="ROI histórico de la liga")
     # Per-market win rates (family → hits/total dict serialized as JSON string; parsed internally)
     market_hit_rates: Dict[str, float] = Field(default_factory=dict, description="Tasa de acierto por mercado {family: rate}")
 
@@ -515,6 +518,7 @@ class ValueIndicator(BaseModel):
     # Staking
     kelly_fraction:        Optional[float] = None
     sample_size_weight:    Optional[float] = None
+    is_blacklisted:        bool = False
 
 
 class StatComparison(BaseModel):
@@ -792,9 +796,9 @@ def _calculate_display_score(v: ValueIndicator) -> float:
     return round(min(100.0, final_score), 1)
 
 def is_publishable_pick(v: ValueIndicator) -> bool:
-    family = _market_family(v.selection)
-    if family in {"btts", "double_chance"}:
+    if v.is_blacklisted:
         return False
+    family = _market_family(v.selection)
 
     if v.odds is None or v.odds < 1.4 or v.odds > 2.50:
         return False
@@ -831,8 +835,6 @@ def score_pick_quality(v: ValueIndicator) -> int:
 
 def is_high_confidence_pick(v: ValueIndicator) -> bool:
     family = _market_family(v.selection)
-    if family in {"double_chance", "result"}:
-        return False
 
     if v.model_prob < 75.0:
         return False
@@ -848,8 +850,6 @@ def is_high_confidence_pick(v: ValueIndicator) -> bool:
 
 def is_underdog_pick(v: ValueIndicator) -> bool:
     family = _market_family(v.selection)
-    if family == "corners":
-        return False
 
     if v.odds is None or v.odds <= 2.5 or v.odds > 5.80:
         return False
@@ -864,7 +864,7 @@ def is_underdog_pick(v: ValueIndicator) -> bool:
 
 
 
-def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None):
+def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None):
     if odds is None or odds <= 1.0:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
 
@@ -889,7 +889,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     if league is not None:
         lrs = league.league_reliability_score if league.league_reliability_score > 0.0 else _compute_league_reliability_score(league)
     else:
-        lrs = 1.0  # sin datos de liga = sin penalización
+        lrs = 0.2  # sin datos de liga = sin penalización
 
     # ── Penalización por mercado específico (market-level LRS) ────
     # Si la liga tiene historial de acierto por tipo de mercado, aplicar ajuste
@@ -944,6 +944,13 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         "❌ NO VALUE": 0.0,
     }[rating]
 
+    # Aplicar límite de Kelly/Stake si la liga tiene rendimiento pobre (beneficio negativo o acierto < 40%)
+    if league is not None and getattr(league, "historical_picks", 0) >= 5:
+        hist_profit = getattr(league, "historical_profit", 0.0)
+        hist_accuracy = getattr(league, "accuracy", 100.0)
+        if hist_profit < 0.0 or hist_accuracy < 40.0:
+            kelly_fraction = min(kelly_fraction, 0.01) # Limita stake a máximo 1u (1% Kelly -> Stake 1)
+
     kelly = kelly_full * kelly_fraction
 
     v = ValueIndicator(
@@ -968,11 +975,19 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         league_reliability_penalty=lrs_penalty,
     )
 
-    v.is_publishable = is_publishable_pick(v)
-    v.quality_score = score_pick_quality(v)
-    v.display_score = _calculate_display_score(v)
-    v.is_high_confidence = is_high_confidence_pick(v)
-    v.is_underdog = is_underdog_pick(v)
+    # Check league blacklist
+    if league_name and is_market_blacklisted_for_league(league_name, sel):
+        v.is_blacklisted = True
+        v.is_publishable = False
+        v.is_value = False
+        v.quality_score = -1
+        v.strategic_score = -1
+    else:
+        v.is_publishable = is_publishable_pick(v)
+        v.quality_score = score_pick_quality(v)
+        v.display_score = _calculate_display_score(v)
+        v.is_high_confidence = is_high_confidence_pick(v)
+        v.is_underdog = is_underdog_pick(v)
     return v
 
 
@@ -1845,25 +1860,92 @@ def _market_family(text: str) -> str:
     return "generic"
 
 
+import re
+
 def _market_side(text: str) -> str:
     s = _normalize_text(text)
-
-    if any(k in s for k in ["over", "más de", "mas de"]):
-        return "over"
-    if any(k in s for k in ["under", "menos de"]):
-        return "under"
-    if any(k in s for k in ["yes", "sí", "si"]):
-        return "yes"
-    if " no " in f" {s} " or s.endswith(" no"):
-        return "no"
-    if any(k in s for k in ["local", "home"]):
-        return "home"
-    if any(k in s for k in ["visitante", "away"]):
-        return "away"
-    if "empate" in s or "draw" in s:
-        return "draw"
-
+    
+    patterns = [
+        (r'\b(over|más\s+de|mas\s+de)\b', "over"),
+        (r'\b(under|menos\s+de)\b', "under"),
+        (r'\b(yes|sí|si)\b', "yes"),
+        (r'\bno\b', "no"),
+        (r'\b(local|home)\b', "home"),
+        (r'\b(visitante|away)\b', "away"),
+        (r'\b(empate|draw)\b', "draw"),
+        # Doble oportunidad
+        (r'\b(1x|local\s+o\s+empate)\b', "home_draw"),
+        (r'\b(x2|empate\s+o\s+visitante)\b', "draw_away"),
+        (r'\b(12|local\s+o\s+visitante)\b', "home_away"),
+    ]
+    
+    for pattern, side in patterns:
+        if re.search(pattern, s):
+            return side
+    
     return "none"
+
+
+def is_market_blacklisted_for_league(league_name: str, selection: str, category: str | None = None) -> bool:
+    """
+    Comprueba si una combinación de competición (nombre exacto) y selección/mercado
+    está en la blacklist de data/league_penalties.json.
+    Si la regla especifica una categoría, solo se aplica a esa categoría.
+    Si no especifica categoría, se aplica a todas.
+    """
+    try:
+        data_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
+        if not os.path.exists(data_path):
+            return False
+        import json
+        with open(data_path, "r", encoding="utf-8") as f:
+            penalties = json.load(f)
+
+        if not isinstance(penalties, list):
+            return False
+
+        family = _market_family(selection)
+        side = _market_side(selection)
+
+        for rule in penalties:
+            rule_league = (rule.get("league") or "").strip()
+            # Coincidencia exacta de liga case-insensitive o coincidencia normalizada
+            if rule_league and (rule_league.lower() == (league_name or "").strip().lower() or _normalize_text(rule_league) == _normalize_text(league_name)):
+                rule_family = rule.get("market_family", "").strip().lower()
+                rule_side = rule.get("market_side", "").strip().lower()
+
+                match_family = not rule_family or rule_family == family.lower()
+                match_side = not rule_side or rule_side == side.lower()
+
+                if match_family and match_side:
+                    # Comprobar categoría
+                    rule_cat = rule.get("category")
+                    
+                    def normalize_cat(c: str | None) -> str | None:
+                        if not c:
+                            return None
+                        c_lower = c.strip().lower()
+                        if c_lower in {"profesional", "publishable"}:
+                            return "profesional"
+                        if c_lower in {"high", "high_confidence", "alta confianza"}:
+                            return "high_confidence"
+                        return c_lower
+
+                    norm_rule_cat = normalize_cat(rule_cat)
+                    norm_requested_cat = normalize_cat(category)
+
+                    match_category = True
+                    if norm_rule_cat is not None:
+                        match_category = (norm_rule_cat == norm_requested_cat)
+
+                    if match_category:
+                        # Si tiene un flag blacklist=true o si esta especificado en el json
+                        if rule.get("blacklist", True) or rule.get("blacklist") is not False:
+                            return True
+
+        return False
+    except Exception:
+        return False
 
 
 def _market_risk_weight(selection: str) -> int:
@@ -2524,6 +2606,8 @@ def _is_secondary_market(selection: str) -> bool:
 
 
 def _frontend_style_strategic_score(v: ValueIndicator) -> int:
+    if v.is_blacklisted:
+        return -1
     edge = _safe_num(v.edge)
     odds = _safe_num(v.odds, 0.0)
     prob = _safe_num(v.model_prob)
@@ -2558,6 +2642,8 @@ def _frontend_style_strategic_score(v: ValueIndicator) -> int:
 
 
 def _rate_pick_quality(v: ValueIndicator, h, a, proj: list[ProjectedLine]) -> tuple[int, float, float, int]:
+    if v.is_blacklisted:
+        return -1, 0.0, 0.0, -1
     selection = v.selection or ""
     odds = _safe_num(v.odds, None)
     prob = _safe_num(v.model_prob)
@@ -2963,6 +3049,100 @@ async def _call_openrouter(prompt: str) -> str:
 # compare_football
 # ───────────────────────────────────────────────────────────────
 async def compare_football(req: FootballCompareRequest) -> CompareResponse:
+    # Enriquecer league_stats con estadísticas históricas de la BD
+    try:
+        from src.core.database import SessionLocal
+        from src.core.domain import AnalysisHistory
+        from src.ui.api.main import _check_pick_success, _calculate_pick_profit, _is_pick_hit
+        import json
+        
+        comp_name = req.competition or "Desconocida"
+        req.league_stats.name = comp_name
+        
+        with SessionLocal() as db_session:
+            history = db_session.query(AnalysisHistory).all()
+            
+            comp_matches = []
+            for h_record in history:
+                if h_record.payload:
+                    try:
+                        p_data = json.loads(h_record.payload) if isinstance(h_record.payload, str) else h_record.payload
+                        record_comp = p_data.get("competition") or "Desconocida"
+                        if record_comp.strip().lower() == comp_name.strip().lower():
+                            comp_matches.append(h_record)
+                    except:
+                        pass
+            
+            total_matches = len(comp_matches)
+            total_picks = 0
+            total_hits = 0
+            total_profit = 0.0
+            market_stats = {}
+            
+            for h_record in comp_matches:
+                if h_record.picks_calculados:
+                    try:
+                        picks = json.loads(h_record.picks_calculados) if isinstance(h_record.picks_calculados, str) else h_record.picks_calculados
+                        if isinstance(picks, list):
+                            res_dict = {
+                                "final_score_home": h_record.final_score_home,
+                                "final_score_away": h_record.final_score_away,
+                                "final_corners_home": h_record.final_corners_home,
+                                "final_corners_away": h_record.final_corners_away,
+                                "final_yellow_cards_home": h_record.final_yellow_cards_home,
+                                "final_yellow_cards_away": h_record.final_yellow_cards_away,
+                                "final_red_cards_home": h_record.final_red_cards_home,
+                                "final_red_cards_away": h_record.final_red_cards_away,
+                            }
+                            has_result = h_record.final_score_home is not None
+                            
+                            for pick in picks:
+                                is_pub = pick.get("is_publishable", False)
+                                is_und = pick.get("is_underdog", False)
+                                is_hc = pick.get("is_high_confidence", False)
+                                if not is_pub and not is_und and not is_hc:
+                                    if pick.get("is_value", False):
+                                        is_pub = True
+                                if not (is_pub or is_und or is_hc):
+                                    continue
+                                
+                                if has_result:
+                                    success = _check_pick_success(pick, res_dict)
+                                    if success is not None:
+                                        kelly = float(pick.get("kelly_fraction") or 0.0)
+                                        stake = min(5, max(1, round(kelly * 100.0))) if kelly > 0 else 1
+                                        pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
+                                        total_profit += pick_profit
+                                        if success != "void":
+                                            total_picks += 1
+                                            is_hit = _is_pick_hit(success)
+                                            if is_hit:
+                                                total_hits += 1
+                                                
+                                            family = _market_family(pick.get("selection", ""))
+                                            if family not in market_stats:
+                                                market_stats[family] = {"hits": 0, "total": 0}
+                                            market_stats[family]["total"] += 1
+                                            if is_hit:
+                                                market_stats[family]["hits"] += 1
+                    except Exception as e:
+                        pass
+            
+            req.league_stats.historical_matches = total_matches
+            req.league_stats.historical_picks = total_picks
+            req.league_stats.historical_hits = total_hits
+            req.league_stats.historical_profit = round(total_profit, 2)
+            req.league_stats.accuracy = round((total_hits / total_picks * 100), 1) if total_picks > 0 else 0.0
+            req.league_stats.roi = round((total_profit / total_picks * 100), 2) if total_picks > 0 else 0.0
+            
+            market_hit_rates = {}
+            for family, stats in market_stats.items():
+                if stats["total"] >= 3:
+                    market_hit_rates[family] = round(stats["hits"] / stats["total"], 3)
+            req.league_stats.market_hit_rates = market_hit_rates
+    except Exception as ex:
+        print(f"Error enriching league stats: {ex}")
+
     h = _sanitize_and_fill_team_stats(req.home)
     a = _sanitize_and_fill_team_stats(req.away)
     req = req.model_copy(update={"home": h, "away": a})
@@ -3084,7 +3264,7 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         return sum(raw) * 100.0 if raw else 100.0
 
     def _vi(sel: str, odds: float | None, modelp: float, overround: float = 100.0, push_p: float = 0.0) -> ValueIndicator:
-        return _value_indicator(sel, odds, modelp, h=h, a=a, overround=overround, push_p=push_p, league=req.league_stats)
+        return _value_indicator(sel, odds, modelp, h=h, a=a, overround=overround, push_p=push_p, league=req.league_stats, league_name=req.competition)
 
     _or_1x2  = _overround(req.odds.home, req.odds.draw, req.odds.away)
     _or_btts = _overround(req.odds.btts_yes, req.odds.btts_no)

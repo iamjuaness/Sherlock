@@ -2781,20 +2781,24 @@ function buildFootballPayloadFromForm() {
   return { home, away, odds, competition, league_stats, use_general_stats };
 }
 
-function onGeneralStatsChange() {
+async function onGeneralStatsChange() {
   const useGeneralEl = document.getElementById("dashboard-use-general-stats");
+  let useGeneral = false;
   if (useGeneralEl) {
     localStorage.setItem("use_general_stats_system", useGeneralEl.checked);
+    useGeneral = useGeneralEl.checked;
+    localStorage.setItem("use_general_stats_system", useGeneral);
   }
-  // Auto-recalculate if results are currently displayed
-  const resultsEl = document.getElementById("results");
-  if (
-    currentSport === "football" &&
-    currentPayload &&
-    resultsEl &&
-    resultsEl.style.display !== "none"
-  ) {
-    analyzeFootball();
+
+  try {
+    await fetch(
+      `/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}`,
+      {
+        method: "POST",
+      },
+    );
+  } catch (err) {
+    console.error("Error trigger recalculate-all:", err);
   }
 }
 

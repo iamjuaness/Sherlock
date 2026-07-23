@@ -228,6 +228,7 @@ class AnalysisHistoryOut(BaseModel):
     count_in_profitability: bool = True
     has_picks: bool = False
     picks_hits_summary: str | None = None # e.g. "2/3"
+    profit: float | None = None
     has_real_stats: bool = True
 
     expected_goals_home: float | None = None

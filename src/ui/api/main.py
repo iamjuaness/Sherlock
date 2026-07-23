@@ -487,6 +487,8 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                                 hits = 0
                                 total = 0
                                 for pick in picks:
+                                    if pick.get("is_blacklisted"):
+                                        continue
                                     if not (pick.get("is_publishable", pick.get("is_value", False))):
                                         continue
                                     success = _check_pick_success(pick, results_dict)
@@ -896,9 +898,18 @@ def save_analysis(
         if req.compare_response_snapshot is not None:
             # pyrefly: ignore [bad-assignment]
             existing.compare_response_snapshot = json.dumps(req.compare_response_snapshot)
+        has_real_stats_val = req.has_real_stats if req.has_real_stats is not None else True
+        if req.count_in_profitability is not None:
+            count_in_prof_val = req.count_in_profitability
+        else:
+            count_in_prof_val = False if not has_real_stats_val else True
+
         if req.count_in_profitability is not None:
             # pyrefly: ignore [bad-assignment]
             existing.count_in_profitability = req.count_in_profitability
+        elif not has_real_stats_val:
+            existing.count_in_profitability = False
+
         if req.has_real_stats is not None:
             # pyrefly: ignore [bad-assignment]
             existing.has_real_stats = req.has_real_stats
@@ -911,6 +922,12 @@ def save_analysis(
     # Create new record
     # Use match_date if provided, otherwise use current time (same as `date`)
     record_date = req.match_date or datetime.utcnow()
+    has_real_stats_val = req.has_real_stats if req.has_real_stats is not None else True
+    if req.count_in_profitability is not None:
+        count_in_prof_val = req.count_in_profitability
+    else:
+        count_in_prof_val = False if not has_real_stats_val else True
+
     history = AnalysisHistory(
         sport=sport_enum,
         match_title=req.match_title,
@@ -923,8 +940,8 @@ def save_analysis(
         llm_timestamp=req.llm_timestamp,
         compare_response_snapshot=json.dumps(req.compare_response_snapshot) if req.compare_response_snapshot else None,
         needs_reanalysis=req.needs_reanalysis or False,
-        count_in_profitability=req.count_in_profitability if req.count_in_profitability is not None else True,
-        has_real_stats=req.has_real_stats if req.has_real_stats is not None else True,
+        count_in_profitability=count_in_prof_val,
+        has_real_stats=has_real_stats_val,
     )
     db.add(history)
     db.commit()
@@ -976,6 +993,7 @@ def quick_save_match(
     if existing:
         existing.payload = json.dumps(cleaned_payload)
         existing.has_real_stats = False
+        existing.count_in_profitability = False
         db.commit()
         db.refresh(existing)
         out = AnalysisHistoryOut.model_validate(existing)
@@ -989,7 +1007,7 @@ def quick_save_match(
         match_date=record_date,
         picks_calculados=None,
         has_real_stats=False,
-        count_in_profitability=True
+        count_in_profitability=False
     )
     db.add(history)
     db.commit()
@@ -1007,6 +1025,7 @@ def list_analysis(
     match_date_to: str | None = Query(None),
     competition: str | None = Query(None),
     limit: int = Query(5000, ge=1, le=10000),
+    use_stake: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> list[AnalysisHistoryOut]:
     """List saved analyses with optional filters."""
@@ -1053,7 +1072,7 @@ def list_analysis(
     results = []
     for h in history_list:
         out = AnalysisHistoryOut.model_validate(h)
-        results.append(_populate_history_extra_fields(h, out))
+        results.append(_populate_history_extra_fields(h, out, use_stake=use_stake))
     return results
 
 
@@ -1112,6 +1131,8 @@ def get_leagues_stats(
                     has_result = h.final_score_home is not None
                     
                     for pick in picks:
+                        if pick.get("is_blacklisted"):
+                            continue
                         is_pub = pick.get("is_publishable", False)
                         is_und = pick.get("is_underdog", False)
                         is_hc = pick.get("is_high_confidence", False)
@@ -1211,6 +1232,8 @@ def update_analysis_results(
                 
                 # Calculate Accuracy
                 for pick in picks:
+                    if pick.get("is_blacklisted"):
+                        continue
                     # Filter: Only "Value" picks are counted for model accuracy stats
                     if not (pick.get("is_publishable", pick.get("is_value", False))):
                         continue
@@ -1282,6 +1305,10 @@ async def recalculate_all_accuracy(
             if not history.payload:
                 continue
                 
+            # Skip matches with no calculated picks (picks_calculados is empty/null/[])
+            if not history.picks_calculados or not str(history.picks_calculados).strip() or str(history.picks_calculados).strip() == "[]":
+                continue
+                
             # Cargar el payload original
             payload_dict = json.loads(str(history.payload))
             sport = history.sport
@@ -1338,6 +1365,8 @@ async def recalculate_all_accuracy(
                     total = 0
                     
                     for pick in picks:
+                        if pick.get("is_blacklisted"):
+                            continue
                         # Filtro: Solo picks de valor cuentan para la estadística oficial
                         if not (pick.get("is_publishable", pick.get("is_value", False))):
                             continue
@@ -1532,6 +1561,8 @@ def get_global_stats(
                         teams = [t.strip() for t in h.match_title.split(" - ")]
 
                 for pick in picks:
+                    if pick.get("is_blacklisted"):
+                        continue
                     is_pub = pick.get("is_publishable", False)
                     is_und = pick.get("is_underdog", False)
                     is_hc = pick.get("is_high_confidence", False)
@@ -2022,6 +2053,8 @@ def export_excel_report(
                     }
                     
                     for pick in picks:
+                        if pick.get("is_blacklisted"):
+                            continue
                         is_pub = pick.get("is_publishable", False)
                         is_und = pick.get("is_underdog", False)
                         is_hc = pick.get("is_high_confidence", False)
@@ -2067,49 +2100,44 @@ def export_excel_report(
                             elif success == "half_loss":
                                 success_str = "Half Loss"
                                 
-                            if counts_in_prof:
-                                pick_profit = _calculate_pick_profit(success, odds) * stake
+                            pick_profit = _calculate_pick_profit(success, odds) * stake
                         
                         if success is None:
                             total_pending += 1
                             cat_accumulators[cat]["pending"] += 1
                         else:
                             counts_for_accuracy = success != "void"
-                            if counts_in_prof:
-                                total_profit += pick_profit
-                                cat_accumulators[cat]["profit"] += pick_profit
+                            total_profit += pick_profit
+                            cat_accumulators[cat]["profit"] += pick_profit
                                 
                             if counts_for_accuracy:
-                                if counts_in_prof:
-                                    total_picks += 1
-                                    total_staked_picks += stake
-                                    total_odds += odds
-                                    cat_accumulators[cat]["picks"] += 1
-                                    cat_accumulators[cat]["staked"] += stake
-                                    cat_accumulators[cat]["odds"] += odds
-                                    
-                                if counts_in_prof:
-                                    if league not in league_counters:
-                                        league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
-                                    league_counters[league]["picks"] += 1
-                                    league_counters[league]["profit"] += pick_profit
-                                    
-                                    if market not in market_counters:
-                                        market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
-                                    market_counters[market]["picks"] += 1
-                                    market_counters[market]["profit"] += pick_profit
-                                    
+                                total_picks += 1
+                                total_staked_picks += stake
+                                total_odds += odds
+                                cat_accumulators[cat]["picks"] += 1
+                                cat_accumulators[cat]["staked"] += stake
+                                cat_accumulators[cat]["odds"] += odds
+                                
+                                if league not in league_counters:
+                                    league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
+                                league_counters[league]["picks"] += 1
+                                league_counters[league]["profit"] += pick_profit
+                                
+                                if market not in market_counters:
+                                    market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
+                                market_counters[market]["picks"] += 1
+                                market_counters[market]["profit"] += pick_profit
+                                
                                 if _is_pick_hit(success):
-                                    if counts_in_prof:
-                                        total_hits += 1
-                                        total_winning_odds += odds
-                                        winning_picks_count += 1
-                                        cat_accumulators[cat]["hits"] += 1
-                                        cat_accumulators[cat]["winning_odds"] += odds
-                                        cat_accumulators[cat]["winning_count"] += 1
-                                        
-                                        league_counters[league]["hits"] += 1
-                                        market_counters[market]["hits"] += 1
+                                    total_hits += 1
+                                    total_winning_odds += odds
+                                    winning_picks_count += 1
+                                    cat_accumulators[cat]["hits"] += 1
+                                    cat_accumulators[cat]["winning_odds"] += odds
+                                    cat_accumulators[cat]["winning_count"] += 1
+                                    
+                                    league_counters[league]["hits"] += 1
+                                    market_counters[market]["hits"] += 1
                                         
                         picks_data.append({
                             "ID Partido": h.id,
@@ -2319,6 +2347,8 @@ def get_all_picks(
             has_result = h.final_score_home is not None
             
             for pick in picks:
+                if pick.get("is_blacklisted"):
+                    continue
                 is_pub = pick.get("is_publishable", False)
                 is_und = pick.get("is_underdog", False)
                 is_hc = pick.get("is_high_confidence", False)
@@ -2825,20 +2855,22 @@ def _extract_line(text: str, prefix: str) -> float | None:
     except: pass
     return None
 
-def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) -> AnalysisHistoryOut:
+def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut, use_stake: bool = False) -> AnalysisHistoryOut:
     """Computa campos virtuales de picks y acierto para el historial."""
     if not h.picks_calculados:
         out.has_picks = False
+        out.profit = 0.0
         return out
         
     try:
         picks = json.loads(str(h.picks_calculados))
         if not isinstance(picks, list):
             out.has_picks = False
+            out.profit = 0.0
             return out
             
         # Solo se consideran para el resumen de acierto los picks de Valor
-        relevant_picks = [p for p in picks if p.get("is_value") or p.get("is_publishable")]
+        relevant_picks = [p for p in picks if (p.get("is_value") or p.get("is_publishable") or p.get("is_underdog") or p.get("is_high_confidence")) and not p.get("is_blacklisted")]
         out.has_picks = len(relevant_picks) > 0
         
         # Calculate summary if results exist
@@ -2864,14 +2896,30 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut) 
         if res_dict.get("final_score_home") is not None:
             hits = 0
             total = 0
+            match_profit = 0.0
+            has_resolved = False
             for p in relevant_picks:
                 success = _check_pick_success(p, res_dict)
-                if success is not None and success != "void":
-                    total += 1
-                    if _is_pick_hit(success):
-                        hits += 1
+                if success is not None:
+                    if success != "void":
+                        total += 1
+                        has_resolved = True
+                        if _is_pick_hit(success):
+                            hits += 1
+                    
+                    if use_stake:
+                        kelly = float(p.get("kelly_fraction") or 0.0)
+                        stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
+                    else:
+                        stake = MIN_STAKE
+                    pick_profit = _calculate_pick_profit(success, float(p.get("odds") or 0.0)) * stake
+                    match_profit += pick_profit
             if total > 0:
                 out.picks_hits_summary = f"{hits}/{total}"
+            if has_resolved:
+                out.profit = round(match_profit, 2)
+            else:
+                out.profit = None
 
             # Inject success into compare_response_snapshot for individual pick visualization
             if out.compare_response_snapshot:

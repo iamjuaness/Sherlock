@@ -49,3 +49,6 @@ htmlcov/
 .serena/
 
 planning.txt
+data/league_penalties.json
+
+scratch/

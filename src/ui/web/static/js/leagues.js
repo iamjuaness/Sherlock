@@ -108,8 +108,9 @@ async function fetchMatchesForLeague(name) {
   matchesContainer.innerHTML = `<div class="dashboard-loader"><div class="spinner"></div><span>Cargando partidos...</span></div>`;
 
   try {
+    const useStake = localStorage.getItem("use_stake_system") === "true";
     const res = await fetch(
-      `/api/v1/analysis?competition=${encodeURIComponent(name)}`,
+      `/api/v1/analysis?competition=${encodeURIComponent(name)}&use_stake=${useStake}`,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     currentMatchesCache = await res.json();
@@ -437,9 +438,12 @@ function updateStatsSummaryForFiltered(filteredMatches) {
 
       const pickStake = useStake
         ? pick.kelly_fraction > 0
-          ? Math.max(1, Math.round(pick.kelly_fraction * 100))
-          : 1
-        : 1;
+          ? Math.min(
+              MAX_STAKE,
+              Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+            )
+          : MIN_STAKE
+        : MIN_STAKE;
 
       if (success === true) {
         totalProfit += (odds - 1) * pickStake;
