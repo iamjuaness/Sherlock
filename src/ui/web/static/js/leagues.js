@@ -1,8 +1,25 @@
 // leagues.js - Control de la sección de ligas en Sherlock
 let leaguesData = [];
 let activeLeague = null;
+let activeView = "matches";
 const MAX_STAKE = 5;
 const MIN_STAKE = 1;
+
+function switchView(view) {
+  activeView = view;
+  const tabMatches = document.getElementById("tab-matches");
+  const tabMarkets = document.getElementById("tab-markets");
+  if (tabMatches && tabMarkets) {
+    if (view === "matches") {
+      tabMatches.classList.add("active");
+      tabMarkets.classList.remove("active");
+    } else {
+      tabMarkets.classList.add("active");
+      tabMatches.classList.remove("active");
+    }
+  }
+  renderFilteredMatches();
+}
 
 document.addEventListener("DOMContentLoaded", () => {
   // Sync checkbox with localStorage
@@ -205,6 +222,14 @@ function renderFilteredMatches() {
     return;
   }
 
+  if (activeView === "matches") {
+    renderMatchesView(filtered, matchesContainer);
+  } else {
+    renderMarketsView(filtered, matchesContainer);
+  }
+}
+
+function renderMatchesView(filtered, matchesContainer) {
   const cards = filtered.map((match) => {
     let scoreText = "-";
     if (match.final_score_home != null && match.final_score_away != null) {
@@ -377,6 +402,177 @@ function renderFilteredMatches() {
   });
 
   matchesContainer.innerHTML = cards.join("");
+}
+
+function renderMarketsView(filtered, matchesContainer) {
+  const useStake = localStorage.getItem("use_stake_system") === "true";
+  const marketMap = {};
+
+  filtered.forEach((match) => {
+    // Only count matches marked for profitability calculation
+    // if (match.count_in_profitability === false) return;
+
+    // Build success map
+    const successMap = {};
+    try {
+      const snap = match.compare_response_snapshot;
+      if (snap && snap.values && Array.isArray(snap.values)) {
+        snap.values.forEach((v) => {
+          const key = (v.selection || "").toLowerCase();
+          if (key) successMap[key] = v.success;
+        });
+      }
+    } catch (_) {}
+
+    const rawPicks = Array.isArray(match.picks_calculados)
+      ? match.picks_calculados
+      : [];
+
+    const visiblePicks = rawPicks.filter(
+      (p) =>
+        p.is_publishable || p.is_underdog || p.is_high_confidence || p.is_value,
+    );
+
+    visiblePicks.forEach((pick) => {
+      const originalSel = pick.selection || "N/A";
+      let selKey = originalSel.trim();
+      const lowerSel = selKey.toLowerCase();
+
+      // Determine category for Over/Under markets
+      let category = "";
+      if (lowerSel.includes("corner") || lowerSel.includes("córner")) {
+        category = "Córners";
+      } else if (
+        lowerSel.includes("tarjeta") ||
+        lowerSel.includes("card") ||
+        lowerSel.includes("amarilla")
+      ) {
+        category = "Tarjetas";
+      } else if (lowerSel.includes("foul") || lowerSel.includes("falta")) {
+        category = "Faltas";
+      } else if (
+        lowerSel.includes("shot") ||
+        lowerSel.includes("tiro") ||
+        lowerSel.includes("remate")
+      ) {
+        category = "Tiros";
+      } else if (lowerSel.includes("goal") || lowerSel.includes("gol")) {
+        category = "Goles";
+      }
+
+      if (category) {
+        if (
+          lowerSel.includes("over") ||
+          lowerSel.includes("más de") ||
+          lowerSel.includes("mas de")
+        ) {
+          selKey = `Over ${category}`;
+        } else if (
+          lowerSel.includes("under") ||
+          lowerSel.includes("menos de")
+        ) {
+          selKey = `Under ${category}`;
+        }
+      }
+      const odds =
+        typeof pick.odds === "number" ? pick.odds : parseFloat(pick.odds) || 0;
+      let success = pick.success;
+      if (success === undefined || success === null) {
+        success = successMap[originalSel.toLowerCase()];
+      }
+
+      const pickStake = useStake
+        ? pick.kelly_fraction > 0
+          ? Math.min(
+              MAX_STAKE,
+              Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+            )
+          : MIN_STAKE
+        : MIN_STAKE;
+
+      if (!marketMap[selKey]) {
+        marketMap[selKey] = {
+          name: selKey,
+          totalPicks: 0,
+          ganados: 0,
+          perdidos: 0,
+          pendientes: 0,
+          profit: 0.0,
+        };
+      }
+
+      const mData = marketMap[selKey];
+      mData.totalPicks += 1;
+
+      if (success === true) {
+        mData.ganados += 1;
+        mData.profit += (odds - 1) * pickStake;
+      } else if (success === false) {
+        mData.perdidos += 1;
+        mData.profit -= pickStake;
+      } else {
+        mData.pendientes += 1;
+      }
+    });
+  });
+
+  const markets = Object.values(marketMap);
+  // Sort markets by totalPicks desc
+  markets.sort((a, b) => b.totalPicks - a.totalPicks);
+
+  if (markets.length === 0) {
+    matchesContainer.innerHTML = `<div style="color: var(--text-muted); padding: 2rem; text-align: center;">No hay mercados registrados para esta temporada.</div>`;
+    return;
+  }
+
+  const cardsHtml = markets.map((m) => {
+    const resolved = m.ganados + m.perdidos;
+    const accuracy =
+      resolved > 0 ? Math.round((m.ganados / resolved) * 100) : 0;
+    const profitSign = m.profit >= 0 ? "+" : "";
+    const profitColor = m.profit >= 0 ? "var(--green)" : "var(--red)";
+
+    return `
+      <div class="match-card">
+        <div class="match-card__header" style="border-bottom: none; padding-bottom: 0.5rem;">
+          <span class="match-card__title" style="font-size: 1.15rem; font-weight: 700; color: #fff;">📊 ${escapeHtml(m.name)}</span>
+          <span style="font-weight: 800; color: ${profitColor}; font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">
+            ${profitSign}${m.profit.toFixed(2)} u
+          </span>
+        </div>
+        <div class="match-card__body" style="padding-top: 0.5rem;">
+          <div class="league-stats-grid" style="grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem;">${m.totalPicks}</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Picks</div>
+            </div>
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: var(--green);">${m.ganados}</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Ganados</div>
+            </div>
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: var(--red);">${m.perdidos}</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Perdidos</div>
+            </div>
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: var(--accent-light);">${accuracy}%</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Acierto</div>
+            </div>
+          </div>
+          ${
+            m.pendientes > 0
+              ? `
+          <div style="margin-top: 0.75rem; text-align: right; font-size: 0.75rem; color: var(--text-secondary);">
+            ⏳ ${m.pendientes} pick(s) pendiente(s)
+          </div>`
+              : ""
+          }
+        </div>
+      </div>
+    `;
+  });
+
+  matchesContainer.innerHTML = cardsHtml.join("");
 }
 
 function escapeHtml(str) {

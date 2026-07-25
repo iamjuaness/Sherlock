@@ -961,6 +961,20 @@ function toggleHistoryModal() {
 
 // ── Cargar y pintar la lista del historial ─────────────────────
 async function loadHistory() {
+  // Sync checkbox state
+  const useGeneralCheck = document.getElementById("history-use-general-stats");
+  const generalStatsDate = document.getElementById(
+    "history-general-stats-date",
+  );
+  if (useGeneralCheck && !useGeneralCheck.dataset.initialized) {
+    useGeneralCheck.dataset.initialized = "true";
+    const saved = localStorage.getItem("use_general_stats_system") === "true";
+    useGeneralCheck.checked = saved;
+    if (generalStatsDate) {
+      generalStatsDate.style.display = saved ? "inline-block" : "none";
+    }
+  }
+
   const sportSelect = document.getElementById("history-sport-filter");
   const sport = sportSelect ? sportSelect.value : "";
   const dateFrom = document.getElementById("history-date-from")?.value || "";
@@ -1166,6 +1180,21 @@ function filterHistoryUI() {
   renderHistoryList(filtered);
 }
 
+function handleHistoryGeneralStatsChange() {
+  const useGeneralCheck = document.getElementById("history-use-general-stats");
+  const generalStatsDate = document.getElementById(
+    "history-general-stats-date",
+  );
+  if (useGeneralCheck) {
+    localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
+    if (generalStatsDate) {
+      generalStatsDate.style.display = useGeneralCheck.checked
+        ? "inline-block"
+        : "none";
+    }
+  }
+}
+
 async function recalculateAllHistoryAccuracy() {
   if (
     !confirm(
@@ -1174,15 +1203,28 @@ async function recalculateAllHistoryAccuracy() {
   )
     return;
 
+  const useGeneralCheck = document.getElementById("history-use-general-stats");
+  const generalStatsDate = document.getElementById(
+    "history-general-stats-date",
+  );
+  const useGeneral = useGeneralCheck ? useGeneralCheck.checked : false;
+  const thresholdDate =
+    generalStatsDate && generalStatsDate.value
+      ? generalStatsDate.value
+      : "2026-07-01";
+
   try {
     const btn = event.target;
     const originalText = btn.innerHTML;
     btn.innerHTML = "⏳ Recalculando...";
     btn.disabled = true;
 
-    const response = await fetch("/api/v1/analysis/recalculate-all", {
-      method: "POST",
-    });
+    const response = await fetch(
+      `/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}&threshold_date=${thresholdDate}`,
+      {
+        method: "POST",
+      },
+    );
 
     if (!response.ok) {
       throw new Error("Error en el servidor al recalcular.");
@@ -3475,28 +3517,36 @@ function getModalDateParams() {
   let dateFrom = "";
   let dateTo = "";
 
+  // Helper que formatea una fecha local como YYYY-MM-DDTHH:mm:ss
+  function formatLocalDateTime(date, time = "00:00:00") {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}T${time}`;
+  }
+
   if (range === "today") {
-    const todayStr = new Date().toISOString().split("T")[0];
-    dateFrom = `${todayStr}T00:00:00`;
-    dateTo = `${todayStr}T23:59:59`;
+    const today = new Date();
+    dateFrom = formatLocalDateTime(today, "00:00:00");
+    dateTo = formatLocalDateTime(today, "23:59:59");
   } else if (range === "7days") {
     const d = new Date();
     d.setDate(d.getDate() - 7);
-    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+    dateFrom = formatLocalDateTime(d, "00:00:00");
   } else if (range === "3days") {
     const d = new Date();
     d.setDate(d.getDate() - 3);
-    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+    dateFrom = formatLocalDateTime(d, "00:00:00");
   } else if (range === "30days") {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+    dateFrom = formatLocalDateTime(d, "00:00:00");
   } else if (range === "custom") {
-    const fromVal = document.getElementById("modal-date-from")
-      ? document.getElementById("modal-date-from").value
+    const fromVal = document.getElementById("dashboard-date-from")
+      ? document.getElementById("dashboard-date-from").value
       : "";
-    const toVal = document.getElementById("modal-date-to")
-      ? document.getElementById("modal-date-to").value
+    const toVal = document.getElementById("dashboard-date-to")
+      ? document.getElementById("dashboard-date-to").value
       : "";
     if (fromVal) dateFrom = `${fromVal}T00:00:00`;
     if (toVal) dateTo = `${toVal}T23:59:59`;

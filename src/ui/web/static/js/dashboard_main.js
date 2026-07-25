@@ -15,18 +15,22 @@ document.addEventListener("DOMContentLoaded", () => {
   if (useStakeCheck) {
     const saved = localStorage.getItem("use_stake_system");
     if (saved !== null) {
-      useStakeCheck.checked = (saved === "true");
+      useStakeCheck.checked = saved === "true";
     } else {
       localStorage.setItem("use_stake_system", "true");
     }
   }
 
-  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
-  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
+  const useGeneralCheck = document.getElementById(
+    "dashboard-use-general-stats",
+  );
+  const generalStatsDate = document.getElementById(
+    "dashboard-general-stats-date",
+  );
   if (useGeneralCheck) {
     const savedGen = localStorage.getItem("use_general_stats_system");
     if (savedGen !== null) {
-      useGeneralCheck.checked = (savedGen === "true");
+      useGeneralCheck.checked = savedGen === "true";
     } else {
       localStorage.setItem("use_general_stats_system", "false");
       useGeneralCheck.checked = false;
@@ -40,7 +44,9 @@ document.addEventListener("DOMContentLoaded", () => {
         generalStatsDate.value = "2026-07-01";
         localStorage.setItem("general_stats_threshold_date", "2026-07-01");
       }
-      generalStatsDate.style.display = useGeneralCheck.checked ? "inline-block" : "none";
+      generalStatsDate.style.display = useGeneralCheck.checked
+        ? "inline-block"
+        : "none";
     }
   }
 
@@ -61,22 +67,30 @@ function getDashboardDateParams() {
   let dateFrom = "";
   let dateTo = "";
 
+  // Helper que formatea una fecha local como YYYY-MM-DDTHH:mm:ss
+  function formatLocalDateTime(date, time = "00:00:00") {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}T${time}`;
+  }
+
   if (range === "today") {
-    const todayStr = new Date().toISOString().split("T")[0];
-    dateFrom = `${todayStr}T00:00:00`;
-    dateTo = `${todayStr}T23:59:59`;
+    const today = new Date();
+    dateFrom = formatLocalDateTime(today, "00:00:00");
+    dateTo = formatLocalDateTime(today, "23:59:59");
   } else if (range === "7days") {
     const d = new Date();
     d.setDate(d.getDate() - 7);
-    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+    dateFrom = formatLocalDateTime(d, "00:00:00");
   } else if (range === "3days") {
     const d = new Date();
     d.setDate(d.getDate() - 3);
-    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+    dateFrom = formatLocalDateTime(d, "00:00:00");
   } else if (range === "30days") {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    dateFrom = d.toISOString().split("T")[0] + "T00:00:00";
+    dateFrom = formatLocalDateTime(d, "00:00:00");
   } else if (range === "custom") {
     const fromVal = document.getElementById("dashboard-date-from")
       ? document.getElementById("dashboard-date-from").value
@@ -91,17 +105,19 @@ function getDashboardDateParams() {
   let params = [];
   if (dateFrom) params.push(`date_from=${encodeURIComponent(dateFrom)}`);
   if (dateTo) params.push(`date_to=${encodeURIComponent(dateTo)}`);
-  
+
   const useStakeCheck = document.getElementById("dashboard-use-stake");
   if (useStakeCheck && useStakeCheck.checked) {
     params.push("use_stake=true");
   }
 
-  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  const useGeneralCheck = document.getElementById(
+    "dashboard-use-general-stats",
+  );
   if (useGeneralCheck && useGeneralCheck.checked) {
     params.push("use_general_stats=true");
   }
-  
+
   return params.length > 0 ? "?" + params.join("&") : "";
 }
 
@@ -119,7 +135,9 @@ async function reloadDashboardStats() {
   if (useStakeCheck) {
     localStorage.setItem("use_stake_system", useStakeCheck.checked);
   }
-  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
+  const useGeneralCheck = document.getElementById(
+    "dashboard-use-general-stats",
+  );
   if (useGeneralCheck) {
     localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
   }
@@ -127,25 +145,35 @@ async function reloadDashboardStats() {
 }
 
 async function triggerRecalculateAndFetch() {
-  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
-  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
+  const useGeneralCheck = document.getElementById(
+    "dashboard-use-general-stats",
+  );
+  const generalStatsDate = document.getElementById(
+    "dashboard-general-stats-date",
+  );
   const useGeneral = useGeneralCheck ? useGeneralCheck.checked : false;
-  const thresholdDate = generalStatsDate ? generalStatsDate.value : "2026-07-01";
+  const thresholdDate = generalStatsDate
+    ? generalStatsDate.value
+    : "2026-07-01";
 
   const loader = document.getElementById("loader");
   const content = document.getElementById("dashboard-content");
   if (loader) {
     loader.style.display = "flex";
-    loader.innerHTML = '<div class="spinner"></div><span>Recalculando acierto y rentabilidad de partidos...</span>';
+    loader.innerHTML =
+      '<div class="spinner"></div><span>Recalculando acierto y rentabilidad de partidos...</span>';
   }
   if (content) {
     content.style.display = "none";
   }
 
   try {
-    const res = await fetch(`/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}&threshold_date=${thresholdDate}`, {
-      method: "POST"
-    });
+    const res = await fetch(
+      `/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}&threshold_date=${thresholdDate}`,
+      {
+        method: "POST",
+      },
+    );
     if (!res.ok) throw new Error("Error al recalcular");
   } catch (error) {
     console.error("Recalculate failed:", error);
@@ -154,22 +182,60 @@ async function triggerRecalculateAndFetch() {
   await fetchGlobalStats();
 }
 
+async function triggerApplyBlacklistAndFetch() {
+  const loader = document.getElementById("loader");
+  const content = document.getElementById("dashboard-content");
+  if (loader) {
+    loader.style.display = "flex";
+    loader.innerHTML =
+      '<div class="spinner"></div><span>Aplicando blacklist actual a picks existentes...</span>';
+  }
+  if (content) {
+    content.style.display = "none";
+  }
+
+  try {
+    const res = await fetch("/api/v1/analysis/apply-blacklist", {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Error al aplicar blacklist");
+    const data = await res.json();
+    alert(data.message || "Blacklist aplicada con éxito.");
+  } catch (error) {
+    console.error("Apply blacklist failed:", error);
+    alert("Hubo un error al aplicar la blacklist.");
+  }
+
+  await fetchGlobalStats();
+}
+
 function handleDashboardGeneralStatsChange() {
-  const useGeneralCheck = document.getElementById("dashboard-use-general-stats");
-  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
+  const useGeneralCheck = document.getElementById(
+    "dashboard-use-general-stats",
+  );
+  const generalStatsDate = document.getElementById(
+    "dashboard-general-stats-date",
+  );
   if (useGeneralCheck) {
     localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
     if (generalStatsDate) {
-      generalStatsDate.style.display = useGeneralCheck.checked ? "inline-block" : "none";
+      generalStatsDate.style.display = useGeneralCheck.checked
+        ? "inline-block"
+        : "none";
     }
   }
   triggerRecalculateAndFetch();
 }
 
 function handleDashboardGeneralStatsDateChange() {
-  const generalStatsDate = document.getElementById("dashboard-general-stats-date");
+  const generalStatsDate = document.getElementById(
+    "dashboard-general-stats-date",
+  );
   if (generalStatsDate) {
-    localStorage.setItem("general_stats_threshold_date", generalStatsDate.value);
+    localStorage.setItem(
+      "general_stats_threshold_date",
+      generalStatsDate.value,
+    );
   }
   triggerRecalculateAndFetch();
 }

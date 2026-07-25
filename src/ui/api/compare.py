@@ -1874,9 +1874,12 @@ def _market_side(text: str) -> str:
         (r'\b(visitante|away)\b', "away"),
         (r'\b(empate|draw)\b', "draw"),
         # Doble oportunidad
-        (r'\b(1x|local\s+o\s+empate)\b', "home_draw"),
-        (r'\b(x2|empate\s+o\s+visitante)\b', "draw_away"),
-        (r'\b(12|local\s+o\s+visitante)\b', "home_away"),
+        (r'\b(1x|home_draw)\b', "home_draw"),
+        (r'\b(x2|draw_away)\b', "draw_away"),
+        (r'\b(12|home_away)\b', "home_away"),
+        # DNB
+        (r'\b(dnb_home)\b', "home"),
+        (r'\b(dnb_away)\b', "away"),
     ]
     
     for pattern, side in patterns:
@@ -1907,15 +1910,20 @@ def is_market_blacklisted_for_league(league_name: str, selection: str, category:
         family = _market_family(selection)
         side = _market_side(selection)
 
+        # DEBUG - quitar en producción
+        print(f"[BLACKLIST CHECK] '{selection}' -> family='{family}', side='{side}', league='{league_name}'")
+
         for rule in penalties:
             rule_league = (rule.get("league") or "").strip()
             # Coincidencia exacta de liga case-insensitive o coincidencia normalizada
             if rule_league and (rule_league.lower() == (league_name or "").strip().lower() or _normalize_text(rule_league) == _normalize_text(league_name)):
-                rule_family = rule.get("market_family", "").strip().lower()
-                rule_side = rule.get("market_side", "").strip().lower()
+                rule_family = rule.get("market_family", "").strip().lower().replace(" ", "_")
+                rule_side = rule.get("market_side", "").strip().lower().replace(" ", "_")
 
                 match_family = not rule_family or rule_family == family.lower()
                 match_side = not rule_side or rule_side == side.lower()
+
+                print(f"[BLACKLIST RULE] league='{rule_league}', family='{rule_family}', side='{rule_side}' | match_family={match_family}, match_side={match_side}")
 
                 if match_family and match_side:
                     # Comprobar categoría

@@ -526,13 +526,7 @@
               📈 Usar Stakes Variables
             </label>
           </div>
-          <div
-            style="
-              display: flex;
-              align-items: center;
-              gap: 0.5rem;
-            "
-          >
+          <div style="display: flex; align-items: center; gap: 0.5rem">
             <label
               style="
                 display: inline-flex;
@@ -574,7 +568,45 @@
               onchange="handleDashboardGeneralStatsDateChange()"
             />
           </div>
-          <div style="margin-left: auto">
+          <div style="margin-left: auto; display: flex; gap: 0.5rem">
+            <button
+              id="btn-recalculate-all"
+              class="btn-primary"
+              style="
+                padding: 0.35rem 1rem;
+                font-size: 0.85rem;
+                border-radius: 6px;
+                background: rgba(99, 102, 241, 0.2);
+                border: 1px solid var(--accent);
+                display: flex;
+                align-items: center;
+                gap: 0.35rem;
+                cursor: pointer;
+              "
+              onclick="triggerRecalculateAndFetch()"
+              title="Recalcula el acierto de todos los partidos con resultado guardado"
+            >
+              🔄 Recalcular Todo
+            </button>
+            <button
+              id="btn-apply-blacklist"
+              class="btn-primary"
+              style="
+                padding: 0.35rem 1rem;
+                font-size: 0.85rem;
+                border-radius: 6px;
+                background: rgba(244, 63, 94, 0.2);
+                border: 1px solid var(--red, #f43f5e);
+                display: flex;
+                align-items: center;
+                gap: 0.35rem;
+                cursor: pointer;
+              "
+              onclick="triggerApplyBlacklistAndFetch()"
+              title="Aplica la blacklist actual a todos los picks guardados sin recalcular probabilidades"
+            >
+              🛡️ Aplicar Blacklist
+            </button>
             <button
               id="btn-download-excel"
               class="btn-primary"

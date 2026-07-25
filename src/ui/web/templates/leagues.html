@@ -196,6 +196,35 @@
         font-size: 0.72rem;
         font-weight: 600;
       }
+      .tabs-container {
+        display: flex;
+        gap: 0.5rem;
+        margin-bottom: 1.5rem;
+        background: rgba(0, 0, 0, 0.2);
+        padding: 4px;
+        border-radius: 8px;
+        width: fit-content;
+        border: 1px solid var(--border);
+      }
+      .tab-btn {
+        background: transparent;
+        color: var(--text-secondary);
+        border: none;
+        padding: 0.5rem 1.25rem;
+        border-radius: 6px;
+        font-weight: 600;
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: var(--transition);
+      }
+      .tab-btn:hover {
+        color: #fff;
+        background: rgba(255, 255, 255, 0.05);
+      }
+      .tab-btn.active {
+        background: var(--accent);
+        color: #fff;
+      }
     </style>
   </head>
   <body>
@@ -283,8 +312,13 @@
             </div>
           </div>
 
+          <div class="tabs-container">
+            <button id="tab-matches" class="tab-btn active" onclick="switchView('matches')">Partidos</button>
+            <button id="tab-markets" class="tab-btn" onclick="switchView('markets')">Mercados</button>
+          </div>
+
           <div id="matches-list">
-            <!-- Rellenado dinámicamente con partidos y sus picks -->
+            <!-- Rellenado dinámicamente con partidos y sus picks o mercados -->
           </div>
         </div>
       </div>

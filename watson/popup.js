@@ -269,9 +269,21 @@ async function handleExtract() {
     showStatus("error", "No hay datos de partido disponibles");
     return;
   }
-  const { eventId, homeTeamId, awayTeamId, tournamentId, seasonId } =
-    currentMatchData;
-  if (!homeTeamId || !awayTeamId || !tournamentId || !seasonId) {
+  const {
+    eventId,
+    homeTeamId,
+    awayTeamId,
+    tournamentId,
+    uniqueTournamentId,
+    seasonId,
+  } = currentMatchData;
+  if (
+    !homeTeamId ||
+    !awayTeamId ||
+    !tournamentId ||
+    !uniqueTournamentId ||
+    !seasonId
+  ) {
     showStatus("error", "Faltan IDs necesarios para la extracción");
     return;
   }
@@ -287,6 +299,7 @@ async function handleExtract() {
         homeTeamId: homeTeamId,
         awayTeamId: awayTeamId,
         tournamentId: tournamentId,
+        uniqueTournamentId: uniqueTournamentId,
         seasonId: seasonId,
       },
     });
@@ -390,7 +403,8 @@ async function showMatchInfo(eventId, url) {
         url,
         homeTeamId: event.homeTeam?.id,
         awayTeamId: event.awayTeam?.id,
-        tournamentId: event.tournament?.uniqueTournament?.id,
+        tournamentId: event.tournament?.id,
+        uniqueTournamentId: event.tournament?.uniqueTournament?.id,
         seasonId: event.season?.id,
         start_timestamp: event.startTimestamp,
       };
@@ -715,11 +729,8 @@ async function initHistoricalSection(tournamentId, url) {
 
   // Intentar obtener nombre de la competición
   try {
-    const info = await fetchSofaScoreAPI(
-      `/api/v1/unique-tournament/${tournamentId}`,
-    );
-    _currentTournamentName =
-      info?.uniqueTournament?.name || info?.tournament?.name || "Competición";
+    const info = await fetchSofaScoreAPI(`/api/v1/tournament/${tournamentId}`);
+    _currentTournamentName = info?.tournament?.name || "Competición";
     els.competitionName.textContent = _currentTournamentName;
   } catch (e) {
     _currentTournamentName = "Competición";

@@ -519,7 +519,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
         # Create a new AnalysisHistory record for this match result (e.g. historical data)
         try:
             sport_enum = Sport(sport)
-            competition_name = payload.get("tournament.uniqueTournament.name") or payload.get("tournament.name") or payload.get("competition") or "Desconocida"
+            competition_name = payload.get("tournament.name") or payload.get("competition") or "Desconocida"
             match_title = f"{home_name} vs {away_name}"
 
             # Reconstruct cleanup payload for storage
@@ -1394,6 +1394,145 @@ async def recalculate_all_accuracy(
         "total_reanalyzed": count,
         "accuracy_updated": updated_accuracy_count
     }
+
+
+@app.post("/api/v1/analysis/apply-blacklist", tags=["Analysis History"])
+def apply_blacklist(db: Session = Depends(get_db)):
+    """
+    Actualiza el estado de blacklist/publicación de los picks ya guardados
+    en base a los parámetros actuales de data/league_penalties.json,
+    sin recalcular probabilidades de los partidos.
+    """
+    from src.ui.api.compare import (
+        is_market_blacklisted_for_league,
+        is_publishable_pick,
+        is_high_confidence_pick,
+        is_underdog_pick,
+        score_pick_quality,
+        _calculate_display_score,
+        _frontend_style_strategic_score,
+        ValueIndicator
+    )
+    import json
+
+    history_list = db.query(AnalysisHistory).all()
+    updated_count = 0
+
+    for history in history_list:
+        if not history.picks_calculados:
+            continue
+        try:
+            picks = json.loads(str(history.picks_calculados))
+            if not isinstance(picks, list) or len(picks) == 0:
+                continue
+
+            # Obtener el nombre de la liga/competencia desde el payload
+            league_name = None
+            if history.payload:
+                try:
+                    p_data = json.loads(str(history.payload))
+                    league_name = p_data.get("competition")
+                except Exception:
+                    pass
+
+            if not league_name:
+                continue
+
+            changed = False
+            for pick in picks:
+                sel = pick.get("selection")
+                if not sel:
+                    continue
+
+                # Comprobar si está en la blacklist
+                should_be_blacklisted = is_market_blacklisted_for_league(league_name, sel)
+                current_blacklisted = pick.get("is_blacklisted", False)
+
+                if should_be_blacklisted != current_blacklisted:
+                    changed = True
+                    pick["is_blacklisted"] = should_be_blacklisted
+
+                    if should_be_blacklisted:
+                        pick["is_publishable"] = False
+                        pick["is_value"] = False
+                        pick["quality_score"] = -1
+                        pick["strategic_score"] = -1
+                        pick["is_high_confidence"] = False
+                        pick["is_underdog"] = False
+                    else:
+                        # Re-construimos ValueIndicator temporal para re-calcular los campos utilizando las fórmulas
+                        v = ValueIndicator(
+                            selection=sel,
+                            odds=pick.get("odds"),
+                            model_prob=pick.get("model_prob", 0.0),
+                            calibrated_prob=pick.get("calibrated_prob"),
+                            edge_ev=pick.get("edge_ev", 0.0),
+                            data_quality_score=pick.get("data_quality_score"),
+                            sample_size_weight=pick.get("sample_size_weight"),
+                            is_blacklisted=False
+                        )
+                        # Re-calculamos usando las funciones de compare.py
+                        pick["is_publishable"] = is_publishable_pick(v)
+                        pick["is_value"] = (v.edge_ev or 0.0) > 0.03
+                        pick["quality_score"] = score_pick_quality(v)
+                        pick["display_score"] = _calculate_display_score(v)
+                        pick["is_high_confidence"] = is_high_confidence_pick(v)
+                        pick["is_underdog"] = is_underdog_pick(v)
+                        pick["strategic_score"] = _frontend_style_strategic_score(v)
+
+            if changed:
+                history.picks_calculados = json.dumps(picks)
+                
+                # Recalcular el accuracy del partido en base a los picks actualizados
+                if history.final_score_home is not None:
+                    results_dict = {
+                        "final_score_home": history.final_score_home,
+                        "final_score_away": history.final_score_away,
+                        "final_corners_home": history.final_corners_home,
+                        "final_corners_away": history.final_corners_away,
+                        "final_yellow_cards_home": history.final_yellow_cards_home,
+                        "final_yellow_cards_away": history.final_yellow_cards_away,
+                        "final_red_cards_home": history.final_red_cards_home,
+                        "final_red_cards_away": history.final_red_cards_away,
+                        "final_shots_home": history.final_shots_home,
+                        "final_shots_away": history.final_shots_away,
+                        "final_shots_on_target_home": history.final_shots_on_target_home,
+                        "final_shots_on_target_away": history.final_shots_on_target_away,
+                    }
+                    
+                    hits = 0
+                    total = 0
+                    
+                    for p_item in picks:
+                        if p_item.get("is_blacklisted"):
+                            continue
+                        if not (p_item.get("is_publishable", p_item.get("is_value", False))):
+                            continue
+                            
+                        success = _check_pick_success(p_item, results_dict)
+                        if success is not None and success != "void":
+                            total += 1
+                            if _is_pick_hit(success):
+                                hits += 1
+                    
+                    if total > 0:
+                        history.accuracy_percentage = (hits / total) * 100
+                    else:
+                        history.accuracy_percentage = None
+
+                updated_count += 1
+        except Exception as e:
+            print(f"Error actualizando blacklist para {history.id}: {e}")
+
+    if updated_count > 0:
+        db.commit()
+
+    return {
+        "status": "ok",
+        "message": f"Se actualizó la blacklist en {updated_count} partidos del historial.",
+        "updated_count": updated_count
+    }
+
 
 
 def get_market_name(selection: str) -> str:

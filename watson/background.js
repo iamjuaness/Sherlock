@@ -174,7 +174,14 @@ async function handleExtractResults(data) {
 // ═══════════════════════════════════════════════════════════════
 async function handleExtractStats(data) {
   try {
-    const { eventId, homeTeamId, awayTeamId, tournamentId, seasonId } = data;
+    const {
+      eventId,
+      homeTeamId,
+      awayTeamId,
+      tournamentId,
+      uniqueTournamentId,
+      seasonId,
+    } = data;
     const settings = await chrome.storage.sync.get([
       "extractLineups",
       "extractStreaks",
@@ -215,7 +222,7 @@ async function handleExtractStats(data) {
       }
       try {
         result.leagueInfo = await fetchSofaScore(
-          `/api/v1/unique-tournament/${tournamentId}/season/${seasonId}/info`,
+          `/api/v1/unique-tournament/${uniqueTournamentId}/season/${seasonId}/info`,
         );
       } catch (e) {
         console.warn("League info:", e.message);
@@ -256,10 +263,15 @@ async function handleExtractStats(data) {
     }
 
     // 6. Stats equipo local
-    if (settings.extractHomeStats && homeTeamId && tournamentId && seasonId) {
+    if (
+      settings.extractHomeStats &&
+      homeTeamId &&
+      uniqueTournamentId &&
+      seasonId
+    ) {
       try {
         result.homeTeamStats = await fetchSofaScore(
-          `/api/v1/team/${homeTeamId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`,
+          `/api/v1/team/${homeTeamId}/unique-tournament/${uniqueTournamentId}/season/${seasonId}/statistics/overall`,
         );
       } catch (e) {
         console.warn("Home stats:", e.message);
@@ -267,10 +279,15 @@ async function handleExtractStats(data) {
     }
 
     // 7. Stats equipo visitante
-    if (settings.extractAwayStats && awayTeamId && tournamentId && seasonId) {
+    if (
+      settings.extractAwayStats &&
+      awayTeamId &&
+      uniqueTournamentId &&
+      seasonId
+    ) {
       try {
         result.awayTeamStats = await fetchSofaScore(
-          `/api/v1/team/${awayTeamId}/unique-tournament/${tournamentId}/season/${seasonId}/statistics/overall`,
+          `/api/v1/team/${awayTeamId}/unique-tournament/${uniqueTournamentId}/season/${seasonId}/statistics/overall`,
         );
       } catch (e) {
         console.warn("Away stats:", e.message);
@@ -650,7 +667,7 @@ async function handleExtractHistoricalData(data) {
 
       try {
         const eventsData = await fetchSofaScore(
-          `/api/v1/unique-tournament/${tournamentId}/season/${season.id}/events/last/${page}`,
+          `/api/v1/unique-tournament/${uniqueTournamentId}/season/${season.id}/events/last/${page}`,
         );
         const events = eventsData.events || [];
         hasNextPage = eventsData.hasNextPage === true;
@@ -870,17 +887,9 @@ function buildHistoricalPayload(
     start_timestamp: event.startTimestamp || null,
     season_year: event._seasonYear || null,
     season_id: event._seasonId || null,
-    tournament_id: event.tournament?.uniqueTournament?.id || null,
-    tournament_name:
-      tournamentName ||
-      event.tournament?.uniqueTournament?.name ||
-      event.tournament?.name ||
-      null,
-    competition:
-      tournamentName ||
-      event.tournament?.uniqueTournament?.name ||
-      event.tournament?.name ||
-      null,
+    tournament_id: event.tournament?.id || null,
+    tournament_name: tournamentName || event.tournament?.name || null,
+    competition: tournamentName || event.tournament?.name || null,
     final_score_home: event.homeScore?.current ?? 0,
     final_score_away: event.awayScore?.current ?? 0,
   };

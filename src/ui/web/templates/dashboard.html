@@ -4208,13 +4208,54 @@
               class="input"
               style="font-size: 0.8rem; flex: 1; min-width: 0; padding: 0.4rem"
             />
-            <span>-</span>
             <input
               type="date"
               id="history-date-to"
               onchange="loadHistory()"
               class="input"
               style="font-size: 0.8rem; flex: 1; min-width: 0; padding: 0.4rem"
+            />
+          </div>
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-right: 0.5rem;">
+            <label
+              style="
+                display: inline-flex;
+                align-items: center;
+                gap: 0.35rem;
+                cursor: pointer;
+                font-size: 0.8rem;
+                color: var(--text-muted);
+                font-weight: 500;
+                user-select: none;
+                white-space: nowrap;
+              "
+            >
+              <input
+                type="checkbox"
+                id="history-use-general-stats"
+                style="
+                  width: 14px;
+                  height: 14px;
+                  accent-color: var(--accent-light);
+                  cursor: pointer;
+                "
+                onchange="handleHistoryGeneralStatsChange()"
+              />
+              📊 Stats Generales
+            </label>
+            <input
+              type="date"
+              id="history-general-stats-date"
+              style="
+                background: var(--bg-card);
+                border: 1px solid rgba(255, 255, 255, 0.1);
+                padding: 0.25rem 0.5rem;
+                border-radius: 6px;
+                font-size: 0.8rem;
+                color: var(--text-primary);
+                outline: none;
+                display: none;
+              "
             />
           </div>
           <button
