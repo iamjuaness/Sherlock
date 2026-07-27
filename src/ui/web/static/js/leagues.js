@@ -258,8 +258,7 @@ function renderMatchesView(filtered, matchesContainer) {
       : [];
 
     const visiblePicks = rawPicks.filter(
-      (p) =>
-        p.is_publishable || p.is_underdog || p.is_high_confidence || p.is_value,
+      (p) => p.is_publishable || p.is_underdog || p.is_value,
     );
 
     // Calculate total match profit/units considering all visible picks
@@ -276,12 +275,14 @@ function renderMatchesView(filtered, matchesContainer) {
       }
 
       const pickStake = useStake
-        ? pick.kelly_fraction > 0
-          ? Math.min(
-              MAX_STAKE,
-              Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
-            )
-          : MIN_STAKE
+        ? pick.stake_units !== undefined && pick.stake_units !== null
+          ? pick.stake_units
+          : pick.kelly_fraction > 0
+            ? Math.min(
+                MAX_STAKE,
+                Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+              )
+            : MIN_STAKE
         : MIN_STAKE;
 
       if (success === true) {
@@ -327,10 +328,7 @@ function renderMatchesView(filtered, matchesContainer) {
 
           // Category badge
           let catBadge = "";
-          if (pick.is_high_confidence) {
-            catBadge =
-              '<span style="font-size:0.7rem; color:#f59e0b; margin-left:4px;">🔥 HC</span>';
-          } else if (pick.is_underdog) {
+          if (pick.is_underdog) {
             catBadge =
               '<span style="font-size:0.7rem; color:#a78bfa; margin-left:4px;">🐕 Dog</span>';
           } else if (pick.is_publishable || pick.is_value) {
@@ -339,13 +337,16 @@ function renderMatchesView(filtered, matchesContainer) {
           }
 
           // Recommended stake
-          const pickStake =
-            pick.kelly_fraction > 0
-              ? Math.min(
-                  MAX_STAKE,
-                  Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
-                )
-              : MIN_STAKE;
+          const pickStake = useStake
+            ? pick.stake_units !== undefined && pick.stake_units !== null
+              ? pick.stake_units
+              : pick.kelly_fraction > 0
+                ? Math.min(
+                    MAX_STAKE,
+                    Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+                  )
+                : MIN_STAKE
+            : MIN_STAKE;
           const stakeHtml = useStake
             ? `<span style="font-size:0.75rem; color:var(--accent-light); margin-left:6px; font-weight:bold;">Stake ${pickStake}</span>`
             : "";
@@ -429,8 +430,7 @@ function renderMarketsView(filtered, matchesContainer) {
       : [];
 
     const visiblePicks = rawPicks.filter(
-      (p) =>
-        p.is_publishable || p.is_underdog || p.is_high_confidence || p.is_value,
+      (p) => p.is_publishable || p.is_underdog || p.is_value,
     );
 
     visiblePicks.forEach((pick) => {
@@ -482,12 +482,14 @@ function renderMarketsView(filtered, matchesContainer) {
       }
 
       const pickStake = useStake
-        ? pick.kelly_fraction > 0
-          ? Math.min(
-              MAX_STAKE,
-              Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
-            )
-          : MIN_STAKE
+        ? pick.stake_units !== undefined && pick.stake_units !== null
+          ? pick.stake_units
+          : pick.kelly_fraction > 0
+            ? Math.min(
+                MAX_STAKE,
+                Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+              )
+            : MIN_STAKE
         : MIN_STAKE;
 
       if (!marketMap[selKey]) {
@@ -617,8 +619,7 @@ function updateStatsSummaryForFiltered(filteredMatches) {
       ? match.picks_calculados
       : [];
     const visiblePicks = rawPicks.filter(
-      (p) =>
-        p.is_publishable || p.is_underdog || p.is_high_confidence || p.is_value,
+      (p) => p.is_publishable || p.is_underdog || p.is_value,
     );
 
     totalPicks += visiblePicks.length;
@@ -633,12 +634,14 @@ function updateStatsSummaryForFiltered(filteredMatches) {
       }
 
       const pickStake = useStake
-        ? pick.kelly_fraction > 0
-          ? Math.min(
-              MAX_STAKE,
-              Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
-            )
-          : MIN_STAKE
+        ? pick.stake_units !== undefined && pick.stake_units !== null
+          ? pick.stake_units
+          : pick.kelly_fraction > 0
+            ? Math.min(
+                MAX_STAKE,
+                Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+              )
+            : MIN_STAKE
         : MIN_STAKE;
 
       if (success === true) {

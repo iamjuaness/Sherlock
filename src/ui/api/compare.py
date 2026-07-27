@@ -509,7 +509,6 @@ class ValueIndicator(BaseModel):
 
     # Flags de Decisión
     is_publishable:        bool = False
-    is_high_confidence:    bool = False
     is_underdog:           bool = False
     success:               Optional[bool] = None
     display_score:         Optional[float] = None
@@ -519,6 +518,7 @@ class ValueIndicator(BaseModel):
     kelly_fraction:        Optional[float] = None
     sample_size_weight:    Optional[float] = None
     is_blacklisted:        bool = False
+    stake_units:           Optional[float] = None
 
 
 class StatComparison(BaseModel):
@@ -811,10 +811,13 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
     if not is_binary and prob < 35.0:
         return False
 
-    if v.edge_ev < 0.025 or v.edge_ev > 0.20:
+    if v.edge < 2.5 or v.edge > 25:
         return False
 
     if v.data_quality_score is not None and v.data_quality_score < 50:
+        return False
+
+    if v.stake_units is not None and v.stake_units < 1.0:
         return False
 
     return True
@@ -833,20 +836,6 @@ def score_pick_quality(v: ValueIndicator) -> int:
     total = int(ev_score + prob_score + dq_score)
     return min(max(total, 0), 100)
 
-def is_high_confidence_pick(v: ValueIndicator) -> bool:
-    family = _market_family(v.selection)
-
-    if v.model_prob < 75.0:
-        return False
-
-    if v.edge_ev >= 0.02:
-        return False
-
-    if v.data_quality_score is not None and v.data_quality_score < 50:
-        return False
-
-    return True
-
 
 def is_underdog_pick(v: ValueIndicator) -> bool:
     family = _market_family(v.selection)
@@ -854,7 +843,7 @@ def is_underdog_pick(v: ValueIndicator) -> bool:
     if v.odds is None or v.odds <= 2.5 or v.odds > 5.80:
         return False
 
-    if v.edge_ev < 0.05:
+    if v.edge < 5:
         return False
 
     if v.data_quality_score is not None and v.data_quality_score < 50:
@@ -862,7 +851,99 @@ def is_underdog_pick(v: ValueIndicator) -> bool:
 
     return True
 
+def _calculate_stake_units(
+    edge_ev: float,
+    odds: float,
+    kelly_fraction: float,
+    market_family: str,
+    lrs: float | None,
+) -> float:
+    """
+    Sistema de stake multi-capa con protección de bankroll.
+    Devuelve unidades de 0.5 a 5.0. 0.0 = no jugable.
+    """
+    if edge_ev <= 0.03 or kelly_fraction <= 0:
+        return 0.0
 
+    # 1. Base desde Kelly fraccional (convertido a unidades aproximadas)
+    base = kelly_fraction * 100.0  # ej: 0.125 Kelly ~ 12.5% -> 1.25u base
+
+    # 2. Factor de Mercado (varianza inherente)
+    MARKET_FACTOR = {
+        "result": 1.00,
+        "btts": 1.00,
+        "goals": 0.90,
+        "double_chance": 0.85,
+        "dnb": 0.90,
+        "handicap": 0.75,
+        "corners": 0.60,
+        "cards": 0.55,
+        "shots": 0.60,
+        "fouls": 0.50,
+    }
+    mkt_factor = MARKET_FACTOR.get(market_family, 0.70)
+
+    # 3. Factor de Odds (volatilidad implícita)
+    if odds < 1.60:
+        odds_factor = 1.00
+    elif odds < 2.00:
+        odds_factor = 0.90
+    elif odds < 2.50:
+        odds_factor = 0.75
+    elif odds < 3.50:
+        odds_factor = 0.50
+    else:
+        odds_factor = 0.30
+
+    # 4. Factor de Liga (LRS gradual, no binario)
+    league_factor = 1.0
+    if lrs is not None:
+        if lrs >= 0.85:
+            league_factor = 1.00
+        elif lrs >= 0.70:
+            league_factor = 0.85
+        elif lrs >= 0.60:
+            league_factor = 0.70
+        elif lrs >= 0.45:
+            league_factor = 0.50
+        else:
+            league_factor = 0.30
+
+    # 5. Factor de Edge (calidad del valor detectado)
+    if edge_ev >= 0.12:
+        edge_factor = 1.00
+    elif edge_ev >= 0.08:
+        edge_factor = 0.90
+    elif edge_ev >= 0.05:
+        edge_factor = 0.80
+    elif edge_ev >= 0.03:
+        edge_factor = 0.65
+    else:
+        edge_factor = 0.00
+
+    # 6. (Opcional) Reducción progresiva si la liga está en racha negativa
+    # Si tienes acceso a league.historical_profit:
+    # if league_stats.historical_profit < -5.0:
+    #     stake *= 0.7
+    # elif league_stats.historical_profit < -10.0:
+    #     stake *= 0.5
+
+    # Combinación multiplicativa
+    raw_stake = base * mkt_factor * odds_factor * league_factor * edge_factor
+
+    # Límites duros de seguridad
+    hard_max = 5.0
+    if (lrs or 0.5) < 0.50:
+        hard_max = 2.0
+    if odds >= 3.0:
+        hard_max = min(hard_max, 2.0)
+    if market_family in {"corners", "cards", "shots", "fouls"}:
+        hard_max = min(hard_max, 3.0)
+
+    # Redondeo inteligente: 0.5 en 0.5
+    stake = round(max(0.5, min(hard_max, raw_stake)) * 2) / 2
+
+    return stake if stake >= 1.0 else 0.0
 
 def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None):
     if odds is None or odds <= 1.0:
@@ -922,7 +1003,6 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     lrs_penalty = round(ev - ev_adj, 4)  # cuánto se descontó
     ev = ev_adj
     p = calibrated_p / 100.0
-    kelly_full = (p * odds - 1.0) / (odds - 1.0) if ev > 0 else 0
 
 
     # ─────────────────────────────────────────────────────────────
@@ -951,7 +1031,15 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         if hist_profit < 0.0 or hist_accuracy < 40.0:
             kelly_fraction = min(kelly_fraction, 0.01) # Limita stake a máximo 1u (1% Kelly -> Stake 1)
 
-    kelly = kelly_full * kelly_fraction
+    family = _market_family(sel)
+    stake = _calculate_stake_units(
+        edge_ev=ev,
+        odds=odds or 1.0,
+        kelly_fraction=kelly_fraction,
+        market_family=family,
+        lrs=lrs,
+    )
+
 
     v = ValueIndicator(
         selection=sel,
@@ -964,12 +1052,13 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         edge=round(edge_prob, 1),
         edge_ev=round(ev, 3),
         push_prob=round(push_p, 1),
-        is_value=ev > 0.03,
+        is_value=ev > 0.03 and stake >= 1.0,
         rating=rating,
         data_quality_score=dq_score,
         market_confidence_tier=conf_tier,
         market_variance_tier=var_tier,
-        kelly_fraction=round(kelly, 4),
+        kelly_fraction=round(kelly_fraction, 4),
+        stake_units=stake,
         sample_size_weight=min(1.0, (h.matches_played + a.matches_played) / 30.0) if h and a else 0.5,
         league_reliability_score=round(lrs, 3),
         league_reliability_penalty=lrs_penalty,
@@ -986,7 +1075,6 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         v.is_publishable = is_publishable_pick(v)
         v.quality_score = score_pick_quality(v)
         v.display_score = _calculate_display_score(v)
-        v.is_high_confidence = is_high_confidence_pick(v)
         v.is_underdog = is_underdog_pick(v)
     return v
 
@@ -1910,9 +1998,6 @@ def is_market_blacklisted_for_league(league_name: str, selection: str, category:
         family = _market_family(selection)
         side = _market_side(selection)
 
-        # DEBUG - quitar en producción
-        print(f"[BLACKLIST CHECK] '{selection}' -> family='{family}', side='{side}', league='{league_name}'")
-
         for rule in penalties:
             rule_league = (rule.get("league") or "").strip()
             # Coincidencia exacta de liga case-insensitive o coincidencia normalizada
@@ -1922,8 +2007,6 @@ def is_market_blacklisted_for_league(league_name: str, selection: str, category:
 
                 match_family = not rule_family or rule_family == family.lower()
                 match_side = not rule_side or rule_side == side.lower()
-
-                print(f"[BLACKLIST RULE] league='{rule_league}', family='{rule_family}', side='{rule_side}' | match_family={match_family}, match_side={match_side}")
 
                 if match_family and match_side:
                     # Comprobar categoría
@@ -1935,8 +2018,6 @@ def is_market_blacklisted_for_league(league_name: str, selection: str, category:
                         c_lower = c.strip().lower()
                         if c_lower in {"profesional", "publishable"}:
                             return "profesional"
-                        if c_lower in {"high", "high_confidence", "alta confianza"}:
-                            return "high_confidence"
                         return c_lower
 
                     norm_rule_cat = normalize_cat(rule_cat)
@@ -2543,6 +2624,8 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
             groups.setdefault(key, []).append(v)
         else:
             non_dedup.append(v)
+    
+    print(">>>>>> groups", groups)
 
     # Regla de selección por tamaño de grupo:
     #  - 1 pick   → se conserva tal cual
@@ -2554,7 +2637,7 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
             continue
         sorted_group = sorted(
             group,
-            key=lambda v: v.edge_ev if v.edge_ev is not None else -999.0,
+            key=lambda v: v.edge if v.edge is not None else -999.0,
             reverse=True,
         )
         keep = 2 if len(sorted_group) >= 3 else 1
@@ -3107,18 +3190,16 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
                             for pick in picks:
                                 is_pub = pick.get("is_publishable", False)
                                 is_und = pick.get("is_underdog", False)
-                                is_hc = pick.get("is_high_confidence", False)
-                                if not is_pub and not is_und and not is_hc:
+                                if not is_pub and not is_und:
                                     if pick.get("is_value", False):
                                         is_pub = True
-                                if not (is_pub or is_und or is_hc):
+                                if not (is_pub or is_und):
                                     continue
                                 
                                 if has_result:
                                     success = _check_pick_success(pick, res_dict)
                                     if success is not None:
-                                        kelly = float(pick.get("kelly_fraction") or 0.0)
-                                        stake = min(5, max(1, round(kelly * 100.0))) if kelly > 0 else 1
+                                        stake = _resolve_stake_from_pick(pick)
                                         pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
                                         total_profit += pick_profit
                                         if success != "void":

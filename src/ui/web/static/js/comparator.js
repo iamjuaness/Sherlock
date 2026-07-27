@@ -203,17 +203,13 @@ function renderMultiLineCards(values) {
   const card = document.getElementById("multi-line-card");
   const underdogGrid = document.getElementById("underdog-grid");
   const underdogCard = document.getElementById("underdog-card");
-  const hcGrid = document.getElementById("high-confidence-grid");
-  const hcCard = document.getElementById("high-confidence-card");
 
   if (grid) grid.innerHTML = "";
   if (underdogGrid) underdogGrid.innerHTML = "";
-  if (hcGrid) hcGrid.innerHTML = "";
 
   if (!Array.isArray(values)) {
     if (card) card.style.display = "none";
     if (underdogCard) underdogCard.style.display = "none";
-    if (hcCard) hcCard.style.display = "none";
     return;
   }
 
@@ -238,16 +234,10 @@ function renderMultiLineCards(values) {
       return (b.model_prob ?? 0) - (a.model_prob ?? 0);
     });
 
-  const hcPicks = values
-    .filter((v) => v.selection && v.odds != null)
-    .filter((v) => v.is_high_confidence === true)
-    .sort((a, b) => (b.model_prob ?? 0) - (a.model_prob ?? 0));
-
   // Control de visibilidad
   if (card) card.style.display = valuePicks.length > 0 ? "block" : "none";
   if (underdogCard)
     underdogCard.style.display = underdogPicks.length > 0 ? "block" : "none";
-  if (hcCard) hcCard.style.display = hcPicks.length > 0 ? "block" : "none";
 
   // Función auxiliar de renderizado de item
   const renderItem = (v, targetGrid) => {
@@ -266,9 +256,6 @@ function renderMultiLineCards(values) {
     } else if (v.is_underdog) {
       mod = "underdog";
       badgeText = "🦄 UNDERDOG";
-    } else if (v.is_high_confidence) {
-      mod = "high"; // Use new high style
-      badgeText = "⭐ ALTA CONF.";
     } else if (v.is_value) {
       mod = "value";
       badgeText = "⚖️ VALOR";
@@ -341,7 +328,7 @@ function renderMultiLineCards(values) {
       </div>
       <div class="value-line-card__row">
         <span>Stake Recomendado</span>
-        <span style="font-weight: bold; color: var(--accent-light);">${v.kelly_fraction > 0 ? Math.min(MAX_STAKE, Math.max(MIN_STAKE, Math.round(v.kelly_fraction * 100))) : MIN_STAKE}u</span>
+        <span style="font-weight: bold; color: var(--accent-light);">${v.stake_units !== undefined && v.stake_units !== null ? v.stake_units.toFixed(1) : v.kelly_fraction > 0 ? Math.min(MAX_STAKE, Math.max(MIN_STAKE, Math.round(v.kelly_fraction * 100))) : MIN_STAKE}u</span>
       </div>
       <div class="value-line-card__edge" style="font-weight: bold; font-size: 1.1rem; margin-top: 0.5rem;">
         Edge ${edgeText}
@@ -1099,9 +1086,6 @@ function renderHistoryList(entries) {
               p.is_high_confidence !== true),
         );
         const hasUnderdog = picks.some((p) => p.is_underdog === true);
-        const hasHighConfidence = picks.some(
-          (p) => p.is_high_confidence === true,
-        );
 
         if (hasProfessional)
           pickCategories.push({
@@ -1114,12 +1098,6 @@ function renderHistoryList(entries) {
             label: "Underdog",
             icon: "🚀",
             color: "#FF9800",
-          });
-        if (hasHighConfidence)
-          pickCategories.push({
-            label: "Alta Confianza",
-            icon: "⭐",
-            color: "#FFD700",
           });
       }
 
@@ -1175,7 +1153,7 @@ function filterHistoryUI() {
   const filtered = window._historyEntries.filter(
     (e) =>
       e.match_title.toLowerCase().includes(query) ||
-      e.sport.toLowerCase().includes(query),
+      e.payload.competition.toLowerCase().includes(query),
   );
   renderHistoryList(filtered);
 }
@@ -3312,7 +3290,6 @@ function renderCategoryStats(category) {
       )
         return false;
       if (category === "underdog" && !p.is_underdog) return false;
-      if (category === "high_confidence" && !p.is_high_confidence) return false;
       return true;
     });
 
@@ -3659,8 +3636,6 @@ function filterDetailedPicksUI() {
       )
         return false;
       if (catFilter === "underdog" && !p.is_underdog) return false;
-      if (catFilter === "high_confidence" && !p.is_high_confidence)
-        return false;
     }
 
     // Filter by Result
@@ -3706,9 +3681,6 @@ function filterDetailedPicksUI() {
     if (p.is_underdog) {
       catBadge =
         '<span class="value-line-card__badge badge--underdog" style="margin-top: 0; font-size: 0.65rem;">🦄 Underdog</span>';
-    } else if (p.is_high_confidence) {
-      catBadge =
-        '<span class="value-line-card__badge badge--high" style="margin-top: 0; font-size: 0.65rem; background: rgba(245, 158, 11, 0.15); color: #f59e0b;">⭐ Alta Conf.</span>';
     } else {
       catBadge =
         '<span class="value-line-card__badge badge--strong" style="margin-top: 0; font-size: 0.65rem;">💼 Profesional</span>';

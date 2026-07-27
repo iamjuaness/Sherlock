@@ -1,6 +1,9 @@
 """FastAPI application – Sherlock REST API."""
-
 from __future__ import annotations
+from openai.types.chat import chat_completion_chunk
+from openai.resources import vector_stores
+from openai.resources import vector_stores
+from openai.resources import vector_stores
 
 from datetime import datetime
 import json
@@ -90,6 +93,21 @@ templates = Jinja2Templates(directory=os.path.join(WEB_DIR, "templates"))
 def file_version(path: str) -> str:
     return str(int(os.path.getmtime(path)))
 
+def _resolve_stake_from_pick(pick: dict) -> float:
+    """
+    Usa el stake calculado por el motor si existe.
+    Fallback al cálculo legacy solo para picks antiguos.
+    """
+    # Nuevo campo del motor
+    explicit = pick.get("stake_units")
+    if explicit is not None and explicit > 0:
+        return float(explicit)
+    
+    # Legacy: calcular desde Kelly
+    kelly = float(pick.get("kelly_fraction") or 0.0)
+    if kelly > 0:
+        return min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0)))
+    return MIN_STAKE
 
 
 
@@ -366,293 +384,337 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
     home_name = payload.get("home_team") or payload.get("home", {}).get("name")
     away_name = payload.get("away_team") or payload.get("away", {}).get("name")
 
-    auto_updated = False
-    match_title_found = ""
 
     if home_name and away_name:
         try:
             sport_enum = Sport(sport)
-            # Find in recent AnalysisHistory entries
-            recent_history = (
-                db.query(AnalysisHistory)
-                .filter(AnalysisHistory.sport == sport_enum)
-                .order_by(AnalysisHistory.date.desc())
-                .limit(40)
-                .all()
-            )
+            h_name_lower = home_name.lower()
+            a_name_lower = away_name.lower()
 
-            for h in recent_history:
-                title_lower = h.match_title.lower()
-                h_name_lower = home_name.lower()
-                a_name_lower = away_name.lower()
+            # ── ESTRATEGIA 1: Busqueda directa por event_id (la mas rapida) ──
+            event_id = payload.get("event_id")
+            matched = None
+            if event_id:
+                matched = (
+                    db.query(AnalysisHistory)
+                    .filter(
+                        AnalysisHistory.sport == sport_enum,
+                        AnalysisHistory.payload.contains(str(event_id))
+                    )
+                    .first()
+                )
+                # Si no funciona con .contains(), prueba con:
+                # matched = (
+                #     db.query(AnalysisHistory)
+                #     .filter(
+                #         AnalysisHistory.sport == sport_enum,
+                #         AnalysisHistory.match_title == f"{home_name} vs {away_name}"
+                #     )
+                #     .order_by(AnalysisHistory.date.desc())
+                #     .first()
+                # )
 
-                # Simple flexible substring/containment check
-                # Check if both are present in the title
-                if (h_name_lower[:5] in title_lower and a_name_lower[:5] in title_lower) or \
-                   (h_name_lower in title_lower and a_name_lower in title_lower):
+            # ── ESTRATEGIA 2: Busqueda SQL por nombres en el titulo (sin limit) ──
+            if not matched:
+                # Usamos ILIKE para buscar en la BD directamente, no en Python
+                # Esto trae solo los candidatos que tienen ambos equipos en el titulo
+                candidates = (
+                    db.query(AnalysisHistory)
+                    .filter(
+                        AnalysisHistory.sport == sport_enum,
+                        AnalysisHistory.match_title.ilike(f"%{home_name}%"),
+                        AnalysisHistory.match_title.ilike(f"%{away_name}%")
+                    )
+                    .order_by(AnalysisHistory.date.desc())
+                    .all()
+                )
+
+                # Matching flexible: verificamos que ambos nombres esten presentes
+                for h in candidates:
+                    title_lower = h.match_title.lower()
+                    # Check flexible: primeros 5 chars o nombre completo
+                    home_match = h_name_lower[:5] in title_lower or h_name_lower in title_lower
+                    away_match = a_name_lower[:5] in title_lower or a_name_lower in title_lower
                     
-                    # Update fields
-                    h.final_score_home = payload.get("final_score_home")
-                    h.final_score_away = payload.get("final_score_away")
-                    
-                    # Optional extra stats
-                    if "final_corners_home" in payload: h.final_corners_home = payload.get("final_corners_home")
-                    if "final_corners_away" in payload: h.final_corners_away = payload.get("final_corners_away")
-                    if "final_yellow_cards_home" in payload: h.final_yellow_cards_home = payload.get("final_yellow_cards_home")
-                    if "final_yellow_cards_away" in payload: h.final_yellow_cards_away = payload.get("final_yellow_cards_away")
-                    if "final_red_cards_home" in payload: h.final_red_cards_home = payload.get("final_red_cards_home")
-                    if "final_red_cards_away" in payload: h.final_red_cards_away = payload.get("final_red_cards_away")
-                    if "final_shots_home" in payload: h.final_shots_home = payload.get("final_shots_home")
-                    if "final_shots_away" in payload: h.final_shots_away = payload.get("final_shots_away")
-                    if "final_shots_on_target_home" in payload: h.final_shots_on_target_home = payload.get("final_shots_on_target_home")
-                    if "final_shots_on_target_away" in payload: h.final_shots_on_target_away = payload.get("final_shots_on_target_away")
-                    if "final_fouls_home" in payload: h.final_fouls_home = payload.get("final_fouls_home")
-                    if "final_fouls_away" in payload: h.final_fouls_away = payload.get("final_fouls_away")
-                    if "final_offsides_home" in payload: h.final_offsides_home = payload.get("final_offsides_home")
-                    if "final_offsides_away" in payload: h.final_offsides_away = payload.get("final_offsides_away")
+                    if home_match and away_match:
+                        matched = h
+                        break
 
-                    # Detailed stats from SofaScore
-                    det_fields = [
-                        "expected_goals_home", "expected_goals_away",
-                        "ball_possession_home", "ball_possession_away",
-                        "aerial_duels_percentage_home", "aerial_duels_percentage_away",
-                        "ground_duels_percentage_home", "ground_duels_percentage_away",
-                        "dribbles_percentage_home", "dribbles_percentage_away",
-                        "duel_won_percent_home", "duel_won_percent_away",
-                        "won_tackle_percent_home", "won_tackle_percent_away",
-                        "goals_prevented_home", "goals_prevented_away",
-                        "accurate_cross_home", "accurate_cross_away",
-                        "accurate_long_balls_home", "accurate_long_balls_away",
-                        "accurate_passes_home", "accurate_passes_away",
-                        "accurate_through_ball_home", "accurate_through_ball_away",
-                        "ball_recovery_home", "ball_recovery_away",
-                        "big_chance_created_home", "big_chance_created_away",
-                        "big_chance_missed_home", "big_chance_missed_away",
-                        "big_chance_scored_home", "big_chance_scored_away",
-                        "blocked_scoring_attempt_home", "blocked_scoring_attempt_away",
-                        "corner_kicks_home", "corner_kicks_away",
-                        "dispossessed_home", "dispossessed_away",
-                        "dive_saves_home", "dive_saves_away",
-                        "final_third_entries_home", "final_third_entries_away",
-                        "final_third_phase_statistic_home", "final_third_phase_statistic_away",
-                        "fouled_final_third_home", "fouled_final_third_away",
-                        "fouls_home", "fouls_away",
-                        "free_kicks_home", "free_kicks_away",
-                        "goal_kicks_home", "goal_kicks_away",
-                        "goalkeeper_saves_home", "goalkeeper_saves_away",
-                        "high_claims_home", "high_claims_away",
-                        "hit_woodwork_home", "hit_woodwork_away",
-                        "interception_won_home", "interception_won_away",
-                        "offsides_home", "offsides_away",
-                        "passes_home", "passes_away",
-                        "punches_home", "punches_away",
-                        "shots_off_goal_home", "shots_off_goal_away",
-                        "shots_on_goal_home", "shots_on_goal_away",
-                        "throw_ins_home", "throw_ins_away",
-                        "total_clearance_home", "total_clearance_away",
-                        "total_shots_inside_box_home", "total_shots_inside_box_away",
-                        "total_shots_on_goal_home", "total_shots_on_goal_away",
-                        "total_shots_outside_box_home", "total_shots_outside_box_away",
-                        "total_tackle_home", "total_tackle_away",
-                        "touches_in_opp_box_home", "touches_in_opp_box_away",
-                        "yellow_cards_home", "yellow_cards_away"
-                    ]
-                    for field in det_fields:
-                        if field in payload:
-                            setattr(h, field, payload.get(field))
+            # ── Si encontramos el partido, actualizamos ──
+            if matched:
+                h = matched
+                
+                # Update fields
+                h.final_score_home = payload.get("final_score_home")
+                h.final_score_away = payload.get("final_score_away")
+                
+                # Optional extra stats
+                optional_fields = [
+                    "final_corners_home", "final_corners_away",
+                    "final_yellow_cards_home", "final_yellow_cards_away",
+                    "final_red_cards_home", "final_red_cards_away",
+                    "final_shots_home", "final_shots_away",
+                    "final_shots_on_target_home", "final_shots_on_target_away",
+                    "final_fouls_home", "final_fouls_away",
+                    "final_offsides_home", "final_offsides_away"
+                ]
+                for field in optional_fields:
+                    if field in payload:
+                        setattr(h, field, payload.get(field))
 
-                    # Calculate Accuracy
-                    if h.picks_calculados:
-                        try:
-                            picks = json.loads(str(h.picks_calculados))
-                            if isinstance(picks, list) and len(picks) > 0:
-                                results_dict = {
-                                    "final_score_home": h.final_score_home,
-                                    "final_score_away": h.final_score_away,
-                                    "final_corners_home": h.final_corners_home,
-                                    "final_corners_away": h.final_corners_away,
-                                    "final_yellow_cards_home": h.final_yellow_cards_home,
-                                    "final_yellow_cards_away": h.final_yellow_cards_away,
-                                    "final_red_cards_home": h.final_red_cards_home,
-                                    "final_red_cards_away": h.final_red_cards_away,
-                                    "final_shots_home": h.final_shots_home,
-                                    "final_shots_away": h.final_shots_away,
-                                    "final_shots_on_target_home": h.final_shots_on_target_home,
-                                    "final_shots_on_target_away": h.final_shots_on_target_away,
-                                    "final_fouls_home": h.final_fouls_home,
-                                    "final_fouls_away": h.final_fouls_away,
-                                    "final_offsides_home": h.final_offsides_home,
-                                    "final_offsides_away": h.final_offsides_away,
-                                }
-                                hits = 0
-                                total = 0
-                                for pick in picks:
-                                    if pick.get("is_blacklisted"):
-                                        continue
-                                    if not (pick.get("is_publishable", pick.get("is_value", False))):
-                                        continue
-                                    success = _check_pick_success(pick, results_dict)
-                                    if success is not None and success != "void":
-                                        total += 1
-                                        if _is_pick_hit(success):
-                                            hits += 1
-                                if total > 0:
-                                    h.accuracy_percentage = (hits / total) * 100
-                        except Exception as e:
-                            print(f"Error calculating accuracy in push_result: {e}")
+                # Detailed stats from SofaScore
+                det_fields = [
+                    "expected_goals_home", "expected_goals_away",
+                    "ball_possession_home", "ball_possession_away",
+                    "aerial_duels_percentage_home", "aerial_duels_percentage_away",
+                    "ground_duels_percentage_home", "ground_duels_percentage_away",
+                    "dribbles_percentage_home", "dribbles_percentage_away",
+                    "duel_won_percent_home", "duel_won_percent_away",
+                    "won_tackle_percent_home", "won_tackle_percent_away",
+                    "goals_prevented_home", "goals_prevented_away",
+                    "accurate_cross_home", "accurate_cross_away",
+                    "accurate_long_balls_home", "accurate_long_balls_away",
+                    "accurate_passes_home", "accurate_passes_away",
+                    "accurate_through_ball_home", "accurate_through_ball_away",
+                    "ball_recovery_home", "ball_recovery_away",
+                    "big_chance_created_home", "big_chance_created_away",
+                    "big_chance_missed_home", "big_chance_missed_away",
+                    "big_chance_scored_home", "big_chance_scored_away",
+                    "blocked_scoring_attempt_home", "blocked_scoring_attempt_away",
+                    "corner_kicks_home", "corner_kicks_away",
+                    "dispossessed_home", "dispossessed_away",
+                    "dive_saves_home", "dive_saves_away",
+                    "final_third_entries_home", "final_third_entries_away",
+                    "final_third_phase_statistic_home", "final_third_phase_statistic_away",
+                    "fouled_final_third_home", "fouled_final_third_away",
+                    "fouls_home", "fouls_away",
+                    "free_kicks_home", "free_kicks_away",
+                    "goal_kicks_home", "goal_kicks_away",
+                    "goalkeeper_saves_home", "goalkeeper_saves_away",
+                    "high_claims_home", "high_claims_away",
+                    "hit_woodwork_home", "hit_woodwork_away",
+                    "interception_won_home", "interception_won_away",
+                    "offsides_home", "offsides_away",
+                    "passes_home", "passes_away",
+                    "punches_home", "punches_away",
+                    "shots_off_goal_home", "shots_off_goal_away",
+                    "shots_on_goal_home", "shots_on_goal_away",
+                    "throw_ins_home", "throw_ins_away",
+                    "total_clearance_home", "total_clearance_away",
+                    "total_shots_inside_box_home", "total_shots_inside_box_away",
+                    "total_shots_on_goal_home", "total_shots_on_goal_away",
+                    "total_shots_outside_box_home", "total_shots_outside_box_away",
+                    "total_tackle_home", "total_tackle_away",
+                    "touches_in_opp_box_home", "touches_in_opp_box_away",
+                    "yellow_cards_home", "yellow_cards_away"
+                ]
+                for field in det_fields:
+                    if field in payload:
+                        setattr(h, field, payload.get(field))
 
-                    db.commit()
-                    db.refresh(h)
-                    auto_updated = True
-                    match_title_found = h.match_title
-                    break
+                # Calculate Accuracy
+                if h.picks_calculados:
+                    try:
+                        picks = json.loads(str(h.picks_calculados))
+                        if isinstance(picks, list) and len(picks) > 0:
+                            results_dict = {
+                                "final_score_home": h.final_score_home,
+                                "final_score_away": h.final_score_away,
+                                "final_corners_home": h.final_corners_home,
+                                "final_corners_away": h.final_corners_away,
+                                "final_yellow_cards_home": h.final_yellow_cards_home,
+                                "final_yellow_cards_away": h.final_yellow_cards_away,
+                                "final_red_cards_home": h.final_red_cards_home,
+                                "final_red_cards_away": h.final_red_cards_away,
+                                "final_shots_home": h.final_shots_home,
+                                "final_shots_away": h.final_shots_away,
+                                "final_shots_on_target_home": h.final_shots_on_target_home,
+                                "final_shots_on_target_away": h.final_shots_on_target_away,
+                                "final_fouls_home": h.final_fouls_home,
+                                "final_fouls_away": h.final_fouls_away,
+                                "final_offsides_home": h.final_offsides_home,
+                                "final_offsides_away": h.final_offsides_away,
+                            }
+                            hits = 0
+                            total = 0
+                            for pick in picks:
+                                if pick.get("is_blacklisted"):
+                                    continue
+                                if not (pick.get("is_publishable", pick.get("is_value", False))):
+                                    continue
+                                success = _check_pick_success(pick, results_dict)
+                                if success is not None and success != "void":
+                                    total += 1
+                                    if _is_pick_hit(success):
+                                        hits += 1
+                            if total > 0:
+                                h.accuracy_percentage = (hits / total) * 100
+                    except Exception as e:
+                        print(f"Error calculating accuracy in push_result: {e}")
+
+                db.commit()
+                db.refresh(h)
+                
+                return {
+                    "status": "ok",
+                    "message": f"Resultado recibido y auto-asociado al partido en BD: '{h.match_title}'",
+                    "auto_updated": True
+                }
+
         except Exception as ex:
             print(f"Error auto-matching result payload: {ex}")
 
-    if auto_updated:
-        return {
-            "status": "ok",
-            "message": f"Resultado recibido y auto-asociado al partido en BD: '{match_title_found}'",
-            "auto_updated": True
+    # ── Si llegamos aca, NO se encontro en toda la BD: crear nuevo registro ──
+    try:
+        sport_enum = Sport(sport)
+        competition_name = payload.get("tournament.name") or payload.get("competition") or "Desconocida"
+        match_title = f"{home_name} vs {away_name}"
+
+        # Reconstruct cleanup payload for storage
+        cleaned_payload = {
+            "sport": sport,
+            "home": {"name": home_name},
+            "away": {"name": away_name},
+            "competition": competition_name,
+            "season_year": payload.get("season_year"),
+            "season_id": payload.get("season_id"),
+            "tournament_id": payload.get("tournament_id"),
+            "round": payload.get("round"),
+            "start_timestamp": payload.get("start_timestamp"),
+            "event_id": payload.get("event_id")
         }
-    else:
-        # Create a new AnalysisHistory record for this match result (e.g. historical data)
-        try:
-            sport_enum = Sport(sport)
-            competition_name = payload.get("tournament.name") or payload.get("competition") or "Desconocida"
-            match_title = f"{home_name} vs {away_name}"
 
-            # Reconstruct cleanup payload for storage
-            cleaned_payload = {
-                "sport": sport,
-                "home": {"name": home_name},
-                "away": {"name": away_name},
-                "competition": competition_name,
-                "season_year": payload.get("season_year"),
-                "season_id": payload.get("season_id"),
-                "tournament_id": payload.get("tournament_id"),
-                "round": payload.get("round"),
-                "start_timestamp": payload.get("start_timestamp"),
-                "event_id": payload.get("event_id")
-            }
+        print(f"Reconstruido payload: {cleaned_payload}")
 
-            print(f"Reconstruido payload: {cleaned_payload}")
+        match_date_val = None
+        if payload.get("start_timestamp"):
+            match_date_val = datetime.utcfromtimestamp(payload["start_timestamp"])
+        else:
+            match_date_val = datetime.utcnow()
 
-            match_date_val = None
-            if payload.get("start_timestamp"):
-                match_date_val = datetime.utcfromtimestamp(payload["start_timestamp"])
-            else:
-                match_date_val = datetime.utcnow()
+        # ── Deduplicacion CORREGIDA: ahora SI usa event_id ──
+        event_id_str = str(payload.get("event_id")) if payload.get("event_id") else None
+        
+        existing = None
+        if event_id_str:
+            # Buscar por event_id en el payload JSON o en el match_title exacto + fecha
+            existing = db.query(AnalysisHistory).filter(
+                AnalysisHistory.sport == sport_enum,
+                AnalysisHistory.match_date == match_date_val,
+                or_(
+                    AnalysisHistory.payload.contains(event_id_str),
+                    AnalysisHistory.match_title == match_title
+                )
+            ).first()
+        else:
+            # Sin event_id, buscar por titulo exacto + fecha
+            existing = db.query(AnalysisHistory).filter(
+                AnalysisHistory.sport == sport_enum,
+                AnalysisHistory.match_title == match_title,
+                AnalysisHistory.match_date == match_date_val,
+            ).first()
 
-            # ── Deduplication: skip if exact same event already saved ──
-            event_id_str = str(payload.get("event_id")) if payload.get("event_id") else None
-            if event_id_str:
-                existing_by_event = db.query(AnalysisHistory).filter(
-                    AnalysisHistory.sport == sport_enum,
-                    AnalysisHistory.match_title == match_title,
-                    AnalysisHistory.match_date == match_date_val,
-                ).first()
-                if existing_by_event:
-                    return {
-                        "status": "ok",
-                        "message": f"Evento {event_id_str} ya existe — omitido",
-                        "auto_updated": False,
-                        "skipped_duplicate": True
-                    }
-
-            history = AnalysisHistory(
-                sport=sport_enum,
-                match_title=match_title,
-                payload=json.dumps(cleaned_payload),
-                date=match_date_val,
-                match_date=match_date_val,
-                picks_calculados=None,
-                has_real_stats=True,
-                count_in_profitability=False, # Don't skew stats since it has no picks
-                final_score_home=payload.get("final_score_home"),
-                final_score_away=payload.get("final_score_away"),
-                final_corners_home=payload.get("final_corners_home"),
-                final_corners_away=payload.get("final_corners_away"),
-                final_yellow_cards_home=payload.get("final_yellow_cards_home"),
-                final_yellow_cards_away=payload.get("final_yellow_cards_away"),
-                final_red_cards_home=payload.get("final_red_cards_home"),
-                final_red_cards_away=payload.get("final_red_cards_away"),
-                final_shots_home=payload.get("final_shots_home"),
-                final_shots_away=payload.get("final_shots_away"),
-                final_shots_on_target_home=payload.get("final_shots_on_target_home"),
-                final_shots_on_target_away=payload.get("final_shots_on_target_away"),
-                final_fouls_home=payload.get("final_fouls_home"),
-                final_fouls_away=payload.get("final_fouls_away"),
-                final_offsides_home=payload.get("final_offsides_home"),
-                final_offsides_away=payload.get("final_offsides_away")
-            )
-            
-            # Detailed stats from SofaScore
-            det_fields = [
-                "expected_goals_home", "expected_goals_away",
-                "ball_possession_home", "ball_possession_away",
-                "aerial_duels_percentage_home", "aerial_duels_percentage_away",
-                "ground_duels_percentage_home", "ground_duels_percentage_away",
-                "dribbles_percentage_home", "dribbles_percentage_away",
-                "duel_won_percent_home", "duel_won_percent_away",
-                "won_tackle_percent_home", "won_tackle_percent_away",
-                "goals_prevented_home", "goals_prevented_away",
-                "accurate_cross_home", "accurate_cross_away",
-                "accurate_long_balls_home", "accurate_long_balls_away",
-                "accurate_passes_home", "accurate_passes_away",
-                "accurate_through_ball_home", "accurate_through_ball_away",
-                "ball_recovery_home", "ball_recovery_away",
-                "big_chance_created_home", "big_chance_created_away",
-                "big_chance_missed_home", "big_chance_missed_away",
-                "big_chance_scored_home", "big_chance_scored_away",
-                "blocked_scoring_attempt_home", "blocked_scoring_attempt_away",
-                "corner_kicks_home", "corner_kicks_away",
-                "dispossessed_home", "dispossessed_away",
-                "dive_saves_home", "dive_saves_away",
-                "final_third_entries_home", "final_third_entries_away",
-                "final_third_phase_statistic_home", "final_third_phase_statistic_away",
-                "fouled_final_third_home", "fouled_final_third_away",
-                "fouls_home", "fouls_away",
-                "free_kicks_home", "free_kicks_away",
-                "goal_kicks_home", "goal_kicks_away",
-                "goalkeeper_saves_home", "goalkeeper_saves_away",
-                "high_claims_home", "high_claims_away",
-                "hit_woodwork_home", "hit_woodwork_away",
-                "interception_won_home", "interception_won_away",
-                "offsides_home", "offsides_away",
-                "passes_home", "passes_away",
-                "punches_home", "punches_away",
-                "shots_off_goal_home", "shots_off_goal_away",
-                "shots_on_goal_home", "shots_on_goal_away",
-                "throw_ins_home", "throw_ins_away",
-                "total_clearance_home", "total_clearance_away",
-                "total_shots_inside_box_home", "total_shots_inside_box_away",
-                "total_shots_on_goal_home", "total_shots_on_goal_away",
-                "total_shots_outside_box_home", "total_shots_outside_box_away",
-                "total_tackle_home", "total_tackle_away",
-                "touches_in_opp_box_home", "touches_in_opp_box_away",
-                "yellow_cards_home", "yellow_cards_away"
-            ]
-            for field in det_fields:
-                if field in payload:
-                    setattr(history, field, payload.get(field))
-            
-            db.add(history)
-            db.commit()
-            
+        if existing:
             return {
                 "status": "ok",
-                "message": f"Resultado guardado como nuevo registro histórico para {home_name} vs {away_name}.",
+                "message": f"Evento ya existe — omitido",
                 "auto_updated": False,
-                "created_new": True
+                "skipped_duplicate": True
             }
-        except Exception as create_ex:
-            print(f"Error creating historical record: {create_ex}")
-            return {
-                "status": "error",
-                "message": f"Error al crear registro histórico: {str(create_ex)}",
-                "auto_updated": False
-            }
+
+        history = AnalysisHistory(
+            sport=sport_enum,
+            match_title=match_title,
+            payload=json.dumps(cleaned_payload),
+            date=match_date_val,
+            match_date=match_date_val,
+            picks_calculados=None,
+            has_real_stats=True,
+            count_in_profitability=False,
+            final_score_home=payload.get("final_score_home"),
+            final_score_away=payload.get("final_score_away"),
+            final_corners_home=payload.get("final_corners_home"),
+            final_corners_away=payload.get("final_corners_away"),
+            final_yellow_cards_home=payload.get("final_yellow_cards_home"),
+            final_yellow_cards_away=payload.get("final_yellow_cards_away"),
+            final_red_cards_home=payload.get("final_red_cards_home"),
+            final_red_cards_away=payload.get("final_red_cards_away"),
+            final_shots_home=payload.get("final_shots_home"),
+            final_shots_away=payload.get("final_shots_away"),
+            final_shots_on_target_home=payload.get("final_shots_on_target_home"),
+            final_shots_on_target_away=payload.get("final_shots_on_target_away"),
+            final_fouls_home=payload.get("final_fouls_home"),
+            final_fouls_away=payload.get("final_fouls_away"),
+            final_offsides_home=payload.get("final_offsides_home"),
+            final_offsides_away=payload.get("final_offsides_away")
+        )
+        
+        # Detailed stats from SofaScore
+        det_fields = [
+            "expected_goals_home", "expected_goals_away",
+            "ball_possession_home", "ball_possession_away",
+            "aerial_duels_percentage_home", "aerial_duels_percentage_away",
+            "ground_duels_percentage_home", "ground_duels_percentage_away",
+            "dribbles_percentage_home", "dribbles_percentage_away",
+            "duel_won_percent_home", "duel_won_percent_away",
+            "won_tackle_percent_home", "won_tackle_percent_away",
+            "goals_prevented_home", "goals_prevented_away",
+            "accurate_cross_home", "accurate_cross_away",
+            "accurate_long_balls_home", "accurate_long_balls_away",
+            "accurate_passes_home", "accurate_passes_away",
+            "accurate_through_ball_home", "accurate_through_ball_away",
+            "ball_recovery_home", "ball_recovery_away",
+            "big_chance_created_home", "big_chance_created_away",
+            "big_chance_missed_home", "big_chance_missed_away",
+            "big_chance_scored_home", "big_chance_scored_away",
+            "blocked_scoring_attempt_home", "blocked_scoring_attempt_away",
+            "corner_kicks_home", "corner_kicks_away",
+            "dispossessed_home", "dispossessed_away",
+            "dive_saves_home", "dive_saves_away",
+            "final_third_entries_home", "final_third_entries_away",
+            "final_third_phase_statistic_home", "final_third_phase_statistic_away",
+            "fouled_final_third_home", "fouled_final_third_away",
+            "fouls_home", "fouls_away",
+            "free_kicks_home", "free_kicks_away",
+            "goal_kicks_home", "goal_kicks_away",
+            "goalkeeper_saves_home", "goalkeeper_saves_away",
+            "high_claims_home", "high_claims_away",
+            "hit_woodwork_home", "hit_woodwork_away",
+            "interception_won_home", "interception_won_away",
+            "offsides_home", "offsides_away",
+            "passes_home", "passes_away",
+            "punches_home", "punches_away",
+            "shots_off_goal_home", "shots_off_goal_away",
+            "shots_on_goal_home", "shots_on_goal_away",
+            "throw_ins_home", "throw_ins_away",
+            "total_clearance_home", "total_clearance_away",
+            "total_shots_inside_box_home", "total_shots_inside_box_away",
+            "total_shots_on_goal_home", "total_shots_on_goal_away",
+            "total_shots_outside_box_home", "total_shots_outside_box_away",
+            "total_tackle_home", "total_tackle_away",
+            "touches_in_opp_box_home", "touches_in_opp_box_away",
+            "yellow_cards_home", "yellow_cards_away"
+        ]
+        for field in det_fields:
+            if field in payload:
+                setattr(history, field, payload.get(field))
+        
+        db.add(history)
+        db.commit()
+        
+        return {
+            "status": "ok",
+            "message": f"Resultado guardado como nuevo registro historico para {home_name} vs {away_name}.",
+            "auto_updated": False,
+            "created_new": True
+        }
+    except Exception as create_ex:
+        print(f"Error creating historical record: {create_ex}")
+        return {
+            "status": "error",
+            "message": f"Error al crear registro historico: {str(create_ex)}",
+            "auto_updated": False
+        }
 
 
 @app.get("/api/v1/result", tags=["Results"])
@@ -1135,13 +1197,12 @@ def get_leagues_stats(
                             continue
                         is_pub = pick.get("is_publishable", False)
                         is_und = pick.get("is_underdog", False)
-                        is_hc = pick.get("is_high_confidence", False)
                         
-                        if not is_pub and not is_und and not is_hc:
+                        if not is_pub and not is_und:
                             if pick.get("is_value", False):
                                 is_pub = True
                                 
-                        if not (is_pub or is_und or is_hc):
+                        if not (is_pub or is_und):
                             continue
                         
                         # If resolving success
@@ -1149,8 +1210,7 @@ def get_leagues_stats(
                             success = _check_pick_success(pick, res_dict)
                             if success is not None:
                                 if use_stake:
-                                    kelly = float(pick.get("kelly_fraction") or 0.0)
-                                    stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
+                                    stake = _resolve_stake_from_pick(pick)
                                 else:
                                     stake = MIN_STAKE
                                 pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
@@ -1406,7 +1466,6 @@ def apply_blacklist(db: Session = Depends(get_db)):
     from src.ui.api.compare import (
         is_market_blacklisted_for_league,
         is_publishable_pick,
-        is_high_confidence_pick,
         is_underdog_pick,
         score_pick_quality,
         _calculate_display_score,
@@ -1457,7 +1516,6 @@ def apply_blacklist(db: Session = Depends(get_db)):
                         pick["is_value"] = False
                         pick["quality_score"] = -1
                         pick["strategic_score"] = -1
-                        pick["is_high_confidence"] = False
                         pick["is_underdog"] = False
                     else:
                         # Re-construimos ValueIndicator temporal para re-calcular los campos utilizando las fórmulas
@@ -1476,7 +1534,6 @@ def apply_blacklist(db: Session = Depends(get_db)):
                         pick["is_value"] = (v.edge_ev or 0.0) > 0.03
                         pick["quality_score"] = score_pick_quality(v)
                         pick["display_score"] = _calculate_display_score(v)
-                        pick["is_high_confidence"] = is_high_confidence_pick(v)
                         pick["is_underdog"] = is_underdog_pick(v)
                         pick["strategic_score"] = _frontend_style_strategic_score(v)
 
@@ -1615,7 +1672,7 @@ def get_global_stats(
     edge_b_stats = {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in edge_buckets_cfg}
     conf_b_stats = {label: {"count": 0, "hits": 0, "resolved": 0, "total_odds": 0.0} for _, _, label in conf_buckets_cfg}
     
-    categories = ["professional", "underdog", "high_confidence"]
+    categories = ["professional", "underdog"]
     cat_accumulators = {}
     for cat in categories:
         cat_accumulators[cat] = {
@@ -1704,22 +1761,19 @@ def get_global_stats(
                         continue
                     is_pub = pick.get("is_publishable", False)
                     is_und = pick.get("is_underdog", False)
-                    is_hc = pick.get("is_high_confidence", False)
                     
                     # Fallback for old picks that might only have is_value
-                    if not is_pub and not is_und and not is_hc:
+                    if not is_pub and not is_und:
                         if pick.get("is_value", False):
                             is_pub = True
                             
-                    if not (is_pub or is_und or is_hc):
+                    if not (is_pub or is_und):
                         continue
                         
                     if is_pub:
                         cat = "professional"
                     elif is_und:
                         cat = "underdog"
-                    else:
-                        cat = "high_confidence"
 
                     odds = float(pick.get("odds", 0.0))
                     
@@ -1743,8 +1797,7 @@ def get_global_stats(
 
                     # --- Only resolved picks beyond this point ---
                     if use_stake:
-                        kelly = float(pick.get("kelly_fraction") or 0.0)
-                        stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
+                        stake = _resolve_stake_from_pick(pick)
                     else:
                         stake = MIN_STAKE
                     pick_profit = _calculate_pick_profit(success, odds) * stake
@@ -2055,7 +2108,7 @@ def export_excel_report(
         except Exception:
             pass
             
-    history = query.all()
+    history = query.filter(AnalysisHistory.count_in_profitability == True).all()
     
     matches_data = []
     picks_data = []
@@ -2075,7 +2128,7 @@ def export_excel_report(
     total_exact_scores_hits = 0
     
     # Acumuladores de categorías
-    categories = ["professional", "underdog", "high_confidence"]
+    categories = ["professional", "underdog"]
     cat_accumulators = {
         cat: {
             "picks": 0,
@@ -2196,16 +2249,15 @@ def export_excel_report(
                             continue
                         is_pub = pick.get("is_publishable", False)
                         is_und = pick.get("is_underdog", False)
-                        is_hc = pick.get("is_high_confidence", False)
                         
-                        if not is_pub and not is_und and not is_hc:
+                        if not is_pub and not is_und:
                             if pick.get("is_value", False):
                                 is_pub = True
                                 
-                        if not (is_pub or is_und or is_hc):
+                        if not (is_pub or is_und):
                             continue
                             
-                        cat = "professional" if is_pub else ("underdog" if is_und else "high_confidence")
+                        cat = "professional" if is_pub else "underdog"
                         
                         odds = float(pick.get("odds", 0.0))
                         market = pick.get("market")
@@ -2222,8 +2274,7 @@ def export_excel_report(
                         pick_profit = 0.0
                         
                         if use_stake:
-                            kelly = float(pick.get("kelly_fraction") or 0.0)
-                            stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
+                            stake = _resolve_stake_from_pick(pick)
                         else:
                             stake = MIN_STAKE
                             
@@ -2490,14 +2541,13 @@ def get_all_picks(
                     continue
                 is_pub = pick.get("is_publishable", False)
                 is_und = pick.get("is_underdog", False)
-                is_hc = pick.get("is_high_confidence", False)
                 
                 # Fallback for old picks that might only have is_value
-                if not is_pub and not is_und and not is_hc:
+                if not is_pub and not is_und:
                     if pick.get("is_value", False):
                         is_pub = True
                         
-                if not (is_pub or is_und or is_hc):
+                if not (is_pub or is_und):
                     continue
 
                 success = None
@@ -2519,7 +2569,6 @@ def get_all_picks(
                     "odds": pick.get("odds", 0.0),
                     "success": success,
                     "is_value": pick.get("is_value", False),
-                    "is_high_confidence": is_hc,
                     "is_underdog": is_und,
                     "count_in_profitability": getattr(h, "count_in_profitability", True),
                     "calibrated_prob": pick.get("calibrated_prob"),
@@ -3009,7 +3058,7 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut, 
             return out
             
         # Solo se consideran para el resumen de acierto los picks de Valor
-        relevant_picks = [p for p in picks if (p.get("is_value") or p.get("is_publishable") or p.get("is_underdog") or p.get("is_high_confidence")) and not p.get("is_blacklisted")]
+        relevant_picks = [p for p in picks if (p.get("is_value") or p.get("is_publishable") or p.get("is_underdog")) and not p.get("is_blacklisted")]
         out.has_picks = len(relevant_picks) > 0
         
         # Calculate summary if results exist
@@ -3047,8 +3096,7 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut, 
                             hits += 1
                     
                     if use_stake:
-                        kelly = float(p.get("kelly_fraction") or 0.0)
-                        stake = min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0))) if kelly > 0 else MIN_STAKE
+                        stake = _resolve_stake_from_pick(p)
                     else:
                         stake = MIN_STAKE
                     pick_profit = _calculate_pick_profit(success, float(p.get("odds") or 0.0)) * stake

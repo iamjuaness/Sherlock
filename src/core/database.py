@@ -33,6 +33,7 @@ def _column_exists(conn, table: str, column: str) -> bool:
 def init_db() -> None:
     """Create all tables and run idempotent schema migrations."""
     Base.metadata.create_all(bind=engine)
+    create_indexes()
 
     with engine.connect() as conn:
         # ── analysis_history result fields ──
@@ -184,3 +185,14 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def create_indexes():
+    """Create indexes for analysis_history table."""
+    with engine.connect() as conn:
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_analysis_history_sport_title ON analysis_history(sport, match_title);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_analysis_history_sport_date ON analysis_history(sport, match_date DESC);"
+        ))
+        conn.commit()

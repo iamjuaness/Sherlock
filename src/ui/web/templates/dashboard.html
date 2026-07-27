@@ -3956,29 +3956,7 @@
                 <!-- Se llenará desde JS -->
               </div>
             </div>
-
-            <!-- Nuevo apartado: High Confidence -->
-            <div
-              class="card"
-              id="high-confidence-card"
-              style="display: none; border-left: 4px solid #f59e0b"
-            >
-              <h3>⭐ Picks de Alta Confianza (Sin Edge)</h3>
-              <p
-                style="
-                  font-size: 0.8rem;
-                  color: var(--text-dim);
-                  margin-bottom: 1rem;
-                "
-              >
-                Picks con probabilidad ≥75% según el modelo, pero sin ventaja
-                estadística (Edge) suficiente.
-              </p>
-              <div id="high-confidence-grid" class="multi-line-grid">
-                <!-- Se llenará desde JS -->
-              </div>
-            </div>
-
+            
             <div class="card card--projected">
               <h3>🎯 Líneas Proyectadas (Automation Tips)</h3>
               <div id="projected-lines" class="projected-grid">
@@ -4465,14 +4443,7 @@
                 >
                   🦄 Underdog
                 </button>
-                <button
-                  class="tab-btn"
-                  data-category="high_confidence"
-                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
-                  onclick="switchStatsCategory('high_confidence')"
-                >
-                  ⭐ Confianza sin Edge
-                </button>
+                
               </div>
             </div>
             <!-- Summary Cards -->
@@ -4656,7 +4627,6 @@
                   <option value="all">Todas</option>
                   <option value="professional">💼 Profesional</option>
                   <option value="underdog">🦄 Underdog</option>
-                  <option value="high_confidence">⭐ Alta Confianza</option>
                 </select>
               </div>
 
@@ -4766,14 +4736,6 @@
                   onclick="switchStatsCategory('underdog')"
                 >
                   🦄 Underdog
-                </button>
-                <button
-                  class="tab-btn"
-                  data-category="high_confidence"
-                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
-                  onclick="switchStatsCategory('high_confidence')"
-                >
-                  ⭐ Confianza sin Edge
                 </button>
               </div>
             </div>
@@ -5046,14 +5008,6 @@
                   onclick="switchStatsCategory('underdog')"
                 >
                   🦄 Underdog
-                </button>
-                <button
-                  class="tab-btn"
-                  data-category="high_confidence"
-                  style="font-size: 0.85rem; padding: 0.25rem 0.75rem"
-                  onclick="switchStatsCategory('high_confidence')"
-                >
-                  ⭐ Confianza sin Edge
                 </button>
               </div>
             </div>

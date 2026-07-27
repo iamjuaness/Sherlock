@@ -397,7 +397,6 @@ class PickStat(BaseModel):
     odds: float
     success: bool | str | None = None
     is_value: bool
-    is_high_confidence: bool = False
     is_underdog: bool = False
     count_in_profitability: bool = True
     

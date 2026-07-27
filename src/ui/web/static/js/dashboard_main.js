@@ -1,6 +1,6 @@
 // Sherlock - Main Dashboard script
 let globalStatsData = null;
-let activeCategory = "global"; // 'global', 'professional', 'underdog', 'high_confidence'
+let activeCategory = "global"; // 'global', 'professional', 'underdog'
 
 // Chart instances
 let marketChartInstance = null;
@@ -276,7 +276,6 @@ function switchCategory(category) {
     global: 0,
     professional: 1,
     underdog: 2,
-    high_confidence: 3,
   }[category];
 
   document
@@ -396,7 +395,6 @@ function renderDashboard() {
 
       setBreakdownStyle(document.getElementById("prof-breakdown-pro"), proProf);
       setBreakdownStyle(document.getElementById("prof-breakdown-und"), undProf);
-      setBreakdownStyle(document.getElementById("prof-breakdown-hc"), hcProf);
     } else {
       breakdownEl.style.display = "none";
     }
