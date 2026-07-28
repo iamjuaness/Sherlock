@@ -550,6 +550,7 @@ class CompareResponse(BaseModel):
     h_offsides_lam:  Optional[float] = None
     a_offsides_lam:  Optional[float] = None
     most_probable_score: Optional[str] = None
+    mps_confidence: Optional[float] = None  # Probabilidad acumulada del marcador y vecinos (±1 gol)
     comparisons:     list[StatComparison]
     values:          list[ValueIndicator]
     projected_lines: list[ProjectedLine] = []
@@ -702,7 +703,7 @@ def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float
     p = raw_prob / 100.0
 
     b = 0.85 
-    if market_family in {"corners", "cards", "shots"}:
+    if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         b = 0.75
     elif market_family == "double_chance":
         if p >= 0.80:
@@ -752,26 +753,26 @@ def get_market_variance_tier(selection: str) -> str:
 
 def get_data_quality_score(selection: str, h: FootballTeamStats, a: FootballTeamStats) -> float:
     tier = get_market_confidence_tier(selection)
-    if tier == "segmented":   base = 92.0 
+    if tier == "segmented":   base = 92.0
     elif tier == "hybrid":    base = 70.0
-    else:                     base = 45.0
+    else:                     base = 62.0  # subido de 45 → 62 para shots/cards/fouls
 
     min_m = min(h.matches_played, a.matches_played)
     if min_m < 8:
-        sample_penalty = (10 - min_m) * 6.0
+        sample_penalty = (10 - min_m) * 3.5  # reducido de 6 → 3.5
     elif min_m < 15:
-        sample_penalty = (15 - min_m) * 2.0
+        sample_penalty = (15 - min_m) * 1.5  # reducido de 2 → 1.5
     else:
         sample_penalty = 0
 
     family = _market_family(selection)
     if family in {"cards", "corners", "shots"}:
         if h.xg_per_game < 0.4 or a.xg_per_game < 0.4:
-            base -= 8
+            base -= 6  # reducido de 8 → 6
 
-    # NUEVO: Penalización si no hay datos avanzados (rating = 0 indica data pobre)
+    # Penalización si no hay datos avanzados (rating = 0 indica data pobre)
     if h.avg_rating < 0.1 or a.avg_rating < 0.1:
-        base -= 5
+        base -= 4  # reducido de 5 → 4
 
     return max(5.0, base - sample_penalty)
 
@@ -804,11 +805,16 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
         return False
 
     prob = v.calibrated_prob if v.calibrated_prob is not None else v.model_prob
+    # Mercados binarios (resultado claro): umbral alto
     is_binary = family in {"result", "btts", "goals"}
+    # Mercados de alta varianza (over/under sobre magnitudes grandes): umbral reducido
+    is_high_variance = family in {"cards", "shots", "shots_target", "fouls", "corners"}
 
     if is_binary and prob < 60.0:
         return False
-    if not is_binary and prob < 35.0:
+    if is_high_variance and prob < 20.0:  # umbral reducido para over/under de tarjetas/tiros
+        return False
+    if not is_binary and not is_high_variance and prob < 35.0:
         return False
 
     if v.edge < 2.5 or v.edge > 25:
@@ -879,6 +885,7 @@ def _calculate_stake_units(
         "corners": 0.60,
         "cards": 0.55,
         "shots": 0.60,
+        "shots_target": 0.60,
         "fouls": 0.50,
     }
     mkt_factor = MARKET_FACTOR.get(market_family, 0.70)
@@ -932,12 +939,12 @@ def _calculate_stake_units(
     raw_stake = base * mkt_factor * odds_factor * league_factor * edge_factor
 
     # Límites duros de seguridad
-    hard_max = 5.0
+    hard_max = 3.0
     if (lrs or 0.5) < 0.50:
         hard_max = 2.0
     if odds >= 3.0:
         hard_max = min(hard_max, 2.0)
-    if market_family in {"corners", "cards", "shots", "fouls"}:
+    if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         hard_max = min(hard_max, 3.0)
 
     # Redondeo inteligente: 0.5 en 0.5
@@ -982,7 +989,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             # Tasa de acierto de referencia por familia de mercado
             # (Tasas razonables de referencia cuando el modelo funciona bien)
             MARKET_REF = {
-                "corners": 0.52, "cards": 0.52, "shots": 0.52, "fouls": 0.52,
+                "corners": 0.52, "cards": 0.52, "shots": 0.52, "shots_target": 0.52, "fouls": 0.52,
                 "goals": 0.55,   "btts": 0.54,  "result": 0.55,
                 "handicap": 0.54, "double_chance": 0.57, "dnb": 0.56, "generic": 0.53,
             }
@@ -994,7 +1001,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
 
     # Penalización: ev_adj = ev * lrs  (lrs=1 → sin cambio; lrs=0.5 → EV a la mitad)
     # La penalización es más agresiva para mercados secundarios (corners, cards, shots)
-    if family in {"corners", "cards", "shots", "fouls"}:
+    if family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         lrs_factor = lrs ** 1.5  # penalización extra en mercados de alta varianza
     else:
         lrs_factor = lrs
@@ -1343,86 +1350,88 @@ def _compute_team_cards_lambda(
         opp_matches = max(opponent.matches_played, 1)
     else:
         actual_matches = max(team.matches_home if is_home else team.matches_away, 1)
-        # Rival plays the opposite side
         opp_matches = max(opponent.matches_away if is_home else opponent.matches_home, 1)
 
-    # 1. Promedio base del equipo
-    red_card_weight = 2.0 
-    team_reds_per_game = (team.red_cards_total / actual_matches) * red_card_weight
-    own_cards_avg = team.yellow_cards_per_game + team_reds_per_game
-
-    # 2. Ajuste por agresividad (Faltas)
-    foul_deviation = (team.fouls_per_game - 12.5) / 12.5
-    foul_modifier = 1.0 + (foul_deviation * 0.15)
-
-    # 3. Ajuste por inducción del rival
-    poss_deviation = (opponent.possession_pct - 50.0) / 50.0
-    duel_deviation = (opponent.ground_duels_won_per_game - 10.0) / 10.0
-
-    rival_modifier = 1.0 + (poss_deviation * 0.05) + (duel_deviation * 0.10)
-
-    total_modifier = max(0.75, min(1.25, foul_modifier * rival_modifier))
-    lam = own_cards_avg * total_modifier
-
-    # ── NUEVO: Factores avanzados de tarjetas ──
-    # 3b. Penales concedidos: indica indisciplina defensiva
-    if team.penalties_conceded > 0.15:
-        lam *= 1.08
-    if team.penalty_goals_conceded > 0.1:
-        lam *= 1.05
-
-    # 3c. Errores que llevan a tiro: más errores = más faltas para compensar
-    error_card_boost = 1.0 + min(team.errors_leading_to_shot / 3.0, 0.06)
-    lam *= error_card_boost
-
-    # 3d. Duelos totales: más contacto físico = más tarjetas
-    duel_intensity = team.duels_total_per_game / 50.0  # 50 es referencia
-    if duel_intensity > 1.2:
-        lam *= 1.06
-    elif duel_intensity > 1.0:
-        lam *= 1.03
-
-    # 3e. Contraataques del rival: más transiciones = más faltas tácticas
-    if opponent.fast_breaks > 4:
-        lam *= 1.05
-
-    # 3f. Pérdidas de posesión en zonas peligrosas
-    if team.possession_lost > 100:
-        lam *= 1.04
-
-    # 3g. Duelos aéreos intensos
-    if team.aerial_duels_won_per_game + opponent.aerial_duels_won_per_game > 25:
-        lam *= 1.03
-
-    # 3h. Tarjetas provocadas por el estilo de juego del rival (against stats)
-    # Si league.avg_yellow_cards_per_game no está seteado, se deduce de league.avg_cards_per_game.
-    temp_league_cards = league.avg_yellow_cards_per_game + (league.avg_red_cards_per_game * 2.0) if league.avg_yellow_cards_per_game > 0 else league.avg_cards_per_game
-    avg_team_cards_ref = temp_league_cards / 2.0
-    rival_draw_cards_avg = (opponent.yellow_cards_against + (opponent.red_cards_against * 2.0)) / opp_matches
-    if rival_draw_cards_avg > 0:
-        rival_card_modifier = 1.0 + ((rival_draw_cards_avg - avg_team_cards_ref) / max(avg_team_cards_ref, 1.0)) * 0.15
-        lam *= max(0.85, min(1.25, rival_card_modifier))
-
-    # 4. Integración del Árbitro
+    # Determinar promedio de liga (tarjetas equivalentes ponderadas)
     if league.avg_yellow_cards_per_game > 0 and league.avg_red_cards_per_game > 0:
         league_cards_avg = league.avg_yellow_cards_per_game + (league.avg_red_cards_per_game * 2.0)
     else:
         league_cards_avg = league.avg_cards_per_game
+    avg_team_cards = league_cards_avg / 2.0
 
+    # 1. Promedio base del equipo (amarillas + rojas ponderadas)
+    red_card_weight = 2.0
+    team_reds_per_game = (team.red_cards_total / actual_matches) * red_card_weight
+    own_cards_avg = team.yellow_cards_per_game + team_reds_per_game
+
+    # Anclaje fuerte al promedio de liga si el equipo tiene pocas observaciones
+    # Shrinkage bayesiana ANTES de aplicar modificadores
+    prior_n = 10.0  # aumentado de 5 → 10 para anclar mejor al promedio
+    shrink_w_pre = prior_n / (prior_n + actual_matches)
+    own_cards_avg = own_cards_avg * (1.0 - shrink_w_pre) + avg_team_cards * shrink_w_pre
+
+    # 2. Modificador por agresividad (Faltas) — cap reducido
+    foul_deviation = (team.fouls_per_game - 12.5) / 12.5
+    foul_modifier = 1.0 + (foul_deviation * 0.10)  # reducido de 0.15 → 0.10
+    foul_modifier = max(0.88, min(1.12, foul_modifier))
+
+    # 3. Modificador por inducción del rival — efectos reducidos
+    poss_deviation = (opponent.possession_pct - 50.0) / 50.0
+    duel_deviation = (opponent.ground_duels_won_per_game - 10.0) / 10.0
+    rival_modifier = 1.0 + (poss_deviation * 0.04) + (duel_deviation * 0.06)  # reducidos
+    rival_modifier = max(0.90, min(1.10, rival_modifier))
+
+    # Modificador combinado: cap total máx ±15%
+    total_modifier = max(0.85, min(1.15, foul_modifier * rival_modifier))
+    lam = own_cards_avg * total_modifier
+
+    # ── Factores avanzados secundarios (agrupados y con cap global) ──
+    secondary_mult = 1.0
+
+    # Penales concedidos (indisciplina defensiva)
+    if team.penalties_conceded > 0.15:
+        secondary_mult *= 1.04  # reducido de 1.08
+    if team.penalty_goals_conceded > 0.1:
+        secondary_mult *= 1.03  # reducido de 1.05
+
+    # Errores que llevan a tiro
+    error_card_boost = 1.0 + min(team.errors_leading_to_shot / 5.0, 0.04)  # reducido
+    secondary_mult *= error_card_boost
+
+    # Duelos totales
+    duel_intensity = team.duels_total_per_game / 50.0
+    if duel_intensity > 1.2:
+        secondary_mult *= 1.03  # reducido de 1.06
+    elif duel_intensity > 1.0:
+        secondary_mult *= 1.015  # reducido de 1.03
+
+    # Contraataques del rival
+    if opponent.fast_breaks > 4:
+        secondary_mult *= 1.03  # reducido de 1.05
+
+    # Tarjetas provocadas por el estilo del rival
+    rival_draw_cards_avg = (opponent.yellow_cards_against + (opponent.red_cards_against * 2.0)) / opp_matches
+    if rival_draw_cards_avg > 0:
+        rival_card_modifier = 1.0 + ((rival_draw_cards_avg - avg_team_cards) / max(avg_team_cards, 1.0)) * 0.10  # reducido de 0.15
+        secondary_mult *= max(0.90, min(1.10, rival_card_modifier))
+
+    # Cap global del bloque secundario: máximo ±12%
+    secondary_mult = max(0.88, min(1.12, secondary_mult))
+    lam *= secondary_mult
+
+    # 4. Integración del Árbitro (peso limitado)
     if league.referee_avg_yellow > 0:
         ref_baseline = league.referee_avg_yellow + (league.referee_avg_red * 2.0)
         ref_dev_ratio = ref_baseline / max(league_cards_avg, 1.0)
-        ref_modifier = 1.0 + (ref_dev_ratio - 1.0) * 0.50
+        ref_modifier = 1.0 + (ref_dev_ratio - 1.0) * 0.35  # reducido de 0.50
+        ref_modifier = max(0.88, min(1.20, ref_modifier))
         lam *= ref_modifier
 
-    # 5. Shrinkage
-    avg_team_cards = league_cards_avg / 2.0
-    prior_n = 5.0
-    shrink_w = prior_n / (prior_n + actual_matches)  # uses segmented match count when general=False
-
+    # 5. Shrinkage final al promedio de liga (post-modificadores)
+    shrink_w = prior_n / (prior_n + actual_matches)
     lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
 
-    return max(lam, 0.5)
+    return max(lam, 0.4)
 
 
 def _compute_team_shots_lambda(
@@ -1931,6 +1940,9 @@ def _market_family(text: str) -> str:
         return "cards"
     if any(k in s for k in ["foul", "fouls", "faltas"]):
         return "fouls"
+    # shots_target DEBE ir antes que shots (tiro/shot es subconjunto)
+    if any(k in s for k in ["pta", "a puerta", "target", "shots_target", "shot_target"]):
+        return "shots_target"
     if any(k in s for k in ["shot", "shots", "tiros", "remates"]):
         return "shots"
     if any(k in s for k in ["goal", "goals", "goles"]):
@@ -2046,7 +2058,7 @@ def _market_risk_weight(selection: str) -> int:
         return -7
     if family == "btts":
         return -10
-    if family in {"corners", "cards", "shots", "fouls"}:
+    if family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         return -4
     if family == "goals":
         return -3
@@ -2624,8 +2636,6 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
             groups.setdefault(key, []).append(v)
         else:
             non_dedup.append(v)
-    
-    print(">>>>>> groups", groups)
 
     # Regla de selección por tamaño de grupo:
     #  - 1 pick   → se conserva tal cual
@@ -2653,7 +2663,7 @@ def _are_contradictory(selection_a: str, selection_b: str) -> bool:
     if fa != fb:
         return False
 
-    if fa in {"goals", "corners", "cards", "shots", "fouls"}:
+    if fa in {"goals", "corners", "cards", "shots", "shots_target", "fouls"}:
         if la is not None and lb is not None and abs(la - lb) <= 0.15 and {sa, sb} == {"over", "under"}:
             return True
 
@@ -3383,8 +3393,8 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_dc, 0.0),
         ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_dc, 0.0),
 
-        (f"DNB Local ({h.name})", req.odds.dnb_home, p_dnb_home, _or_dnb, push_dnb),
-        (f"DNB Visitante ({a.name})", req.odds.dnb_away, p_dnb_away, _or_dnb, push_dnb),
+        (f"DNB Local", req.odds.dnb_home, p_dnb_home, _or_dnb, push_dnb),
+        (f"DNB Visitante", req.odds.dnb_away, p_dnb_away, _or_dnb, push_dnb),
     ]
 
     projected_lines: list[ProjectedLine] = []
@@ -3470,7 +3480,7 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         _or_shots  = _overround(over_odds, under_odds)
 
         market_configs.append((f"Over {line} Tiros",  over_odds,  p_over,  _or_shots, p_push))
-        market_configs.append((f"Under {line} Tiros", underOdds, p_under, _or_shots, p_push))
+        market_configs.append((f"Under {line} Tiros", under_odds, p_under, _or_shots, p_push))
 
     # ── Over/Under TIROS A PUERTA ──────────────────
     projected_lines.append(ProjectedLine(
@@ -3549,7 +3559,9 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
     h_offsides_lam = _compute_team_offsides_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
     a_offsides_lam = _compute_team_offsides_lambda(a, h, req.league_stats, is_home=False, general=use_general)
 
-    # ── Most Probable Score ──
+    # ── Most Probable Score (mejorado) ──
+    # Se elige el marcador con mayor probabilidad puntual de la distribución Dixon-Coles.
+    # Adicionalmente se calcula un "score de confianza" ponderando el entorno de la moda.
     max_p = -1.0
     best_h, best_a = 0, 0
     for i in range(len(matrix)):
@@ -3557,6 +3569,16 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
             if matrix[i][j] > max_p:
                 max_p = matrix[i][j]
                 best_h, best_a = i, j
+
+    # Probabilidad acumulada del marcador y sus vecinos directos (±1 gol) como medida de estabilidad
+    _mps_neighborhood = 0.0
+    for di in range(-1, 2):
+        for dj in range(-1, 2):
+            _ni, _nj = best_h + di, best_a + dj
+            if 0 <= _ni < len(matrix) and 0 <= _nj < len(matrix[_ni]):
+                _mps_neighborhood += matrix[_ni][_nj]
+    _mps_confidence = round(_mps_neighborhood * 100.0, 1)
+
     most_probable_score = f"{best_h} - {best_a}"
 
     # ── Proyecciones por Equipo ───────────────────────────────
@@ -3608,6 +3630,7 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
         h_offsides_lam=h_offsides_lam,
         a_offsides_lam=a_offsides_lam,
         most_probable_score=most_probable_score,
+        mps_confidence=_mps_confidence,
         comparisons=comparisons,
         values=values,
         projected_lines=projected_lines,

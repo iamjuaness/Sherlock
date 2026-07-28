@@ -2,7 +2,7 @@
    Sherlock v0.5 – Comparator Engine (Frontend)
    ═══════════════════════════════════════════════════════════════ */
 
-const MAX_STAKE = 5;
+const MAX_STAKE = 3;
 const MIN_STAKE = 1;
 
 function renderMarkdown(text) {
@@ -670,6 +670,16 @@ function renderResults(data) {
     if (scoreBox && scoreValue && data.most_probable_score) {
       scoreBox.style.display = "block";
       scoreValue.textContent = data.most_probable_score;
+
+      // Mostrar confianza del marcador (probabilidad vecindad ±1 gol)
+      const confEl = document.getElementById("most-probable-score-confidence");
+      if (confEl && data.mps_confidence != null) {
+        confEl.textContent = `Confianza zona: ${data.mps_confidence.toFixed(1)}%`;
+        confEl.style.display = "block";
+      } else if (confEl) {
+        confEl.style.display = "none";
+      }
+
       // Check if actual result exists in snapshot values
       // The result highlight is set when the snapshot is loaded with final scores
       if (

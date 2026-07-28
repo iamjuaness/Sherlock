@@ -2,7 +2,7 @@
 let leaguesData = [];
 let activeLeague = null;
 let activeView = "matches";
-const MAX_STAKE = 5;
+const MAX_STAKE = 3;
 const MIN_STAKE = 1;
 
 function switchView(view) {
@@ -450,6 +450,13 @@ function renderMarketsView(filtered, matchesContainer) {
         category = "Tarjetas";
       } else if (lowerSel.includes("foul") || lowerSel.includes("falta")) {
         category = "Faltas";
+      } else if (
+        lowerSel.includes("shot_target") ||
+        lowerSel.includes("tiro_a_puerta") ||
+        lowerSel.includes("shots_target") ||
+        lowerSel.includes("pta")
+      ) {
+        category = "Tiros a puerta";
       } else if (
         lowerSel.includes("shot") ||
         lowerSel.includes("tiro") ||

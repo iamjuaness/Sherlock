@@ -84,7 +84,7 @@ async def disable_cache_in_dev(request: Request, call_next):
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 WEB_DIR = os.path.join(BASE_DIR, "web")
 
-MAX_STAKE = 5
+MAX_STAKE = 3
 MIN_STAKE = 1
 
 app.mount("/static", StaticFiles(directory=os.path.join(WEB_DIR, "static")), name="static")
@@ -1188,6 +1188,14 @@ def get_leagues_stats(
                         "final_yellow_cards_away": h.final_yellow_cards_away,
                         "final_red_cards_home": h.final_red_cards_home,
                         "final_red_cards_away": h.final_red_cards_away,
+                        "final_shots_home": h.final_shots_home,
+                        "final_shots_away": h.final_shots_away,
+                        "final_shots_on_target_home": h.final_shots_on_target_home,
+                        "final_shots_on_target_away": h.final_shots_on_target_away,
+                        "final_fouls_home": h.final_fouls_home,
+                        "final_fouls_away": h.final_fouls_away,
+                        "final_offsides_home": h.final_offsides_home,
+                        "final_offsides_away": h.final_offsides_away,
                     }
                     
                     has_result = h.final_score_home is not None
@@ -1602,6 +1610,9 @@ def get_market_name(selection: str) -> str:
         return "Tarjetas: Over/Under"
     if any(k in s for k in ["foul", "fouls", "faltas"]):
         return "Faltas: Over/Under"
+    # shots_target DEBE ir antes que shots (tiro/shot es subconjunto de shots_target)
+    if any(k in s for k in ["pta", "a puerta", "target", "shots_target", "shot_target"]):
+        return "Tiros a puerta: Over/Under"
     if any(k in s for k in ["shot", "shots", "tiros", "remates"]):
         return "Tiros: Over/Under"
     if any(k in s for k in ["over", "under", "más de", "menos de"]) and any(k in s for k in ["gol", "goles", "goal", "goals"]):
@@ -2342,7 +2353,7 @@ def export_excel_report(
                             "Prob Modelo (%)": float(pick.get("model_prob", 0.0)) if pick.get("model_prob") is not None else None,
                             "EV Edge (%)": float(pick.get("edge", 0.0)) if pick.get("edge") is not None else None,
                             "Fracción Kelly (%)": float(pick.get("kelly_fraction", 0.0)) if pick.get("kelly_fraction") is not None else None,
-                            "Stake Sugerido (u)": max(1, round(float(pick.get("kelly_fraction", 0.0)) * 100.0)) if float(pick.get("kelly_fraction", 0.0)) > 0 else 1,
+                            "Stake Sugerido (u)": pick.get("stake_units"),
                             "Resultado": success_str,
                             "Beneficio (u)": pick_profit if success is not None else None,
                             "Categoría": cat,
@@ -3081,7 +3092,15 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut, 
             "final_offsides_away": h.final_offsides_away,
         }
         
-        if res_dict.get("final_score_home") is not None:
+        # Verificar si hay algún resultado disponible (score, tarjetas, tiros, etc.)
+        has_any_result = (
+            res_dict.get("final_score_home") is not None
+            or res_dict.get("final_yellow_cards_home") is not None
+            or res_dict.get("final_shots_home") is not None
+            or res_dict.get("final_shots_on_target_home") is not None
+            or res_dict.get("final_corners_home") is not None
+        )
+        if has_any_result:
             hits = 0
             total = 0
             match_profit = 0.0
