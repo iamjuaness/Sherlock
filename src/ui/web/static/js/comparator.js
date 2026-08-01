@@ -4,6 +4,7 @@
 
 const MAX_STAKE = 3;
 const MIN_STAKE = 1;
+let visibleHistoryLimit = 50;
 
 function renderMarkdown(text) {
   return (
@@ -340,7 +341,9 @@ function renderMultiLineCards(values) {
 
   valuePicks.forEach((v) => renderItem(v, grid));
   underdogPicks.forEach((v) => renderItem(v, underdogGrid));
-  hcPicks.forEach((v) => renderItem(v, hcGrid));
+  // High Confidence picks - disabled until implemented
+  // const hcPicks = values.filter((v) => v.is_high_confidence === true);
+  // hcPicks.forEach((v) => renderItem(v, hcGrid));
 }
 
 function renderResults(data) {
@@ -998,6 +1001,13 @@ async function loadHistory() {
 
     // Guardamos globalmente para filtrar en UI sin recargar
     window._historyEntries = entries;
+    visibleHistoryLimit = 50; // reset pagination limit
+    // Build a lookup map so openResultsModal can safely retrieve titles without
+    // embedding them inside onclick attributes (which breaks on special chars).
+    window._historyMap = {};
+    entries.forEach((e) => {
+      window._historyMap[e.id] = e;
+    });
     renderHistoryList(entries);
   } catch (e) {
     list.innerHTML =
@@ -1008,7 +1018,9 @@ async function loadHistory() {
 function renderHistoryList(entries) {
   const list = document.getElementById("history-list");
   if (!list) return;
-  list.innerHTML = entries
+
+  const paginated = entries.slice(0, visibleHistoryLimit);
+  const rowsHtml = paginated
     .map((e) => {
       let accuracy = "—";
       if (e.accuracy_percentage != null) {
@@ -1146,7 +1158,7 @@ function renderHistoryList(entries) {
           <div style="display: flex; gap: 0.4rem; justify-content: center;">
             <button class="btn-preset" title="Cargar Datos" onclick="loadHistoryEntry('${e.id}')">📂</button>
             <button class="btn-preset" title="Reanalizar" onclick="reanalyzeHistoryEntry('${e.id}')">🔄</button>
-            <button class="btn-preset" title="Registrar Resultado" onclick="openResultsModal('${e.id}', '${e.match_title}')">🏆</button>
+            <button class="btn-preset" title="Registrar Resultado" onclick="openResultsModal('${e.id}')">🏆</button>
             <button class="btn-preset" style="color: var(--red);" title="Eliminar" onclick="deleteHistoryEntry('${e.id}')">🗑️</button>
           </div>
         </td>
@@ -1154,6 +1166,30 @@ function renderHistoryList(entries) {
     `;
     })
     .join("");
+
+  list.innerHTML = rowsHtml;
+
+  // Add load-more button if there are remaining matches
+  if (entries.length > visibleHistoryLimit) {
+    const tr = document.createElement("tr");
+    const td = document.createElement("td");
+    td.colSpan = 5;
+    td.style.textAlign = "center";
+    td.style.padding = "1rem";
+
+    const btn = document.createElement("button");
+    btn.style.cssText =
+      "background: rgba(99,102,241,0.15); border: 1px solid var(--accent); color: var(--accent-light); padding: 0.5rem 2rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s;";
+    btn.textContent = `⚡ Cargar más partidos (mostrando ${visibleHistoryLimit} de ${entries.length})`;
+    btn.onclick = () => {
+      visibleHistoryLimit += 50;
+      renderHistoryList(entries);
+    };
+
+    td.appendChild(btn);
+    tr.appendChild(td);
+    list.appendChild(tr);
+  }
 }
 
 function filterHistoryUI() {
@@ -1165,6 +1201,7 @@ function filterHistoryUI() {
       e.match_title.toLowerCase().includes(query) ||
       e.payload.competition.toLowerCase().includes(query),
   );
+  visibleHistoryLimit = 50; // reset pagination limit
   renderHistoryList(filtered);
 }
 
@@ -1179,6 +1216,33 @@ function handleHistoryGeneralStatsChange() {
       generalStatsDate.style.display = useGeneralCheck.checked
         ? "inline-block"
         : "none";
+    }
+  }
+}
+
+// ── Recalcular solo accuracy/profit sin re-correr el modelo ────
+async function recalculateAccuracyFast(event) {
+  const btn = event?.target || document.activeElement;
+  const originalText = btn?.innerHTML || "⚡";
+  if (btn) {
+    btn.innerHTML = "⏳ Recalculando...";
+    btn.disabled = true;
+  }
+  try {
+    const res = await fetch("/api/v1/analysis/recalculate-accuracy", {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error("Error en el servidor");
+    const data = await res.json();
+    alert(`✅ ${data.message}`);
+    loadHistory();
+    if (typeof loadGlobalStats === "function") loadGlobalStats();
+  } catch (err) {
+    alert("❌ Error al recalcular accuracy: " + err.message);
+  } finally {
+    if (btn) {
+      btn.innerHTML = originalText;
+      btn.disabled = false;
     }
   }
 }
@@ -3095,7 +3159,10 @@ function toggleResultsModal() {
   modal.style.display = modal.style.display === "flex" ? "none" : "flex";
 }
 
-async function openResultsModal(id, matchTitle) {
+async function openResultsModal(id) {
+  // Retrieve title from in-memory map to avoid HTML-injection / special-char issues
+  const entry = window._historyMap && window._historyMap[id];
+  const matchTitle = entry ? entry.match_title : id;
   document.getElementById("results-analysis-id").value = id;
   document.getElementById("results-match-info").textContent = matchTitle;
   document.getElementById("results-form").reset();
@@ -3652,8 +3719,7 @@ function filterDetailedPicksUI() {
     if (resFilter !== "all") {
       if (resFilter === "hit" && p.success !== true) return false;
       if (resFilter === "miss" && p.success !== false) return false;
-      if (resFilter === "pending" && p.success !== null && p.success !== "void")
-        return false;
+      if (resFilter === "pending" && p.success !== null) return false;
       if (resFilter === "void" && p.success !== "void") return false;
     }
 
@@ -3674,9 +3740,11 @@ function filterDetailedPicksUI() {
     const statusBadge =
       p.success === null
         ? '<span style="color: var(--text-dim)">⏳ Pendiente</span>'
-        : p.success
-          ? '<span style="color: #22c55e; font-weight: 600;">✅ Acierto</span>'
-          : '<span style="color: #ef4444; font-weight: 600;">❌ Fallo</span>';
+        : p.success === "void"
+          ? '<span style="color: #94a3b8; font-weight: 600;">↩️ Nulo</span>'
+          : p.success === true
+            ? '<span style="color: #22c55e; font-weight: 600;">✅ Acierto</span>'
+            : '<span style="color: #ef4444; font-weight: 600;">❌ Fallo</span>';
 
     const valueBadge = p.is_value
       ? '<span title="Value Pick" style="color: var(--accent); margin-right: 4px;">💎</span>'
@@ -3715,3 +3783,50 @@ function filterDetailedPicksUI() {
     tbody.appendChild(tr);
   });
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Auto-fill league parameters from DB when competition changes
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function _autoFillLeagueParamsFromDB(leagueName) {
+  if (!leagueName || leagueName.trim() === "") return;
+  try {
+    const encoded = encodeURIComponent(leagueName.trim());
+    const res = await fetch(`/api/v1/leagues/${encoded}/parameters`);
+    if (!res.ok) return;
+    const data = await res.json();
+
+    function _set(id, val) {
+      const el = document.getElementById(id);
+      if (el && val !== undefined && val !== null) el.value = val;
+    }
+
+    _set("fb-league-goals", data.avg_goals_per_game);
+    _set("fb-league-corners", data.avg_corners_per_game);
+    _set("fb-league-cards", data.avg_cards_per_game);
+    _set("fb-league-yellow-cards", data.avg_yellow_cards_per_game);
+    _set("fb-league-red-cards", data.avg_red_cards_per_game);
+  } catch (err) {
+    // Silently skip – params might not exist yet for this league
+  }
+}
+
+// Wire up listener once DOM is ready
+(function _wireCompetitionAutoFill() {
+  function _attach() {
+    const competitionInput = document.getElementById("fb-competition");
+    if (!competitionInput) return;
+    let _debounceTimer = null;
+    competitionInput.addEventListener("change", function () {
+      clearTimeout(_debounceTimer);
+      _debounceTimer = setTimeout(() => {
+        _autoFillLeagueParamsFromDB(competitionInput.value);
+      }, 600);
+    });
+  }
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", _attach);
+  } else {
+    _attach();
+  }
+})();

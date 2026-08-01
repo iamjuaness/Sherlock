@@ -208,6 +208,7 @@ class AnalysisHistoryOut(BaseModel):
     llm_timestamp: datetime | None = None
     compare_response_snapshot: Any | None = None
     needs_reanalysis: bool | None = False
+    calibration_parameters: Any | None = None
     final_score_home: int | None = None
     final_score_away: int | None = None
     final_corners_home: int | None = None

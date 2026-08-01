@@ -2,6 +2,7 @@
 let leaguesData = [];
 let activeLeague = null;
 let activeView = "matches";
+let visibleMatchesLimit = 50;
 const MAX_STAKE = 3;
 const MIN_STAKE = 1;
 
@@ -9,19 +10,39 @@ function switchView(view) {
   activeView = view;
   const tabMatches = document.getElementById("tab-matches");
   const tabMarkets = document.getElementById("tab-markets");
-  if (tabMatches && tabMarkets) {
-    if (view === "matches") {
-      tabMatches.classList.add("active");
-      tabMarkets.classList.remove("active");
-    } else {
-      tabMarkets.classList.add("active");
-      tabMatches.classList.remove("active");
-    }
+  const tabParams = document.getElementById("tab-params");
+  const matchesList = document.getElementById("matches-list");
+  const paramsPanel = document.getElementById("params-panel");
+
+  [tabMatches, tabMarkets, tabParams].forEach(
+    (t) => t && t.classList.remove("active"),
+  );
+
+  if (view === "params") {
+    tabParams && tabParams.classList.add("active");
+    if (matchesList) matchesList.style.display = "none";
+    if (paramsPanel) paramsPanel.style.display = "block";
+    loadLeagueParams();
+    return;
+  }
+
+  if (matchesList) matchesList.style.display = "block";
+  if (paramsPanel) paramsPanel.style.display = "none";
+
+  if (view === "matches") {
+    tabMatches && tabMatches.classList.add("active");
+  } else {
+    tabMarkets && tabMarkets.classList.add("active");
   }
   renderFilteredMatches();
 }
 
 document.addEventListener("DOMContentLoaded", () => {
+  // Signal active state to backend so result pushing is enabled in leagues view
+  fetch("/api/v1/leagues/active-state?active=true", { method: "POST" }).catch(
+    () => {},
+  );
+
   // Sync checkbox with localStorage
   const useStakeCheck = document.getElementById("leagues-use-stake");
   if (useStakeCheck) {
@@ -95,13 +116,14 @@ let currentMatchesCache = [];
 
 function selectLeague(name) {
   activeLeague = name;
-  activeSeason = "all"; // reset season on league change
+  activeSeason = "all";
+  visibleMatchesLimit = 50;
   renderLeaguesList();
 
   const leagueInfo = leaguesData.find((l) => l.name === name);
   if (!leagueInfo) return;
 
-  // Render stats
+  // Render stats DIRECTAMENTE desde leaguesData (backend)
   document.getElementById("selected-league-name").textContent = leagueInfo.name;
   document.getElementById("lbl-total-matches").textContent =
     leagueInfo.total_matches;
@@ -111,7 +133,7 @@ function selectLeague(name) {
     `${leagueInfo.accuracy}%`;
 
   const profitEl = document.getElementById("lbl-profit");
-  profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)} u`;
+  profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
   profitEl.style.color =
     leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
 
@@ -186,6 +208,7 @@ function changeSelectedSeason() {
   const select = document.getElementById("selected-season");
   if (!select) return;
   activeSeason = select.value;
+  visibleMatchesLimit = 50; // reset pagination limit
   renderFilteredMatches();
 }
 
@@ -223,7 +246,28 @@ function renderFilteredMatches() {
   }
 
   if (activeView === "matches") {
-    renderMatchesView(filtered, matchesContainer);
+    // Paginate matches rendering
+    const paginated = filtered.slice(0, visibleMatchesLimit);
+    renderMatchesView(paginated, matchesContainer);
+
+    // Add load-more button if there are remaining matches
+    if (filtered.length > visibleMatchesLimit) {
+      const loadMoreContainer = document.createElement("div");
+      loadMoreContainer.style.cssText = "text-align: center; margin: 1.5rem 0;";
+
+      const loadMoreBtn = document.createElement("button");
+      loadMoreBtn.className = "tab-btn";
+      loadMoreBtn.style.cssText =
+        "background: rgba(99,102,241,0.15); border: 1px solid var(--accent); color: var(--accent-light); padding: 0.5rem 2rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s;";
+      loadMoreBtn.textContent = `⚡ Cargar más partidos (mostrando ${visibleMatchesLimit} de ${filtered.length})`;
+      loadMoreBtn.onclick = () => {
+        visibleMatchesLimit += 50;
+        renderFilteredMatches();
+      };
+
+      loadMoreContainer.appendChild(loadMoreBtn);
+      matchesContainer.appendChild(loadMoreContainer);
+    }
   } else {
     renderMarketsView(filtered, matchesContainer);
   }
@@ -291,6 +335,8 @@ function renderMatchesView(filtered, matchesContainer) {
       } else if (success === false) {
         totalProfit -= pickStake;
         hasResolvedPicks = true;
+      } else if (success === "void") {
+        hasResolvedPicks = true;
       }
     });
 
@@ -322,6 +368,8 @@ function renderMatchesView(filtered, matchesContainer) {
             badge = `<span class="badge-success">✅ Acertado</span>`;
           } else if (success === false) {
             badge = `<span class="badge-fail">❌ Fallo</span>`;
+          } else if (success === "void") {
+            badge = `<span class="badge-void" style="background-color: rgba(148, 163, 184, 0.2); color: #94a3b8; padding: 2px 6px; border-radius: 4px; font-size: 0.85em; font-weight: 600; border: 1px solid rgba(148, 163, 184, 0.3);">↩️ Nulo</span>`;
           } else {
             badge = `<span class="badge-pending">⏳ Pendiente</span>`;
           }
@@ -410,9 +458,6 @@ function renderMarketsView(filtered, matchesContainer) {
   const marketMap = {};
 
   filtered.forEach((match) => {
-    // Only count matches marked for profitability calculation
-    // if (match.count_in_profitability === false) return;
-
     // Build success map
     const successMap = {};
     try {
@@ -505,8 +550,11 @@ function renderMarketsView(filtered, matchesContainer) {
           totalPicks: 0,
           ganados: 0,
           perdidos: 0,
+          nulos: 0,
           pendientes: 0,
           profit: 0.0,
+          oddsSum: 0.0,
+          oddsCount: 0,
         };
       }
 
@@ -519,8 +567,16 @@ function renderMarketsView(filtered, matchesContainer) {
       } else if (success === false) {
         mData.perdidos += 1;
         mData.profit -= pickStake;
+      } else if (success === "void") {
+        mData.nulos += 1;
       } else {
         mData.pendientes += 1;
+      }
+
+      // Acumular cuota para promedio (solo picks con cuota válida)
+      if (odds > 0) {
+        mData.oddsSum += odds;
+        mData.oddsCount += 1;
       }
     });
   });
@@ -535,11 +591,16 @@ function renderMarketsView(filtered, matchesContainer) {
   }
 
   const cardsHtml = markets.map((m) => {
-    const resolved = m.ganados + m.perdidos;
+    const resolved = m.ganados + m.perdidos + m.nulos;
     const accuracy =
-      resolved > 0 ? Math.round((m.ganados / resolved) * 100) : 0;
+      m.ganados + m.perdidos > 0
+        ? Math.round((m.ganados / (m.ganados + m.perdidos)) * 100)
+        : 0;
     const profitSign = m.profit >= 0 ? "+" : "";
     const profitColor = m.profit >= 0 ? "var(--green)" : "var(--red)";
+    const avgOdds = m.oddsCount > 0 ? m.oddsSum / m.oddsCount : 0;
+    const avgOddsDisplay = avgOdds > 0 ? avgOdds.toFixed(2) : "0.00";
+    const winPct = avgOdds > 0 ? ((1 / avgOdds) * 100).toFixed(1) : "0.0";
 
     return `
       <div class="match-card">
@@ -550,7 +611,7 @@ function renderMarketsView(filtered, matchesContainer) {
           </span>
         </div>
         <div class="match-card__body" style="padding-top: 0.5rem;">
-          <div class="league-stats-grid" style="grid-template-columns: repeat(4, 1fr); gap: 0.75rem;">
+          <div class="league-stats-grid" style="grid-template-columns: repeat(7, 1fr); gap: 0.75rem;">
             <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
               <div class="league-stat-box__val" style="font-size: 1.1rem;">${m.totalPicks}</div>
               <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Picks</div>
@@ -564,8 +625,20 @@ function renderMarketsView(filtered, matchesContainer) {
               <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Perdidos</div>
             </div>
             <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: #94a3b8;">${m.nulos}</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Nulos</div>
+            </div>
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
               <div class="league-stat-box__val" style="font-size: 1.1rem; color: var(--accent-light);">${accuracy}%</div>
               <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Acierto</div>
+            </div>
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: #f59e0b;">${avgOddsDisplay}</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Cuota Media</div>
+            </div>
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: #a78bfa;">${winPct}%</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">% Ganar</div>
             </div>
           </div>
           ${
@@ -601,8 +674,8 @@ function escapeAttr(str) {
 }
 
 function updateStatsSummaryForFiltered(filteredMatches) {
-  let totalMatches = filteredMatches.length;
-  let totalPicks = 0;
+  let visibleMatches = filteredMatches.length; // all matches in view
+  let totalPicks = 0; // resolved non-void picks (same as backend)
   let hits = 0;
   let resolvedPicks = 0;
   let totalProfit = 0;
@@ -610,7 +683,7 @@ function updateStatsSummaryForFiltered(filteredMatches) {
   const useStake = localStorage.getItem("use_stake_system") === "true";
 
   filteredMatches.forEach((match) => {
-    // successMap
+    // successMap from snapshot
     const successMap = {};
     try {
       const snap = match.compare_response_snapshot;
@@ -626,10 +699,11 @@ function updateStatsSummaryForFiltered(filteredMatches) {
       ? match.picks_calculados
       : [];
     const visiblePicks = rawPicks.filter(
-      (p) => p.is_publishable || p.is_underdog || p.is_value,
+      (p) =>
+        !p.is_blacklisted && (p.is_publishable || p.is_underdog || p.is_value),
     );
 
-    totalPicks += visiblePicks.length;
+    const hasResult = match.final_score_home != null;
 
     visiblePicks.forEach((pick) => {
       const sel = pick.selection || "";
@@ -639,6 +713,8 @@ function updateStatsSummaryForFiltered(filteredMatches) {
       if (success === undefined || success === null) {
         success = successMap[sel.toLowerCase()];
       }
+
+      if (!hasResult) return; // pending match: skip
 
       const pickStake = useStake
         ? pick.stake_units !== undefined && pick.stake_units !== null
@@ -651,12 +727,19 @@ function updateStatsSummaryForFiltered(filteredMatches) {
             : MIN_STAKE
         : MIN_STAKE;
 
+      if (success === "void") {
+        // void: counts for profit (0) but not for accuracy or pick total
+        return;
+      }
+
       if (success === true) {
         totalProfit += (odds - 1) * pickStake;
+        totalPicks++;
         hits++;
         resolvedPicks++;
       } else if (success === false) {
         totalProfit -= pickStake;
+        totalPicks++;
         resolvedPicks++;
       }
     });
@@ -665,12 +748,12 @@ function updateStatsSummaryForFiltered(filteredMatches) {
   const accuracy =
     resolvedPicks > 0 ? Math.round((hits / resolvedPicks) * 100) : 0;
 
-  document.getElementById("lbl-total-matches").textContent = totalMatches;
+  document.getElementById("lbl-total-matches").textContent = visibleMatches;
   document.getElementById("lbl-total-picks").textContent = totalPicks;
   document.getElementById("lbl-accuracy").textContent = `${accuracy}%`;
 
   const profitEl = document.getElementById("lbl-profit");
-  profitEl.textContent = `${totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)} u`;
+  profitEl.textContent = `${totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)}u`;
   profitEl.style.color = totalProfit >= 0 ? "var(--green)" : "var(--red)";
 }
 
@@ -714,5 +797,229 @@ async function toggleMatchProfitability(matchId, countInProfitability) {
   } catch (error) {
     console.error("Failed to toggle profitability:", error);
     alert("Error al actualizar la rentabilidad: " + error.message);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// League Parameters (Calibration)
+// ─────────────────────────────────────────────────────────────────────────────
+
+function _setParamVal(id, value) {
+  const el = document.getElementById(id);
+  if (el && value !== undefined && value !== null) el.value = value;
+}
+
+function _getParamNum(id, fallback) {
+  const el = document.getElementById(id);
+  if (!el) return fallback;
+  const v = parseFloat(el.value);
+  return isNaN(v) ? fallback : v;
+}
+
+async function loadLeagueParams() {
+  if (!activeLeague) return;
+  try {
+    const encoded = encodeURIComponent(activeLeague);
+    const res = await fetch(`/api/v1/leagues/${encoded}/parameters`);
+    if (!res.ok) throw new Error("Error al cargar parámetros");
+    const data = await res.json();
+    _setParamVal("param-goals", data.avg_goals_per_game);
+    _setParamVal("param-corners", data.avg_corners_per_game);
+    _setParamVal("param-cards", data.avg_cards_per_game);
+    _setParamVal("param-yellow", data.avg_yellow_cards_per_game);
+    _setParamVal("param-red", data.avg_red_cards_per_game);
+    _setParamVal("param-shots", data.avg_shots_per_game);
+    _setParamVal("param-shots-target", data.avg_shots_target_per_game);
+    _setParamVal("param-home-win", data.home_win_pct);
+    _setParamVal("param-draw", data.draw_pct);
+    _setParamVal("param-away-win", data.away_win_pct);
+    _setParamVal("param-home-adv", data.home_advantage_factor);
+    _setParamVal("param-away-dis", data.away_disadvantage_factor);
+    _setParamVal("param-lrs", data.league_reliability_score);
+  } catch (err) {
+    console.error("loadLeagueParams error:", err);
+  }
+}
+
+async function saveLeagueParams() {
+  if (!activeLeague) return;
+  const statusEl = document.getElementById("params-status");
+  statusEl.innerHTML = `<span style="color: var(--text-muted);">💾 Guardando...</span>`;
+
+  const payload = {
+    avg_goals_per_game: _getParamNum("param-goals", 2.5),
+    avg_corners_per_game: _getParamNum("param-corners", 9.5),
+    avg_cards_per_game: _getParamNum("param-cards", 4.5),
+    avg_yellow_cards_per_game: _getParamNum("param-yellow", 4.0),
+    avg_red_cards_per_game: _getParamNum("param-red", 0.2),
+    avg_shots_per_game: _getParamNum("param-shots", 26.0),
+    avg_shots_target_per_game: _getParamNum("param-shots-target", 8.5),
+    home_win_pct: _getParamNum("param-home-win", 45.0),
+    draw_pct: _getParamNum("param-draw", 25.0),
+    away_win_pct: _getParamNum("param-away-win", 30.0),
+    home_advantage_factor: _getParamNum("param-home-adv", 1.2),
+    away_disadvantage_factor: _getParamNum("param-away-dis", 0.85),
+    league_reliability_score: _getParamNum("param-lrs", 0.0),
+  };
+
+  try {
+    const encoded = encodeURIComponent(activeLeague);
+    const res = await fetch(`/api/v1/leagues/${encoded}/parameters`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    statusEl.innerHTML = `<span style="color: var(--green);">✅ Parámetros guardados exitosamente.</span>`;
+    setTimeout(() => {
+      statusEl.innerHTML = "";
+    }, 4000);
+  } catch (err) {
+    statusEl.innerHTML = `<span style="color: var(--red);">❌ Error al guardar: ${err.message}</span>`;
+  }
+}
+
+async function recalibrateLeagueParams() {
+  if (!activeLeague) return;
+  const statusEl = document.getElementById("params-status");
+  const btn = document.getElementById("btn-recalibrate");
+  if (btn) btn.disabled = true;
+  statusEl.innerHTML = `<span style="color: var(--accent-light);">🔄 Calculando parámetros del historial de partidos...</span>`;
+
+  try {
+    const encoded = encodeURIComponent(activeLeague);
+    const res = await fetch(`/api/v1/leagues/${encoded}/recalibrate`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Error al recalibrar");
+    }
+    const data = await res.json();
+    // Fill form with newly computed values
+    _setParamVal("param-goals", data.avg_goals_per_game);
+    _setParamVal("param-corners", data.avg_corners_per_game);
+    _setParamVal("param-cards", data.avg_cards_per_game);
+    _setParamVal("param-yellow", data.avg_yellow_cards_per_game);
+    _setParamVal("param-red", data.avg_red_cards_per_game);
+    _setParamVal("param-shots", data.avg_shots_per_game);
+    _setParamVal("param-shots-target", data.avg_shots_target_per_game);
+    _setParamVal("param-home-win", data.home_win_pct);
+    _setParamVal("param-draw", data.draw_pct);
+    _setParamVal("param-away-win", data.away_win_pct);
+    _setParamVal("param-home-adv", data.home_advantage_factor);
+    _setParamVal("param-away-dis", data.away_disadvantage_factor);
+    _setParamVal("param-lrs", data.league_reliability_score);
+    const info = data._calibration_info || {};
+    const updated = (info.updated_groups || []).join(", ") || "ninguno";
+    const kept = (info.kept_groups || []).join(", ") || "ninguno";
+    const rates = info.market_hit_rates || {};
+    const ratesStr =
+      Object.entries(rates)
+        .map(([k, v]) => `${k}: ${v}%`)
+        .join(" · ") || "sin datos";
+    statusEl.innerHTML = `
+      <div style="line-height:1.7;">
+        <div style="color: var(--green); font-weight:600;">✅ Calibración selectiva completada</div>
+        <div style="font-size:0.8rem; color: var(--text-muted); margin-top:0.25rem;">
+          <span style="color:#f59e0b;">🔄 Actualizados:</span> ${updated} &nbsp;|&nbsp;
+          <span style="color:var(--green);">✅ Conservados (>50%):</span> ${kept}
+        </div>
+        <div style="font-size:0.75rem; color: var(--text-muted); margin-top:0.2rem;">
+          Aciertos por mercado: ${ratesStr}
+        </div>
+      </div>`;
+    setTimeout(() => {
+      statusEl.innerHTML = "";
+    }, 10000);
+  } catch (err) {
+    statusEl.innerHTML = `<span style="color: var(--red);">❌ ${err.message}</span>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function recalculateLeagueMatches() {
+  if (!activeLeague) return;
+  const statusEl = document.getElementById("params-status");
+  const btn = document.getElementById("btn-recalculate-matches");
+  if (btn) btn.disabled = true;
+  statusEl.innerHTML = `<span style="color: var(--accent-light);">⚡ Recalculando todos los partidos de la liga '${activeLeague}' (esto puede tardar unos segundos)...</span>`;
+
+  try {
+    const encoded = encodeURIComponent(activeLeague);
+    const res = await fetch(`/api/v1/leagues/${encoded}/recalculate-matches`, {
+      method: "POST",
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.detail || "Error al recalcular partidos");
+    }
+    const data = await res.json();
+    statusEl.innerHTML = `<span style="color: var(--green);">✅ ${data.message}</span>`;
+
+    // Recargar datos e interfaz
+    await fetchLeagues();
+    if (activeLeague) {
+      selectLeague(activeLeague);
+    }
+    setTimeout(() => {
+      statusEl.innerHTML = "";
+    }, 6000);
+  } catch (err) {
+    statusEl.innerHTML = `<span style="color: var(--red);">❌ ${err.message}</span>`;
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+async function resetLeagueCalibration() {
+  if (!activeLeague) return;
+  if (
+    !confirm(
+      `¿Estás seguro de que deseas quitar la calibración personalizada para la liga '${activeLeague}'? Se restablecerá a los valores por defecto del sistema.`,
+    )
+  ) {
+    return;
+  }
+  const statusEl = document.getElementById("params-status");
+  statusEl.innerHTML = `<span style="color: var(--accent-light);">⏳ Quitando calibración...</span>`;
+
+  try {
+    const encoded = encodeURIComponent(activeLeague);
+    const res = await fetch(`/api/v1/leagues/${encoded}/parameters`, {
+      method: "DELETE",
+    });
+    if (!res.ok) throw new Error(await res.text());
+    statusEl.innerHTML = `<span style="color: var(--green);">✅ Calibración quitada. Los partidos ahora usarán la data normal por defecto.</span>`;
+
+    // Refresh parameters form by re-loading current league stats
+    await fetchLeagues();
+    if (activeLeague) {
+      // Reload inputs from default stats returned by API
+      const pRes = await fetch(`/api/v1/leagues/${encoded}/parameters`);
+      if (pRes.ok) {
+        const data = await pRes.json();
+        _setParamVal("param-goals", data.avg_goals_per_game);
+        _setParamVal("param-corners", data.avg_corners_per_game);
+        _setParamVal("param-cards", data.avg_cards_per_game);
+        _setParamVal("param-yellow", data.avg_yellow_cards_per_game);
+        _setParamVal("param-red", data.avg_red_cards_per_game);
+        _setParamVal("param-shots", data.avg_shots_per_game);
+        _setParamVal("param-shots-target", data.avg_shots_target_per_game);
+        _setParamVal("param-home-win", data.home_win_pct);
+        _setParamVal("param-draw", data.draw_pct);
+        _setParamVal("param-away-win", data.away_win_pct);
+        _setParamVal("param-home-adv", data.home_advantage_factor);
+        _setParamVal("param-away-dis", data.away_disadvantage_factor);
+        _setParamVal("param-lrs", data.league_reliability_score);
+      }
+      selectLeague(activeLeague);
+    }
+    setTimeout(() => {
+      statusEl.innerHTML = "";
+    }, 6000);
+  } catch (err) {
+    statusEl.innerHTML = `<span style="color: var(--red);">❌ Error al quitar calibración: ${err.message}</span>`;
   }
 }

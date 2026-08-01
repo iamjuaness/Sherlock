@@ -10,6 +10,11 @@ let dailyProfitChartInstance = null;
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
+  // Signal active=false since we navigated away from leagues view
+  fetch("/api/v1/leagues/active-state?active=false", { method: "POST" }).catch(
+    () => {},
+  );
+
   // Sync checkbox with localStorage
   const useStakeCheck = document.getElementById("dashboard-use-stake");
   if (useStakeCheck) {

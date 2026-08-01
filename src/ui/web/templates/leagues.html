@@ -5,7 +5,10 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sherlock – Rendimiento por Ligas</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
     <link rel="stylesheet" href="/static/css/styles.css?v={{ css_version }}" />
     <style>
       .leagues-container {
@@ -77,7 +80,7 @@
         font-size: 0.85rem;
         font-weight: 700;
       }
-      
+
       /* Detail section */
       .detail-header {
         background: var(--bg-card);
@@ -117,7 +120,7 @@
         margin-top: 0.25rem;
         letter-spacing: 0.05em;
       }
-      
+
       .match-card {
         background: var(--bg-card);
         border: 1px solid var(--border);
@@ -128,7 +131,7 @@
       }
       .match-card__header {
         padding: 1rem 1.25rem;
-        background: rgba(255,255,255,0.01);
+        background: rgba(255, 255, 255, 0.01);
         border-bottom: 1px solid var(--border);
         display: flex;
         justify-content: space-between;
@@ -230,7 +233,11 @@
   <body>
     <header class="header">
       <div class="header__brand">
-        <a href="/" style="text-decoration:none; font-size:1.4rem; margin-right: 0.5rem;">⬅️</a>
+        <a
+          href="/"
+          style="text-decoration: none; font-size: 1.4rem; margin-right: 0.5rem"
+          >⬅️</a
+        >
         <span class="header__icon">🏆</span>
         <h1 class="header__title">Sherlock</h1>
         <span class="header__tag">Ligas</span>
@@ -246,16 +253,46 @@
         <span>Cargando ligas y estadísticas...</span>
       </div>
 
-      <div id="leagues-content" style="display: none;" class="leagues-layout">
+      <div id="leagues-content" style="display: none" class="leagues-layout">
         <!-- Columna Izquierda: Lista de Ligas -->
         <div class="sidebar-card">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border);">
-            <div class="sidebar-title" style="margin-bottom: 0; padding-bottom: 0; border: none;">Competiciones</div>
-            <label style="display: inline-flex; align-items: center; gap: 0.25rem; cursor: pointer; font-size: 0.75rem; color: var(--text-muted); font-weight: 500; user-select: none;">
+          <div
+            style="
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 1rem;
+              padding-bottom: 0.5rem;
+              border-bottom: 1px solid var(--border);
+            "
+          >
+            <div
+              class="sidebar-title"
+              style="margin-bottom: 0; padding-bottom: 0; border: none"
+            >
+              Competiciones
+            </div>
+            <label
+              style="
+                display: inline-flex;
+                align-items: center;
+                gap: 0.25rem;
+                cursor: pointer;
+                font-size: 0.75rem;
+                color: var(--text-muted);
+                font-weight: 500;
+                user-select: none;
+              "
+            >
               <input
                 type="checkbox"
                 id="leagues-use-stake"
-                style="width: 13px; height: 13px; accent-color: var(--accent-light); cursor: pointer;"
+                style="
+                  width: 13px;
+                  height: 13px;
+                  accent-color: var(--accent-light);
+                  cursor: pointer;
+                "
                 onchange="toggleLeaguesStake()"
               />
               📈 Stakes
@@ -264,10 +301,28 @@
           <div id="leagues-list">
             <!-- Rellenado dinámicamente -->
           </div>
-          
+
           <!-- Filtro de Temporadas -->
-          <div id="season-filter-card" style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border); display: none;">
-            <div class="sidebar-title" style="font-size: 0.95rem; margin-bottom: 0.75rem; border: none; padding-bottom: 0;">Temporada</div>
+          <div
+            id="season-filter-card"
+            style="
+              margin-top: 1.5rem;
+              padding-top: 1rem;
+              border-top: 1px solid var(--border);
+              display: none;
+            "
+          >
+            <div
+              class="sidebar-title"
+              style="
+                font-size: 0.95rem;
+                margin-bottom: 0.75rem;
+                border: none;
+                padding-bottom: 0;
+              "
+            >
+              Temporada
+            </div>
             <select
               id="selected-season"
               style="
@@ -291,7 +346,9 @@
         <!-- Columna Derecha: Detalles de la Liga seleccionada -->
         <div id="league-detail-section">
           <div class="detail-header">
-            <div class="detail-header__title" id="selected-league-name">Selecciona una liga</div>
+            <div class="detail-header__title" id="selected-league-name">
+              Selecciona una liga
+            </div>
             <div class="league-stats-grid">
               <div class="league-stat-box">
                 <div class="league-stat-box__val" id="lbl-total-matches">0</div>
@@ -313,12 +370,665 @@
           </div>
 
           <div class="tabs-container">
-            <button id="tab-matches" class="tab-btn active" onclick="switchView('matches')">Partidos</button>
-            <button id="tab-markets" class="tab-btn" onclick="switchView('markets')">Mercados</button>
+            <button
+              id="tab-matches"
+              class="tab-btn active"
+              onclick="switchView('matches')"
+            >
+              Partidos
+            </button>
+            <button
+              id="tab-markets"
+              class="tab-btn"
+              onclick="switchView('markets')"
+            >
+              Mercados
+            </button>
+            <button
+              id="tab-params"
+              class="tab-btn"
+              onclick="switchView('params')"
+            >
+              ⚙️ Parámetros
+            </button>
           </div>
 
           <div id="matches-list">
             <!-- Rellenado dinámicamente con partidos y sus picks o mercados -->
+          </div>
+
+          <!-- Panel de Parámetros -->
+          <div id="params-panel" style="display: none">
+            <div
+              style="
+                background: var(--bg-card);
+                border: 1px solid var(--border);
+                border-radius: var(--radius);
+                padding: 1.5rem;
+                margin-bottom: 1rem;
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  justify-content: space-between;
+                  align-items: center;
+                  margin-bottom: 1.5rem;
+                  flex-wrap: wrap;
+                  gap: 0.75rem;
+                "
+              >
+                <div>
+                  <div
+                    style="
+                      font-size: 1.1rem;
+                      font-weight: 700;
+                      color: #fff;
+                      margin-bottom: 0.25rem;
+                    "
+                  >
+                    ⚙️ Parámetros de la Liga
+                  </div>
+                  <div style="font-size: 0.8rem; color: var(--text-muted)">
+                    Calibra los valores base que usa el modelo para esta liga.
+                    Se guardan en la BD y se aplican automáticamente.
+                  </div>
+                </div>
+                <div style="display: flex; gap: 0.75rem; flex-wrap: wrap">
+                  <button
+                    id="btn-recalibrate"
+                    onclick="recalibrateLeagueParams()"
+                    style="
+                      background: rgba(99, 102, 241, 0.15);
+                      border: 1px solid var(--accent);
+                      color: var(--accent-light);
+                      padding: 0.5rem 1rem;
+                      border-radius: 6px;
+                      font-weight: 600;
+                      font-size: 0.85rem;
+                      cursor: pointer;
+                      transition: all 0.2s;
+                    "
+                    onmouseover="this.style.background = 'rgba(99,102,241,0.3)'"
+                    onmouseout="this.style.background = 'rgba(99,102,241,0.15)'"
+                  >
+                    🔄 Recalibrar desde Historial
+                  </button>
+                  <button
+                    id="btn-recalculate-matches"
+                    onclick="recalculateLeagueMatches()"
+                    style="
+                      background: rgba(245, 158, 11, 0.15);
+                      border: 1px solid #f59e0b;
+                      color: #f59e0b;
+                      padding: 0.5rem 1rem;
+                      border-radius: 6px;
+                      font-weight: 600;
+                      font-size: 0.85rem;
+                      cursor: pointer;
+                      transition: all 0.2s;
+                    "
+                    onmouseover="this.style.background = 'rgba(245,158,11,0.3)'"
+                    onmouseout="this.style.background = 'rgba(245,158,11,0.15)'"
+                  >
+                    ⚡ Recalcular Partidos
+                  </button>
+                  <button
+                    onclick="saveLeagueParams()"
+                    style="
+                      background: rgba(16, 185, 129, 0.15);
+                      border: 1px solid var(--green);
+                      color: var(--green);
+                      padding: 0.5rem 1rem;
+                      border-radius: 6px;
+                      font-weight: 600;
+                      font-size: 0.85rem;
+                      cursor: pointer;
+                      transition: all 0.2s;
+                    "
+                    onmouseover="this.style.background = 'rgba(16,185,129,0.3)'"
+                    onmouseout="this.style.background = 'rgba(16,185,129,0.15)'"
+                  >
+                    💾 Guardar Parámetros
+                  </button>
+                  <button
+                    onclick="resetLeagueCalibration()"
+                    style="
+                      background: rgba(239, 68, 68, 0.15);
+                      border: 1px solid var(--red);
+                      color: var(--red);
+                      padding: 0.5rem 1rem;
+                      border-radius: 6px;
+                      font-weight: 600;
+                      font-size: 0.85rem;
+                      cursor: pointer;
+                      transition: all 0.2s;
+                    "
+                    onmouseover="this.style.background = 'rgba(239,68,68,0.3)'"
+                    onmouseout="this.style.background = 'rgba(239,68,68,0.15)'"
+                  >
+                    🗑️ Quitar Calibración
+                  </button>
+                </div>
+              </div>
+              <div
+                id="params-status"
+                style="margin-bottom: 1rem; font-size: 0.85rem"
+              ></div>
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                  gap: 1rem;
+                "
+                id="params-form"
+              >
+                <!-- Goles -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >⚽ Goles/Partido (liga)</label
+                  >
+                  <input
+                    type="number"
+                    id="param-goals"
+                    step="0.01"
+                    min="0"
+                    max="10"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Corners -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🚩 Corners/Partido</label
+                  >
+                  <input
+                    type="number"
+                    id="param-corners"
+                    step="0.01"
+                    min="0"
+                    max="30"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Tarjetas totales -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🟨 Tarjetas/Partido</label
+                  >
+                  <input
+                    type="number"
+                    id="param-cards"
+                    step="0.01"
+                    min="0"
+                    max="20"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Amarillas -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🟡 Amarillas/Partido</label
+                  >
+                  <input
+                    type="number"
+                    id="param-yellow"
+                    step="0.01"
+                    min="0"
+                    max="15"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Rojas -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🔴 Rojas/Partido</label
+                  >
+                  <input
+                    type="number"
+                    id="param-red"
+                    step="0.01"
+                    min="0"
+                    max="5"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Tiros -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🎯 Tiros/Partido</label
+                  >
+                  <input
+                    type="number"
+                    id="param-shots"
+                    step="0.01"
+                    min="0"
+                    max="60"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Tiros a puerta -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🥅 Tiros Puerta/Partido</label
+                  >
+                  <input
+                    type="number"
+                    id="param-shots-target"
+                    step="0.01"
+                    min="0"
+                    max="30"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- % Victoria Local -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🏠 % Victoria Local</label
+                  >
+                  <input
+                    type="number"
+                    id="param-home-win"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- % Empate -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🤝 % Empate</label
+                  >
+                  <input
+                    type="number"
+                    id="param-draw"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- % Victoria Visitante -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >✈️ % Victoria Visitante</label
+                  >
+                  <input
+                    type="number"
+                    id="param-away-win"
+                    step="0.1"
+                    min="0"
+                    max="100"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Factor Ventaja Local -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >📈 Factor Ventaja Local</label
+                  >
+                  <input
+                    type="number"
+                    id="param-home-adv"
+                    step="0.01"
+                    min="0.8"
+                    max="2.0"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- Factor Desventaja Visitante -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >📉 Factor Desventaja Visit.</label
+                  >
+                  <input
+                    type="number"
+                    id="param-away-dis"
+                    step="0.01"
+                    min="0.5"
+                    max="1.5"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                </div>
+                <!-- LRS -->
+                <div
+                  style="
+                    background: rgba(255, 255, 255, 0.02);
+                    border: 1px solid var(--border);
+                    border-radius: 8px;
+                    padding: 1rem;
+                  "
+                >
+                  <label
+                    style="
+                      font-size: 0.75rem;
+                      color: var(--text-muted);
+                      text-transform: uppercase;
+                      letter-spacing: 0.05em;
+                      display: block;
+                      margin-bottom: 0.5rem;
+                    "
+                    >🏆 Confiabilidad Liga (LRS)</label
+                  >
+                  <input
+                    type="number"
+                    id="param-lrs"
+                    step="0.01"
+                    min="0"
+                    max="1"
+                    style="
+                      width: 100%;
+                      background: rgba(0, 0, 0, 0.3);
+                      border: 1px solid var(--border);
+                      color: #fff;
+                      padding: 0.5rem;
+                      border-radius: 6px;
+                      font-size: 1rem;
+                      font-weight: 700;
+                    "
+                  />
+                  <div
+                    style="
+                      font-size: 0.7rem;
+                      color: var(--text-muted);
+                      margin-top: 0.25rem;
+                    "
+                  >
+                    0.0 = autocalibrarse | 1.0 = máxima confianza
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 from enum import Enum
 from typing import Optional
 import os, math
@@ -510,7 +511,7 @@ class ValueIndicator(BaseModel):
     # Flags de Decisión
     is_publishable:        bool = False
     is_underdog:           bool = False
-    success:               Optional[bool] = None
+    success:               Optional[bool | str] = None
     display_score:         Optional[float] = None
     push_prob:             Optional[float] = None
 
@@ -816,7 +817,6 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
         return False
     if not is_binary and not is_high_variance and prob < 35.0:
         return False
-
     if v.edge < 2.5 or v.edge > 25:
         return False
 
@@ -928,6 +928,9 @@ def _calculate_stake_units(
     else:
         edge_factor = 0.00
 
+    if edge_ev > 0.20:
+        edge_factor *= 0.60  
+
     # 6. (Opcional) Reducción progresiva si la liga está en racha negativa
     # Si tienes acceso a league.historical_profit:
     # if league_stats.historical_profit < -5.0:
@@ -958,6 +961,11 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
 
     family = _market_family(sel)
     calibrated_p = apply_calibration(modelp, odds, family)
+
+    raw_implied_pre = (1.0 / odds) * 100.0
+    edge_prob_pre = calibrated_p - raw_implied_pre
+    if edge_prob_pre >= 20.0:
+        calibrated_p *= 0.82
 
     raw_implied = (1.0 / odds) * 100.0
     margin_factor = (overround / 100.0) if overround > 100 else 1.05
@@ -2601,31 +2609,18 @@ def _canonical_pick_signature(selection: str) -> tuple[str, str, float | None]:
 
 
 def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["ValueIndicator"]:
-    """
-    Elimina picks correlacionados dentro del mismo mercado.
-
-    Para mercados donde múltiples líneas van en la misma dirección
-    (p.ej. Over 1.5, Over 2.5, Over 3.5 Goles) se mantiene ÚNICAMENTE
-    el pick con mayor EV (edge_ev). Esto reduce la varianza de la cartera
-    y evita exposición concentrada en el mismo resultado subyacente.
-
-    Mercados afectados por deduplicación:
-      - goals over / goals under
-      - corners over / corners under
-      - cards over / cards under
-      - shots over / shots under
-      - shots_target over / shots_target under
-      - handicap (por equipo, best line)
-
-    Mercados excluidos (un pick único por naturaleza):
-      - result (home/draw/away)
-      - btts (yes/no)
-      - double_chance (1X/X2/12)
-      - dnb
-    """
     DEDUP_FAMILIES = {"goals", "corners", "cards", "shots", "shots_target", "handicap"}
+    
+    # NUEVO: Límite máximo de picks por familia de mercado
+    MAX_PICKS_PER_FAMILY = {
+        "goals": 2,
+        "corners": 1,
+        "cards": 2,
+        "shots": 2,
+        "shots_target": 2,
+        "handicap": 1,
+    }
 
-    # Agrupar por (family, side) → lista de ValueIndicators
     groups: dict[tuple[str, str], list["ValueIndicator"]] = {}
     non_dedup: list["ValueIndicator"] = []
 
@@ -2650,7 +2645,9 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
             key=lambda v: v.edge if v.edge is not None else -999.0,
             reverse=True,
         )
-        keep = 2 if len(sorted_group) >= 3 else 1
+        # Aplicar límite máximo por familia
+        max_keep = MAX_PICKS_PER_FAMILY.get(family, 2)
+        keep = min(max_keep, 2 if len(sorted_group) >= 3 else 1)
         best_picks.extend(sorted_group[:keep])
 
     return non_dedup + best_picks
@@ -3149,18 +3146,60 @@ async def _call_openrouter(prompt: str) -> str:
 # ───────────────────────────────────────────────────────────────
 # compare_football
 # ───────────────────────────────────────────────────────────────
-async def compare_football(req: FootballCompareRequest) -> CompareResponse:
+async def compare_football(req: FootballCompareRequest, db: Any = None) -> CompareResponse:
     # Enriquecer league_stats con estadísticas históricas de la BD
     try:
         from src.core.database import SessionLocal
-        from src.core.domain import AnalysisHistory
+        from src.core.domain import AnalysisHistory, LeagueParameters
         from src.ui.api.main import _check_pick_success, _calculate_pick_profit, _is_pick_hit
         import json
         
         comp_name = req.competition or "Desconocida"
         req.league_stats.name = comp_name
         
-        with SessionLocal() as db_session:
+        db_created = False
+        if db is not None:
+            db_session = db
+        else:
+            db_session = SessionLocal()
+            db_created = True
+            
+        try:
+            # Intentar cargar parámetros guardados de la liga desde la BD (evitando data leakage)
+            from datetime import datetime
+            match_dt = None
+            if req.match_date:
+                try:
+                    match_dt = datetime.fromisoformat(req.match_date)
+                except Exception:
+                    try:
+                        match_dt = datetime.strptime(req.match_date[:10], "%Y-%m-%d")
+                    except Exception:
+                        pass
+
+            query = db_session.query(LeagueParameters).filter(
+                LeagueParameters.league_name.ilike(comp_name.strip()),
+                LeagueParameters.is_calibrated == True
+            )
+            if match_dt:
+                query = query.filter(LeagueParameters.calibrated_at < match_dt)
+            
+            db_params = query.order_by(LeagueParameters.calibrated_at.desc()).first()
+            if db_params:
+                req.league_stats.avg_goals_per_game = db_params.avg_goals_per_game
+                req.league_stats.avg_corners_per_game = db_params.avg_corners_per_game
+                req.league_stats.avg_cards_per_game = db_params.avg_cards_per_game
+                req.league_stats.home_win_pct = db_params.home_win_pct
+                req.league_stats.draw_pct = db_params.draw_pct
+                req.league_stats.away_win_pct = db_params.away_win_pct
+                req.league_stats.avg_yellow_cards_per_game = db_params.avg_yellow_cards_per_game
+                req.league_stats.avg_red_cards_per_game = db_params.avg_red_cards_per_game
+                req.league_stats.avg_shots_per_game = db_params.avg_shots_per_game
+                req.league_stats.avg_shots_target_per_game = db_params.avg_shots_target_per_game
+                req.league_stats.home_advantage_factor = db_params.home_advantage_factor
+                req.league_stats.away_disadvantage_factor = db_params.away_disadvantage_factor
+                req.league_stats.league_reliability_score = db_params.league_reliability_score
+
             history = db_session.query(AnalysisHistory).all()
             
             comp_matches = []
@@ -3239,6 +3278,9 @@ async def compare_football(req: FootballCompareRequest) -> CompareResponse:
                 if stats["total"] >= 3:
                     market_hit_rates[family] = round(stats["hits"] / stats["total"], 3)
             req.league_stats.market_hit_rates = market_hit_rates
+        finally:
+            if db_created:
+                db_session.close()
     except Exception as ex:
         print(f"Error enriching league stats: {ex}")
 
