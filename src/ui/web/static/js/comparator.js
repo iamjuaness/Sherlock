@@ -2293,8 +2293,6 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-odds-dc-1x", odds.dc_1x);
       setSafeValue("fb-odds-dc-x2", odds.dc_x2);
       setSafeValue("fb-odds-dc-12", odds.dc_12);
-      setSafeValue("fb-odds-dnb-home", odds.dnb_home);
-      setSafeValue("fb-odds-dnb-away", odds.dnb_away);
 
       const populateTable = (tbodyId, lines, overOdds, underOdds) => {
         const tb = document.getElementById(tbodyId);
@@ -2833,8 +2831,6 @@ function buildFootballPayloadFromForm() {
     dc_1x: getVal("fb-odds-dc-1x"),
     dc_x2: getVal("fb-odds-dc-x2"),
     dc_12: getVal("fb-odds-dc-12"),
-    dnb_home: getVal("fb-odds-dnb-home"),
-    dnb_away: getVal("fb-odds-dnb-away"),
 
     goals_lines: goalsParsed.lines,
     goalsOverOdds: goalsParsed.overOdds,

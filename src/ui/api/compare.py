@@ -310,10 +310,6 @@ class FootballOdds(BaseModel):
     dc_x2:    float | None = Field(None, gt=1.0)
     dc_12:    float | None = Field(None, gt=1.0)
 
-    # DNB
-    dnb_home: float | None = Field(None, gt=1.0)
-    dnb_away: float | None = Field(None, gt=1.0)
-
     goals_lines:      list[float]                = [1.5, 2.5, 3.5, 4.5]
     goals_over_odds:  Dict[str, Optional[float]] = Field(default_factory=dict)
     goals_under_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
@@ -713,8 +709,6 @@ def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float
             b = 0.74
         else:
             b = 0.70
-    elif market_family == "dnb":
-        b = 0.82
 
     calibrated = (p**b) / (p**b + (1-p)**b)
 
@@ -726,8 +720,6 @@ def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float
         else:
             shrinkage = 0.12
         calibrated = (1.0 - shrinkage) * calibrated + shrinkage * 0.50
-    elif market_family == "dnb":
-        calibrated = 0.95 * calibrated + 0.05 * 0.50
 
     if odds > 3.0:
         calibrated *= 0.90
@@ -880,7 +872,6 @@ def _calculate_stake_units(
         "btts": 1.00,
         "goals": 0.90,
         "double_chance": 0.85,
-        "dnb": 0.90,
         "handicap": 0.75,
         "corners": 0.60,
         "cards": 0.55,
@@ -999,7 +990,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             MARKET_REF = {
                 "corners": 0.52, "cards": 0.52, "shots": 0.52, "shots_target": 0.52, "fouls": 0.52,
                 "goals": 0.55,   "btts": 0.54,  "result": 0.55,
-                "handicap": 0.54, "double_chance": 0.57, "dnb": 0.56, "generic": 0.53,
+                "handicap": 0.54, "double_chance": 0.57, "generic": 0.53,
             }
             ref_rate = MARKET_REF.get(family, 0.53)
             # Penalizar mercados que rinden peor que la referencia en esta liga
@@ -1960,8 +1951,6 @@ def _market_family(text: str) -> str:
 
     if any(k in s for k in ["double chance", "doble oportunidad", "1x", "x2", "12"]):
         return "double_chance"
-    if any(k in s for k in ["dnb", "draw no bet", "sin empate"]):
-        return "dnb"
     if any(k in s for k in ["moneyline", "ml", "1x2", "ganador", "local", "visitante", "empate"]):
         return "result"
 
@@ -1985,9 +1974,6 @@ def _market_side(text: str) -> str:
         (r'\b(1x|home_draw)\b', "home_draw"),
         (r'\b(x2|draw_away)\b', "draw_away"),
         (r'\b(12|home_away)\b', "home_away"),
-        # DNB
-        (r'\b(dnb_home)\b', "home"),
-        (r'\b(dnb_away)\b', "away"),
     ]
     
     for pattern, side in patterns:
@@ -2588,14 +2574,6 @@ def _explicit_market_support(selection: str, h, a, proj: list) -> tuple[float, f
                 _clip_0_100(w_h2 * proj_h + w_a2 * proj_a),
             )
 
-    if family == "dnb":
-        if "local" in s or "home" in s or "1" in s:
-            stat_h, proj_h = _support_home_win(h, a, proj)
-            return _clip_0_100(stat_h * 1.05), _clip_0_100(proj_h * 1.05)
-        if "visitante" in s or "away" in s or "2" in s:
-            stat_a, proj_a = _support_away_win(h, a, proj)
-            return _clip_0_100(stat_a * 1.05), _clip_0_100(proj_a * 1.05)
-
     return 55.0, 55.0
 
 
@@ -2615,7 +2593,7 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
     MAX_PICKS_PER_FAMILY = {
         "goals": 2,
         "corners": 1,
-        "cards": 2,
+        "cards": 0,
         "shots": 2,
         "shots_target": 2,
         "handicap": 1,
@@ -3417,13 +3395,6 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
     _or_dc_raw = _overround(req.odds.dc_1x, req.odds.dc_x2, req.odds.dc_12)
     _or_dc = _or_dc_raw if _or_dc_raw > 100.5 else _or_1x2
 
-    _or_dnb_raw = _overround(req.odds.dnb_home, req.odds.dnb_away)
-    _or_dnb = _or_dnb_raw if _or_dnb_raw > 100.5 else _or_1x2
-
-    p_dnb_home = (h_prob_raw / max(h_prob_raw + a_prob_raw, 0.1)) * 100
-    p_dnb_away = (a_prob_raw / max(h_prob_raw + a_prob_raw, 0.1)) * 100
-    push_dnb = d_prob_raw * 100
-
     market_configs: list[tuple[str, float | None, float, float, float]] = [
         ("Local",     req.odds.home,     h_prob     * 100, _or_1x2, 0.0),
         ("Empate",    req.odds.draw,     d_prob     * 100, _or_1x2, 0.0),
@@ -3434,9 +3405,6 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         ("Doble Oportunidad 1X", req.odds.dc_1x, p_dc_1x, _or_dc, 0.0),
         ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_dc, 0.0),
         ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_dc, 0.0),
-
-        (f"DNB Local", req.odds.dnb_home, p_dnb_home, _or_dnb, push_dnb),
-        (f"DNB Visitante", req.odds.dnb_away, p_dnb_away, _or_dnb, push_dnb),
     ]
 
     projected_lines: list[ProjectedLine] = []

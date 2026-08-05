@@ -1074,8 +1074,6 @@ function buildSherlockPayload(extractedData) {
     away: null,
     btts_yes: null,
     btts_no: null,
-    dnb_home: null,
-    dnb_away: null,
     dc_1x: null,
     dc_x2: null,
     dc_12: null,

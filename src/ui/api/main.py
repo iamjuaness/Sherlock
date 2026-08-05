@@ -281,8 +281,6 @@ def _normalize_betano_odds(raw: dict) -> dict:
         "dc_1x":     raw.get("dc_1x"),
         "dc_x2":     raw.get("dc_x2"),
         "dc_12":     raw.get("dc_12"),
-        "dnb_home":  raw.get("dnb_home"),
-        "dnb_away":  raw.get("dnb_away"),
         # Lines (kept as snake_case — comparator reads goals_lines etc.)
         "goals_lines":       _to_float_list(raw.get("goals_lines", [])),
         "corners_lines":     _to_float_list(raw.get("corners_lines", [])),
@@ -331,7 +329,6 @@ async def push_prefill_odds(payload: dict) -> dict:
         "home": 2.02, "draw": 3.4, "away": 3.6,
         "btts_yes": 1.82, "btts_no": 1.9,
         "dc_1x": 1.31, "dc_x2": 1.82, "dc_12": 1.3,
-        "dnb_home": 1.47, "dnb_away": 2.57,
         "goals_lines": ["1.5","2.5"], "goals_over": {"1.5":...,"2.5":...}, ...
       }
     }
@@ -411,42 +408,70 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                     )
                     .first()
                 )
-                # Si no funciona con .contains(), prueba con:
-                # matched = (
-                #     db.query(AnalysisHistory)
-                #     .filter(
-                #         AnalysisHistory.sport == sport_enum,
-                #         AnalysisHistory.match_title == f"{home_name} vs {away_name}"
-                #     )
-                #     .order_by(AnalysisHistory.date.desc())
-                #     .first()
-                # )
 
-            # ── ESTRATEGIA 2: Busqueda SQL por nombres en el titulo (sin limit) ──
+
             if not matched:
-                # Usamos ILIKE para buscar en la BD directamente, no en Python
-                # Esto trae solo los candidatos que tienen ambos equipos en el titulo
-                candidates = (
+               # ── ESTRATEGIA 2: Búsqueda por título exacto + fecha ──
+                match_date_val = None
+                if payload.get("start_timestamp"):
+                    match_date_val = datetime.utcfromtimestamp(payload["start_timestamp"])
+
+                # 2a. Intento exacto: título con orden correcto + fecha cercana
+                exact_title = f"{home_name} vs {away_name}"
+                query = (
                     db.query(AnalysisHistory)
                     .filter(
                         AnalysisHistory.sport == sport_enum,
-                        AnalysisHistory.match_title.ilike(f"%{home_name}%"),
-                        AnalysisHistory.match_title.ilike(f"%{away_name}%")
+                        AnalysisHistory.match_title == exact_title,
                     )
-                    .order_by(AnalysisHistory.date.desc())
-                    .all()
                 )
+                if match_date_val:
+                    from datetime import timedelta
+                    query = query.filter(
+                        AnalysisHistory.match_date >= match_date_val - timedelta(days=1),
+                        AnalysisHistory.match_date <= match_date_val + timedelta(days=1),
+                    )
+                matched = query.order_by(AnalysisHistory.date.desc()).first()
 
-                # Matching flexible: verificamos que ambos nombres esten presentes
-                for h in candidates:
-                    title_lower = h.match_title.lower()
-                    # Check flexible: primeros 5 chars o nombre completo
-                    home_match = h_name_lower[:5] in title_lower or h_name_lower in title_lower
-                    away_match = a_name_lower[:5] in title_lower or a_name_lower in title_lower
-                    
-                    if home_match and away_match:
-                        matched = h
-                        break
+                # 2b. Si no hay exacto, buscar candidatos con ambos nombres PERO
+                #    filtrar por fecha y respetar el orden (local primero, visitante segundo)
+                if not matched:
+                    candidates_query = (
+                        db.query(AnalysisHistory)
+                        .filter(
+                            AnalysisHistory.sport == sport_enum,
+                            AnalysisHistory.match_title.ilike(f"%{home_name}%"),
+                            AnalysisHistory.match_title.ilike(f"%{away_name}%"),
+                        )
+                    )
+                    if match_date_val:
+                        from datetime import timedelta
+                        candidates_query = candidates_query.filter(
+                            AnalysisHistory.match_date >= match_date_val - timedelta(days=1),
+                            AnalysisHistory.match_date <= match_date_val + timedelta(days=1),
+                        )
+                    candidates = candidates_query.order_by(AnalysisHistory.date.desc()).all()
+
+                    for h in candidates:
+                        title_lower = h.match_title.lower()
+                        # Verificar que AMBOS nombres estén presentes
+                        home_match = h_name_lower[:5] in title_lower or h_name_lower in title_lower
+                        away_match = a_name_lower[:5] in title_lower or a_name_lower in title_lower
+                        if not (home_match and away_match):
+                            continue
+
+                        # Diferenciador CLAVE: respetar el orden del partido
+                        home_idx = title_lower.find(h_name_lower)
+                        away_idx = title_lower.find(a_name_lower)
+                        if home_idx != -1 and away_idx != -1 and home_idx < away_idx:
+                            # home_name aparece ANTES que away_name → es el partido correcto
+                            matched = h
+                            break
+
+                    # 2c. Último fallback: si hay candidatos con fecha exacta pero orden invertido,
+                    #     preferir el más reciente de esa fecha (puede ser el de vuelta si no hay de ida)
+                    if not matched and candidates:
+                        matched = candidates[0]
 
             # ── Si encontramos el partido, actualizamos ──
             if matched:
@@ -823,22 +848,48 @@ def _get_or_create_team(db: Session, team_obj: object) -> str:
 
 async def _enrich_with_results(sport: Sport, home: str, away: str, response: CompareResponse, db: Session):
     """Busca si el partido ya tiene resultados en la BD y marca acierto/fallo en el vuelo."""
-    # Buscar el análisis más reciente para este partido que tenga resultados
+    # 1. Intento exacto: orden home vs away
     history = (
         db.query(AnalysisHistory)
         .filter(
             AnalysisHistory.sport == sport,
-            AnalysisHistory.match_title.like(f"%{home}%"),
-            AnalysisHistory.match_title.like(f"%{away}%"),
-            AnalysisHistory.final_score_home != None
+            AnalysisHistory.match_title == f"{home} vs {away}",
+            AnalysisHistory.final_score_home != None,
         )
         .order_by(AnalysisHistory.date.desc())
         .first()
     )
-    
+
+    # 2. Si no hay exacto, buscar con ambos nombres pero respetando orden
+    if not history:
+        candidates = (
+            db.query(AnalysisHistory)
+            .filter(
+                AnalysisHistory.sport == sport,
+                AnalysisHistory.match_title.ilike(f"%{home}%"),
+                AnalysisHistory.match_title.ilike(f"%{away}%"),
+                AnalysisHistory.final_score_home != None,
+            )
+            .order_by(AnalysisHistory.date.desc())
+            .all()
+        )
+        home_l = home.lower()
+        away_l = away.lower()
+        for h in candidates:
+            title_lower = h.match_title.lower()
+            h_idx = title_lower.find(home_l)
+            a_idx = title_lower.find(away_l)
+            if h_idx != -1 and a_idx != -1 and h_idx < a_idx:
+                history = h
+                break
+
+        # Fallback: si no hay orden correcto, tomar el más reciente (comportamiento anterior)
+        if not history and candidates:
+            history = candidates[0]
+
     if not history:
         return response
-        
+
     res_dict = {
         "final_score_home": history.final_score_home,
         "final_score_away": history.final_score_away,
@@ -853,11 +904,12 @@ async def _enrich_with_results(sport: Sport, home: str, away: str, response: Com
         "final_shots_on_target_home": history.final_shots_on_target_home,
         "final_shots_on_target_away": history.final_shots_on_target_away,
     }
-    
-    # Inyectar éxito en los picks
+
     for v in response.values:
-        v.success = _check_pick_success(v.model_dump() if hasattr(v, 'model_dump') else v.__dict__, res_dict)
-        
+        v.success = _check_pick_success(
+            v.model_dump() if hasattr(v, "model_dump") else v.__dict__, res_dict
+        )
+
     return response
 
 @app.post("/api/v1/compare/football", response_model=CompareResponse, tags=["Comparator"])
@@ -1542,8 +1594,8 @@ def recalibrate_league_parameters(league_name: str, db: Session = Depends(get_db
         return True        # rendimiento bajo y sin profit protegido → recalibrar
 
     # ── Grupos de parámetros por familia de mercado ────────────────────────────
-    # result / double_chance / dnb / handicap → %victorias + factores de ventaja
-    update_result    = _needs_update("result") or _needs_update("double_chance") or _needs_update("dnb") or _needs_update("handicap")
+    # result / double_chance / handicap → %victorias + factores de ventaja
+    update_result    = _needs_update("result") or _needs_update("double_chance") or _needs_update("handicap")
     # goals / btts → goles
     update_goals     = _needs_update("goals") or _needs_update("btts")
     # corners
@@ -3631,16 +3683,6 @@ def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
     
     h_score = res.get("final_score_home")
     a_score = res.get("final_score_away")
-
-    # DNB (Draw No Bet)
-    if "dnb" in sel:
-        if h_score is not None and a_score is not None:
-            if h_score == a_score:
-                return "void"
-            if "local" in sel or "home" in sel:
-                return h_score > a_score
-            if "visitante" in sel or "away" in sel:
-                return a_score > h_score
 
     # Asian Handicap
     if sel.startswith("ah ") or " ah " in sel:

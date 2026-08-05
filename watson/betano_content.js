@@ -28,8 +28,6 @@
       dc1X: null,
       dcX2: null,
       dc12: null,
-      dnbHome: null,
-      dnbAway: null,
 
       goalsLines: [],
       goalsOverOdds: {},
@@ -223,17 +221,6 @@
         );
       }
 
-      // ── Draw No Bet / Apuesta sin Empate (DNOB) ──
-      else if (mType === "DNOB") {
-        if (Array.isArray(m.selections)) {
-          m.selections.forEach((sel) => {
-            // columnIndex 0 = Local, columnIndex 1 = Visitante
-            if (sel.columnIndex === 0) odds.dnbHome = sel.price;
-            else if (sel.columnIndex === 1) odds.dnbAway = sel.price;
-          });
-        }
-      }
-
       // ── Hándicap ──
       else if (mType === "FHMR" || mType === "AHRF" || mType === "FHH1") {
         extractHandicap(
@@ -314,8 +301,6 @@
       dc_1x: parsed.dc1X,
       dc_x2: parsed.dcX2,
       dc_12: parsed.dc12,
-      dnb_home: parsed.dnbHome,
-      dnb_away: parsed.dnbAway,
       goals_lines: parsed.goalsLines.map(String),
       goals_over: parsed.goalsOverOdds,
       goals_under: parsed.goalsUnderOdds,
