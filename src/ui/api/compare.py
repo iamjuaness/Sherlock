@@ -696,10 +696,21 @@ def _compute_league_reliability_score(league: "LeagueStats") -> float:
     return round(max(0.25, min(1.0, final_score)), 3)
 
 
-def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float:
+MIN_PICKS_FOR_EMPIRICAL = 10
+FULL_WEIGHT_PICKS = 60.0
+
+MARKET_REF_ACCURACY = {
+    "corners": 0.52, "cards": 0.52, "shots": 0.52, "shots_target": 0.52, "fouls": 0.52,
+    "goals": 0.55, "btts": 0.54, "result": 0.55,
+    "handicap": 0.54, "double_chance": 0.57, "generic": 0.53,
+}
+
+
+def apply_calibration(raw_prob: float, odds: float, market_family: str,
+                       league: "LeagueStats | None" = None) -> float:
     p = raw_prob / 100.0
 
-    b = 0.85 
+    b = 0.85
     if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         b = 0.75
     elif market_family == "double_chance":
@@ -710,7 +721,20 @@ def apply_calibration(raw_prob: float, odds: float, market_family: str) -> float
         else:
             b = 0.70
 
-    calibrated = (p**b) / (p**b + (1-p)**b)
+    # ── NUEVO: corrección empírica de b usando el historial real de la liga ──
+    if league is not None and getattr(league, "market_hit_rates", None):
+        rate = league.market_hit_rates.get(market_family)
+        picks = getattr(league, "historical_picks", 0)
+        if rate is not None and picks >= MIN_PICKS_FOR_EMPIRICAL:
+            ref_rate = MARKET_REF_ACCURACY.get(market_family, 0.53)
+            deviation = rate - ref_rate  # negativo => el modelo acierta menos de lo esperado
+            bayes_weight = min(1.0, picks / FULL_WEIGHT_PICKS)
+            # Si acierta menos que la referencia -> subimos b (más conservador, más cerca de 0.5)
+            # Si acierta más -> bajamos b (confiamos más en la probabilidad cruda del modelo)
+            b_adjustment = -deviation * 0.6 * bayes_weight
+            b = max(0.55, min(0.95, b + b_adjustment))
+
+    calibrated = (p ** b) / (p ** b + (1 - p) ** b)
 
     if market_family == "double_chance":
         if p >= 0.80:
@@ -835,7 +859,7 @@ def score_pick_quality(v: ValueIndicator) -> int:
     return min(max(total, 0), 100)
 
 
-def is_underdog_pick(v: ValueIndicator) -> bool:
+def is_underdog_pick(v) -> bool:
     family = _market_family(v.selection)
 
     if v.odds is None or v.odds <= 2.5 or v.odds > 5.80:
@@ -845,6 +869,9 @@ def is_underdog_pick(v: ValueIndicator) -> bool:
         return False
 
     if v.data_quality_score is not None and v.data_quality_score < 50:
+        return False
+
+    if v.stake_units is not None and v.stake_units < 1.0:
         return False
 
     return True
@@ -882,16 +909,11 @@ def _calculate_stake_units(
     mkt_factor = MARKET_FACTOR.get(market_family, 0.70)
 
     # 3. Factor de Odds (volatilidad implícita)
-    if odds < 1.60:
-        odds_factor = 1.00
-    elif odds < 2.00:
-        odds_factor = 0.90
-    elif odds < 2.50:
-        odds_factor = 0.75
-    elif odds < 3.50:
-        odds_factor = 0.50
-    else:
-        odds_factor = 0.30
+    if odds < 1.60: odds_factor = 1.00
+    elif odds < 2.00: odds_factor = 0.95
+    elif odds < 2.50: odds_factor = 0.88
+    elif odds < 3.50: odds_factor = 0.75
+    else: odds_factor = 0.60
 
     # 4. Factor de Liga (LRS gradual, no binario)
     league_factor = 1.0
@@ -945,6 +967,52 @@ def _calculate_stake_units(
     stake = round(max(0.5, min(hard_max, raw_stake)) * 2) / 2
 
     return stake if stake >= 1.0 else 0.0
+
+def _calculate_kelly_fraction(
+    calibrated_prob: float,
+    odds: float | None,
+    kelly_multiplier: float = 0.25,
+    hard_cap: float = 0.25,
+) -> float:
+    """
+    Kelly fraccional real, basado en probabilidad calibrada y cuota decimal.
+
+    Args:
+        calibrated_prob: probabilidad calibrada del pick. Acepta 0-1 o 0-100
+                          (se detecta automáticamente por el rango).
+        odds: cuota decimal de la casa (>1.0).
+        kelly_multiplier: fracción de Kelly completo a usar (0.25 = 1/4 Kelly,
+                           recomendado para reducir varianza frente a errores
+                           de estimación de probabilidad). Ajustable por
+                           familia de mercado si se quiere ser más/menos
+                           conservador (ver nota al final).
+        hard_cap: techo absoluto de seguridad — nunca recomienda apostar más
+                   de esta fracción del bankroll en un solo pick, sin importar
+                   qué tan alto salga el Kelly matemático (protege contra
+                   errores de calibración extremos / outliers).
+
+    Returns:
+        Fracción del bankroll a apostar (0.0 si no hay valor o inputs inválidos).
+    """
+    if odds is None or odds <= 1.0 or calibrated_prob is None:
+        return 0.0
+
+    p = calibrated_prob / 100.0 if calibrated_prob > 1.0 else calibrated_prob
+    p = max(0.0, min(1.0, p))
+    q = 1.0 - p
+    b = odds - 1.0
+
+    if b <= 0:
+        return 0.0
+
+    f_full = (b * p - q) / b  # Kelly completo: puede salir negativo -> sin valor
+
+    if f_full <= 0:
+        return 0.0
+
+    f_fractional = f_full * kelly_multiplier
+
+    return round(min(f_fractional, hard_cap), 4)
 
 def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None):
     if odds is None or odds <= 1.0:
@@ -1023,19 +1091,17 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     else:            rating = "❌ NO VALUE"
 
     # Aplicar fracción conservadora según confianza
-    kelly_fraction = {
-        "🔥 STRONG VALUE": 0.25,   # 1/4 Kelly
-        "✅ VALUE": 0.125,         # 1/8 Kelly  
-        "⚖️ MARGINAL": 0.0625,     # 1/16 Kelly
-        "❌ NO VALUE": 0.0,
-    }[rating]
+    kelly_fraction = _calculate_kelly_fraction(
+       calibrated_prob=calibrated_p,   # ya está en escala 0-100 en ese punto
+       odds=odds,
+    )
 
     # Aplicar límite de Kelly/Stake si la liga tiene rendimiento pobre (beneficio negativo o acierto < 40%)
     if league is not None and getattr(league, "historical_picks", 0) >= 5:
         hist_profit = getattr(league, "historical_profit", 0.0)
         hist_accuracy = getattr(league, "accuracy", 100.0)
         if hist_profit < 0.0 or hist_accuracy < 40.0:
-            kelly_fraction = min(kelly_fraction, 0.01) # Limita stake a máximo 1u (1% Kelly -> Stake 1)
+            kelly_fraction = min(kelly_fraction, 0.01)
 
     family = _market_family(sel)
     stake = _calculate_stake_units(
@@ -1088,6 +1154,29 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
 # ───────────────────────────────────────────────────────────────
 # Poisson engine (Football)
 # ───────────────────────────────────────────────────────────────
+
+def estimate_empirical_bayes_prior_n(
+    league_variance: float,
+    league_mean: float,
+    baseline_prior_n: float = 5.0,
+    min_prior_n: float = 2.0,
+    max_prior_n: float = 12.0,
+) -> float:
+    """
+    league_variance: varianza observada de la métrica (goles/tarjetas/corners)
+                      entre partidos de esta liga.
+    league_mean:     media de la misma métrica.
+
+    Ligas con dispersión relativa (varianza/media, índice de Fano) alta
+    respecto a lo esperado bajo Poisson (Fano=1) son más "caóticas" ->
+    prior_n sube (confiamos menos en pocos partidos del equipo).
+    Ligas con Fano < 1 (más estables que Poisson puro) -> prior_n baja.
+    """
+    if league_mean <= 0:
+        return baseline_prior_n
+    fano = league_variance / league_mean
+    prior_n = baseline_prior_n * fano
+    return round(max(min_prior_n, min(max_prior_n, prior_n)), 2)
 
 def _compute_team_goals_lambda(
     attacker: FootballTeamStats,
@@ -1624,13 +1713,64 @@ def _dc_tau(x: int, y: int, lam: float, mu: float, rho: float) -> float:
     return 1.0
 
 
+def _poisson_pmf(lam: float, k: int) -> float:
+    return (lam ** k * math.exp(-lam)) / math.factorial(k)
+
+
 def _default_dc_rho(h_lam: float, a_lam: float) -> float:
+    """Heurística original — se mantiene como fallback."""
     total = h_lam + a_lam
     base = -0.13
-
-    if total < 2.0: return max(-0.18, base - 0.03)
-    if total > 3.0: return min(-0.08, base + 0.03)
+    if total < 2.0:
+        return max(-0.18, base - 0.03)
+    if total > 3.0:
+        return min(-0.08, base + 0.03)
     return base
+
+
+def _dc_log_likelihood(rho: float, matches: list[tuple[int, int, float, float]]) -> float:
+    """
+    matches: lista de (goles_local, goles_visitante, lambda_local, lambda_visitante)
+    de partidos históricos ya jugados de una liga.
+    """
+    ll = 0.0
+    for hg, ag, lam, mu in matches:
+        p = _poisson_pmf(lam, hg) * _poisson_pmf(mu, ag) * _dc_tau(hg, ag, lam, mu, rho)
+        p = max(p, 1e-10)
+        ll += math.log(p)
+    return ll
+
+
+def fit_dixon_coles_rho(
+    matches: list[tuple[int, int, float, float]],
+    min_matches: int = 100,
+    rho_bounds: tuple[float, float] = (-0.30, 0.05),
+    grid_steps: int = 71,
+) -> float:
+    """
+    Ajusta rho por máxima verosimilitud (búsqueda en grilla, robusta y sin
+    dependencias externas de optimización) sobre partidos históricos reales.
+
+    Si no hay suficientes partidos (< min_matches), usa el promedio de
+    lambdas del set para caer de vuelta en la heurística original — así
+    nunca se comporta peor que antes.
+    """
+    if len(matches) < min_matches:
+        if matches:
+            avg_lam = sum(m[2] for m in matches) / len(matches)
+            avg_mu = sum(m[3] for m in matches) / len(matches)
+            return _default_dc_rho(avg_lam, avg_mu)
+        return -0.13
+
+    lo, hi = rho_bounds
+    best_rho, best_ll = lo, float("-inf")
+    for i in range(grid_steps):
+        rho = lo + (hi - lo) * i / (grid_steps - 1)
+        ll = _dc_log_likelihood(rho, matches)
+        if ll > best_ll:
+            best_ll, best_rho = ll, rho
+
+    return round(best_rho, 4)
 
 
 def _dc_score_matrix(
@@ -3128,12 +3268,9 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
     # Enriquecer league_stats con estadísticas históricas de la BD
     try:
         from src.core.database import SessionLocal
-        from src.core.domain import AnalysisHistory, LeagueParameters
+        from src.core.domain import AnalysisHistory
         from src.ui.api.main import _check_pick_success, _calculate_pick_profit, _is_pick_hit
         import json
-        
-        comp_name = req.competition or "Desconocida"
-        req.league_stats.name = comp_name
         
         db_created = False
         if db is not None:
@@ -3142,123 +3279,6 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
             db_session = SessionLocal()
             db_created = True
             
-        try:
-            # Intentar cargar parámetros guardados de la liga desde la BD (evitando data leakage)
-            from datetime import datetime
-            match_dt = None
-            if req.match_date:
-                try:
-                    match_dt = datetime.fromisoformat(req.match_date)
-                except Exception:
-                    try:
-                        match_dt = datetime.strptime(req.match_date[:10], "%Y-%m-%d")
-                    except Exception:
-                        pass
-
-            query = db_session.query(LeagueParameters).filter(
-                LeagueParameters.league_name.ilike(comp_name.strip()),
-                LeagueParameters.is_calibrated == True
-            )
-            if match_dt:
-                query = query.filter(LeagueParameters.calibrated_at < match_dt)
-            
-            db_params = query.order_by(LeagueParameters.calibrated_at.desc()).first()
-            if db_params:
-                req.league_stats.avg_goals_per_game = db_params.avg_goals_per_game
-                req.league_stats.avg_corners_per_game = db_params.avg_corners_per_game
-                req.league_stats.avg_cards_per_game = db_params.avg_cards_per_game
-                req.league_stats.home_win_pct = db_params.home_win_pct
-                req.league_stats.draw_pct = db_params.draw_pct
-                req.league_stats.away_win_pct = db_params.away_win_pct
-                req.league_stats.avg_yellow_cards_per_game = db_params.avg_yellow_cards_per_game
-                req.league_stats.avg_red_cards_per_game = db_params.avg_red_cards_per_game
-                req.league_stats.avg_shots_per_game = db_params.avg_shots_per_game
-                req.league_stats.avg_shots_target_per_game = db_params.avg_shots_target_per_game
-                req.league_stats.home_advantage_factor = db_params.home_advantage_factor
-                req.league_stats.away_disadvantage_factor = db_params.away_disadvantage_factor
-                req.league_stats.league_reliability_score = db_params.league_reliability_score
-
-            history = db_session.query(AnalysisHistory).all()
-            
-            comp_matches = []
-            for h_record in history:
-                if h_record.payload:
-                    try:
-                        p_data = json.loads(h_record.payload) if isinstance(h_record.payload, str) else h_record.payload
-                        record_comp = p_data.get("competition") or "Desconocida"
-                        if record_comp.strip().lower() == comp_name.strip().lower():
-                            comp_matches.append(h_record)
-                    except:
-                        pass
-            
-            total_matches = len(comp_matches)
-            total_picks = 0
-            total_hits = 0
-            total_profit = 0.0
-            market_stats = {}
-            
-            for h_record in comp_matches:
-                if h_record.picks_calculados:
-                    try:
-                        picks = json.loads(h_record.picks_calculados) if isinstance(h_record.picks_calculados, str) else h_record.picks_calculados
-                        if isinstance(picks, list):
-                            res_dict = {
-                                "final_score_home": h_record.final_score_home,
-                                "final_score_away": h_record.final_score_away,
-                                "final_corners_home": h_record.final_corners_home,
-                                "final_corners_away": h_record.final_corners_away,
-                                "final_yellow_cards_home": h_record.final_yellow_cards_home,
-                                "final_yellow_cards_away": h_record.final_yellow_cards_away,
-                                "final_red_cards_home": h_record.final_red_cards_home,
-                                "final_red_cards_away": h_record.final_red_cards_away,
-                            }
-                            has_result = h_record.final_score_home is not None
-                            
-                            for pick in picks:
-                                is_pub = pick.get("is_publishable", False)
-                                is_und = pick.get("is_underdog", False)
-                                if not is_pub and not is_und:
-                                    if pick.get("is_value", False):
-                                        is_pub = True
-                                if not (is_pub or is_und):
-                                    continue
-                                
-                                if has_result:
-                                    success = _check_pick_success(pick, res_dict)
-                                    if success is not None:
-                                        stake = _resolve_stake_from_pick(pick)
-                                        pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
-                                        total_profit += pick_profit
-                                        if success != "void":
-                                            total_picks += 1
-                                            is_hit = _is_pick_hit(success)
-                                            if is_hit:
-                                                total_hits += 1
-                                                
-                                            family = _market_family(pick.get("selection", ""))
-                                            if family not in market_stats:
-                                                market_stats[family] = {"hits": 0, "total": 0}
-                                            market_stats[family]["total"] += 1
-                                            if is_hit:
-                                                market_stats[family]["hits"] += 1
-                    except Exception as e:
-                        pass
-            
-            req.league_stats.historical_matches = total_matches
-            req.league_stats.historical_picks = total_picks
-            req.league_stats.historical_hits = total_hits
-            req.league_stats.historical_profit = round(total_profit, 2)
-            req.league_stats.accuracy = round((total_hits / total_picks * 100), 1) if total_picks > 0 else 0.0
-            req.league_stats.roi = round((total_profit / total_picks * 100), 2) if total_picks > 0 else 0.0
-            
-            market_hit_rates = {}
-            for family, stats in market_stats.items():
-                if stats["total"] >= 3:
-                    market_hit_rates[family] = round(stats["hits"] / stats["total"], 3)
-            req.league_stats.market_hit_rates = market_hit_rates
-        finally:
-            if db_created:
-                db_session.close()
     except Exception as ex:
         print(f"Error enriching league stats: {ex}")
 
@@ -3647,3 +3667,17 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         summary=summary,
         llm_analysis=llm,
     )    
+
+if __name__ == "__main__":
+    casos = [
+        ("Cuota baja, prob alta",  82.1, 1.55),
+        ("Cuota media",            50.0, 2.46),
+        ("Cuota alta, prob baja",  28.7, 5.40),
+        ("Sin valor (prob = implícita)", 40.7, 2.46),
+    ]
+    for nombre, prob, odds in casos:
+        kf = _calculate_kelly_fraction(prob, odds)
+        implied = 1 / odds * 100
+        ev = (prob / 100 * odds) - 1
+        print(f"{nombre:35s} | prob={prob:5.1f}% odds={odds:4.2f} "
+              f"implied={implied:5.1f}% EV={ev:+.3f} -> Kelly 1/4={kf*100:5.2f}%")

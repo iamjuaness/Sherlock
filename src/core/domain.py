@@ -269,7 +269,7 @@ class AnalysisHistory(Base):
     llm_timestamp = Column(DateTime, nullable=True)
     compare_response_snapshot = Column(Text, nullable=True)
     needs_reanalysis = Column(Boolean, default=False)
-    calibration_parameters = Column(Text, nullable=True)  # JSON blob of parameters snapshot
+
 
     # Final Results
     final_score_home = Column(Integer, nullable=True)
@@ -383,30 +383,3 @@ class AnalysisHistory(Base):
 
     def __repr__(self) -> str:
         return f"<AnalysisHistory {self.match_title} ({self.date})>"
-
-
-class LeagueParameters(Base):
-    """Persisted league-specific configuration and calibration parameters."""
-
-    __tablename__ = "league_parameters"
-
-    id = Column(String(36), primary_key=True, default=_new_id)
-    league_name = Column(String(200), nullable=False, index=True)
-    calibrated_at = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
-    avg_goals_per_game = Column(Float, nullable=False, default=2.5)
-    avg_corners_per_game = Column(Float, nullable=False, default=9.5)
-    avg_cards_per_game = Column(Float, nullable=False, default=4.5)
-    home_win_pct = Column(Float, nullable=False, default=45.0)
-    draw_pct = Column(Float, nullable=False, default=25.0)
-    away_win_pct = Column(Float, nullable=False, default=30.0)
-    avg_yellow_cards_per_game = Column(Float, nullable=False, default=4.0)
-    avg_red_cards_per_game = Column(Float, nullable=False, default=0.2)
-    avg_shots_per_game = Column(Float, nullable=False, default=26.0)
-    avg_shots_target_per_game = Column(Float, nullable=False, default=8.5)
-    home_advantage_factor = Column(Float, nullable=False, default=1.20)
-    away_disadvantage_factor = Column(Float, nullable=False, default=0.85)
-    league_reliability_score = Column(Float, nullable=False, default=0.0)
-    is_calibrated = Column(Boolean, nullable=False, default=False, server_default="0")
-
-    def __repr__(self) -> str:
-        return f"<LeagueParameters {self.league_name}>"

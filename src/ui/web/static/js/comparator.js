@@ -3780,33 +3780,6 @@ function filterDetailedPicksUI() {
   });
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Auto-fill league parameters from DB when competition changes
-// ─────────────────────────────────────────────────────────────────────────────
-
-async function _autoFillLeagueParamsFromDB(leagueName) {
-  if (!leagueName || leagueName.trim() === "") return;
-  try {
-    const encoded = encodeURIComponent(leagueName.trim());
-    const res = await fetch(`/api/v1/leagues/${encoded}/parameters`);
-    if (!res.ok) return;
-    const data = await res.json();
-
-    function _set(id, val) {
-      const el = document.getElementById(id);
-      if (el && val !== undefined && val !== null) el.value = val;
-    }
-
-    _set("fb-league-goals", data.avg_goals_per_game);
-    _set("fb-league-corners", data.avg_corners_per_game);
-    _set("fb-league-cards", data.avg_cards_per_game);
-    _set("fb-league-yellow-cards", data.avg_yellow_cards_per_game);
-    _set("fb-league-red-cards", data.avg_red_cards_per_game);
-  } catch (err) {
-    // Silently skip – params might not exist yet for this league
-  }
-}
-
 // Wire up listener once DOM is ready
 (function _wireCompetitionAutoFill() {
   function _attach() {

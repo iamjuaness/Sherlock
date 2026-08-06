@@ -11,7 +11,7 @@ from fastapi import Depends, FastAPI, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 
 from src.core.database import get_db, init_db
-from src.core.domain import Competition, Match, Sport, AnalysisHistory, LeagueParameters
+from src.core.domain import Competition, Match, Sport, AnalysisHistory
 from src.ui.api.schemas import (
     CompetitionOut,
     MatchOut,
@@ -35,7 +35,10 @@ from fastapi.templating import Jinja2Templates
 from fastapi import Request
 import os
 from fastapi.middleware.cors import CORSMiddleware
-
+import io
+import pandas as pd
+import openpyxl
+from openpyxl.utils import get_column_letter
 
 # ---------------------------------------------------------------------------
 # Startup
@@ -1035,31 +1038,6 @@ def save_analysis(
         if req.has_real_stats is not None:
             # pyrefly: ignore [bad-assignment]
             existing.has_real_stats = req.has_real_stats
-
-        # Store a snapshot of the calibration parameters used (if league is calibrated)
-        comp_name = req.payload.get("competition") if req.payload else None
-        if comp_name:
-            db_params = db.query(LeagueParameters).filter(
-                LeagueParameters.league_name.ilike(comp_name.strip())
-            ).first()
-            if db_params and db_params.is_calibrated:
-                existing.calibration_parameters = json.dumps({
-                    "avg_goals_per_game": db_params.avg_goals_per_game,
-                    "avg_corners_per_game": db_params.avg_corners_per_game,
-                    "avg_cards_per_game": db_params.avg_cards_per_game,
-                    "home_win_pct": db_params.home_win_pct,
-                    "draw_pct": db_params.draw_pct,
-                    "away_win_pct": db_params.away_win_pct,
-                    "avg_yellow_cards_per_game": db_params.avg_yellow_cards_per_game,
-                    "avg_red_cards_per_game": db_params.avg_red_cards_per_game,
-                    "avg_shots_per_game": db_params.avg_shots_per_game,
-                    "avg_shots_target_per_game": db_params.avg_shots_target_per_game,
-                    "home_advantage_factor": db_params.home_advantage_factor,
-                    "away_disadvantage_factor": db_params.away_disadvantage_factor,
-                    "league_reliability_score": db_params.league_reliability_score,
-                })
-            else:
-                existing.calibration_parameters = None
         
         db.commit()
         db.refresh(existing)
@@ -1075,29 +1053,6 @@ def save_analysis(
     else:
         count_in_prof_val = False if not has_real_stats_val else True
 
-    calib_snap = None
-    comp_name = req.payload.get("competition") if req.payload else None
-    if comp_name:
-        db_params = db.query(LeagueParameters).filter(
-            LeagueParameters.league_name.ilike(comp_name.strip())
-        ).first()
-        if db_params and db_params.is_calibrated:
-            calib_snap = json.dumps({
-                "avg_goals_per_game": db_params.avg_goals_per_game,
-                "avg_corners_per_game": db_params.avg_corners_per_game,
-                "avg_cards_per_game": db_params.avg_cards_per_game,
-                "home_win_pct": db_params.home_win_pct,
-                "draw_pct": db_params.draw_pct,
-                "away_win_pct": db_params.away_win_pct,
-                "avg_yellow_cards_per_game": db_params.avg_yellow_cards_per_game,
-                "avg_red_cards_per_game": db_params.avg_red_cards_per_game,
-                "avg_shots_per_game": db_params.avg_shots_per_game,
-                "avg_shots_target_per_game": db_params.avg_shots_target_per_game,
-                "home_advantage_factor": db_params.home_advantage_factor,
-                "away_disadvantage_factor": db_params.away_disadvantage_factor,
-                "league_reliability_score": db_params.league_reliability_score,
-            })
-
     history = AnalysisHistory(
         sport=sport_enum,
         match_title=req.match_title,
@@ -1112,7 +1067,6 @@ def save_analysis(
         needs_reanalysis=req.needs_reanalysis or False,
         count_in_profitability=count_in_prof_val,
         has_real_stats=has_real_stats_val,
-        calibration_parameters=calib_snap,
     )
     db.add(history)
     db.commit()
@@ -1380,514 +1334,6 @@ def get_leagues_stats(
         
     return results
 
-
-from pydantic import BaseModel
-
-class LeagueParametersUpdate(BaseModel):
-    avg_goals_per_game: float
-    avg_corners_per_game: float
-    avg_cards_per_game: float
-    home_win_pct: float
-    draw_pct: float
-    away_win_pct: float
-    avg_yellow_cards_per_game: float
-    avg_red_cards_per_game: float
-    avg_shots_per_game: float
-    avg_shots_target_per_game: float
-    home_advantage_factor: float
-    away_disadvantage_factor: float
-    league_reliability_score: float
-
-
-@app.get("/api/v1/leagues/{league_name}/parameters", tags=["Stats"])
-def get_league_parameters(league_name: str, db: Session = Depends(get_db)):
-    """Retrieve saved parameters for a league or default ones."""
-    params = db.query(LeagueParameters).filter(
-        LeagueParameters.league_name == league_name
-    ).order_by(LeagueParameters.calibrated_at.desc()).first()
-    if not params:
-        # Return default values (from compare.py LeagueStats)
-        from src.ui.api.compare import LeagueStats
-        default_stats = LeagueStats()
-        return default_stats.model_dump()
-    
-    return {
-        "avg_goals_per_game": params.avg_goals_per_game,
-        "avg_corners_per_game": params.avg_corners_per_game,
-        "avg_cards_per_game": params.avg_cards_per_game,
-        "home_win_pct": params.home_win_pct,
-        "draw_pct": params.draw_pct,
-        "away_win_pct": params.away_win_pct,
-        "avg_yellow_cards_per_game": params.avg_yellow_cards_per_game,
-        "avg_red_cards_per_game": params.avg_red_cards_per_game,
-        "avg_shots_per_game": params.avg_shots_per_game,
-        "avg_shots_target_per_game": params.avg_shots_target_per_game,
-        "home_advantage_factor": params.home_advantage_factor,
-        "away_disadvantage_factor": params.away_disadvantage_factor,
-        "league_reliability_score": params.league_reliability_score,
-    }
-
-
-@app.delete("/api/v1/leagues/{league_name}/parameters", tags=["Stats"])
-def delete_league_parameters(league_name: str, db: Session = Depends(get_db)):
-    """Reset calibration status and parameters back to system defaults for a league."""
-    db.query(LeagueParameters).filter(LeagueParameters.league_name == league_name).delete()
-    db.commit()
-    return {"status": "success", "message": f"Calibración de la liga '{league_name}' quitada y restablecida a valores por defecto."}
-
-
-@app.post("/api/v1/leagues/{league_name}/parameters", tags=["Stats"])
-def save_league_parameters(league_name: str, req: LeagueParametersUpdate, db: Session = Depends(get_db)):
-    """Save or update custom parameters for a league."""
-    params = LeagueParameters(
-        league_name=league_name,
-        calibrated_at=datetime.utcnow(),
-        avg_goals_per_game = req.avg_goals_per_game,
-        avg_corners_per_game = req.avg_corners_per_game,
-        avg_cards_per_game = req.avg_cards_per_game,
-        home_win_pct = req.home_win_pct,
-        draw_pct = req.draw_pct,
-        away_win_pct = req.away_win_pct,
-        avg_yellow_cards_per_game = req.avg_yellow_cards_per_game,
-        avg_red_cards_per_game = req.avg_red_cards_per_game,
-        avg_shots_per_game = req.avg_shots_per_game,
-        avg_shots_target_per_game = req.avg_shots_target_per_game,
-        home_advantage_factor = req.home_advantage_factor,
-        away_disadvantage_factor = req.away_disadvantage_factor,
-        league_reliability_score = req.league_reliability_score,
-        is_calibrated = True
-    )
-    db.add(params)
-    db.commit()
-    return {"status": "success", "message": "Parameters saved successfully"}
-
-
-@app.post("/api/v1/leagues/{league_name}/recalibrate", tags=["Stats"])
-def recalibrate_league_parameters(league_name: str, db: Session = Depends(get_db)):
-    """Calculate parameters for a league based on historical resolved match data in DB."""
-    history = db.query(AnalysisHistory).all()
-    comp_matches = []
-    for h in history:
-        if h.payload:
-            try:
-                p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                record_comp = p_data.get("competition") or "Desconocida"
-                if record_comp.strip().lower() == league_name.strip().lower():
-                    comp_matches.append(h)
-            except:
-                pass
-                
-    resolved_matches = [m for m in comp_matches if m.final_score_home is not None and m.final_score_away is not None]
-    
-    if not resolved_matches:
-        raise HTTPException(status_code=400, detail="No historical resolved matches found for this league to recalibrate.")
-        
-    total = len(resolved_matches)
-    total_goals = sum(m.final_score_home + m.final_score_away for m in resolved_matches)
-    
-    valid_corners = [m for m in resolved_matches if m.final_corners_home is not None and m.final_corners_away is not None]
-    total_corners = sum(m.final_corners_home + m.final_corners_away for m in valid_corners)
-    
-    valid_cards = [m for m in resolved_matches if m.final_yellow_cards_home is not None or m.final_red_cards_home is not None]
-    total_yellow = sum((m.final_yellow_cards_home or 0) + (m.final_yellow_cards_away or 0) for m in valid_cards)
-    total_red = sum((m.final_red_cards_home or 0) + (m.final_red_cards_away or 0) for m in valid_cards)
-    total_cards = total_yellow + total_red
-    
-    valid_shots = [m for m in resolved_matches if m.final_shots_home is not None and m.final_shots_away is not None]
-    total_shots = sum(m.final_shots_home + m.final_shots_away for m in valid_shots)
-    
-    valid_sot = [m for m in resolved_matches if m.final_shots_on_target_home is not None and m.final_shots_on_target_away is not None]
-    total_sot = sum(m.final_shots_on_target_home + m.final_shots_on_target_away for m in valid_sot)
-    
-    home_wins = sum(1 for m in resolved_matches if m.final_score_home > m.final_score_away)
-    draws = sum(1 for m in resolved_matches if m.final_score_home == m.final_score_away)
-    away_wins = sum(1 for m in resolved_matches if m.final_score_home < m.final_score_away)
-    
-    total_home_goals = sum(m.final_score_home for m in resolved_matches)
-    total_away_goals = sum(m.final_score_away for m in resolved_matches)
-    avg_home_g = total_home_goals / total
-    avg_away_g = total_away_goals / total
-    
-    overall_team_avg = max(total_goals / (2.0 * total), 0.1)
-    home_adv = avg_home_g / overall_team_avg
-    away_dis = avg_away_g / overall_team_avg
-    
-    avg_goals = total_goals / total
-    avg_corners = total_corners / len(valid_corners) if valid_corners else 9.5
-    avg_cards = total_cards / len(valid_cards) if valid_cards else 4.5
-    avg_yellow = total_yellow / len(valid_cards) if valid_cards else 4.0
-    avg_red = total_red / len(valid_cards) if valid_cards else 0.2
-    avg_shots = total_shots / len(valid_shots) if valid_shots else 26.0
-    avg_sot = total_sot / len(valid_sot) if valid_sot else 8.5
-    
-    from src.ui.api.compare import LeagueStats, _compute_league_reliability_score, _market_family
-    
-    # ── Calcular market hit-rates y profit por familia ────────────────────────
-    market_hits: dict[str, int] = {}
-    market_total: dict[str, int] = {}
-    market_profit: dict[str, float] = {}   # profit acumulado en unidades (stake = 1)
-    total_picks_all = 0
-    total_hits_all = 0
-
-    for h in comp_matches:
-        if not h.picks_calculados:
-            continue
-        try:
-            picks = json.loads(h.picks_calculados) if isinstance(h.picks_calculados, str) else h.picks_calculados
-            if not isinstance(picks, list):
-                continue
-            res_dict = {
-                "final_score_home": h.final_score_home,
-                "final_score_away": h.final_score_away,
-                "final_corners_home": h.final_corners_home,
-                "final_corners_away": h.final_corners_away,
-                "final_yellow_cards_home": h.final_yellow_cards_home,
-                "final_yellow_cards_away": h.final_yellow_cards_away,
-                "final_red_cards_home": h.final_red_cards_home,
-                "final_red_cards_away": h.final_red_cards_away,
-            }
-            has_result = h.final_score_home is not None
-            for pick in picks:
-                is_pub = pick.get("is_publishable", False) or pick.get("is_underdog", False) or pick.get("is_value", False)
-                if not is_pub:
-                    continue
-                if has_result:
-                    success = _check_pick_success(pick, res_dict)
-                    if success is not None and success != "void":
-                        family = _market_family(pick.get("selection", ""))
-                        market_total[family] = market_total.get(family, 0) + 1
-                        total_picks_all += 1
-                        odd = float(pick.get("odd") or pick.get("odds") or 2.0)
-                        if _is_pick_hit(success):
-                            market_hits[family] = market_hits.get(family, 0) + 1
-                            market_profit[family] = market_profit.get(family, 0.0) + (odd - 1.0)
-                            total_hits_all += 1
-                        else:
-                            market_profit[family] = market_profit.get(family, 0.0) - 1.0
-        except:
-            pass
-
-    # Hit-rate y profit por familia. Solo fiables si hay >= 5 picks.
-    MIN_SAMPLE = 5
-    hit_rates: dict[str, float] = {}
-    profits: dict[str, float] = {}
-    for fam, cnt in market_total.items():
-        if cnt >= MIN_SAMPLE:
-            hit_rates[fam] = market_hits.get(fam, 0) / cnt
-            profits[fam] = market_profit.get(fam, 0.0)
-
-    # Umbral doble:
-    #  • Recalibrar solo si hit_rate < 50% (mercado bajo rendimiento)
-    #  • Y además el profit NO supera +2u (profit > 2 → el mercado toma buena cuota, no tocar)
-    THRESHOLD = 0.50
-    PROFIT_PROTECT = 2.0
-
-    def _needs_update(family: str) -> bool:
-        """True solo si el mercado rinde por debajo del umbral Y no tiene profit protegido."""
-        if family not in hit_rates:
-            # Sin datos suficientes → actualizar (primera calibración)
-            return True
-        if hit_rates[family] >= THRESHOLD:
-            return False   # buen hit-rate → conservar
-        if profits.get(family, 0.0) > PROFIT_PROTECT:
-            return False   # mal hit-rate pero cuota alta y profitable → conservar
-        return True        # rendimiento bajo y sin profit protegido → recalibrar
-
-    # ── Grupos de parámetros por familia de mercado ────────────────────────────
-    # result / double_chance / handicap → %victorias + factores de ventaja
-    update_result    = _needs_update("result") or _needs_update("double_chance") or _needs_update("handicap")
-    # goals / btts → goles
-    update_goals     = _needs_update("goals") or _needs_update("btts")
-    # corners
-    update_corners   = _needs_update("corners")
-    # cards (yellow + red)
-    update_cards     = _needs_update("cards")
-    # shots
-    update_shots     = _needs_update("shots") or _needs_update("shots_target")
-
-    temp_league = LeagueStats(
-        avg_goals_per_game=round(avg_goals, 2),
-        avg_corners_per_game=round(avg_corners, 2),
-        avg_cards_per_game=round(avg_cards, 2),
-        home_win_pct=round((home_wins / total) * 100, 1),
-        draw_pct=round((draws / total) * 100, 1),
-        away_win_pct=round((away_wins / total) * 100, 1),
-        avg_yellow_cards_per_game=round(avg_yellow, 2),
-        avg_red_cards_per_game=round(avg_red, 2),
-        avg_shots_per_game=round(avg_shots, 2),
-        avg_shots_target_per_game=round(avg_sot, 2),
-        home_advantage_factor=round(home_adv, 2),
-        away_disadvantage_factor=round(away_dis, 2),
-    )
-    temp_league.historical_matches = len(comp_matches)
-    temp_league.historical_picks = total_picks_all
-    temp_league.historical_hits = total_hits_all
-    lrs = _compute_league_reliability_score(temp_league)
-
-    # ── Recuperar último registro en BD para arrastrar los campos conservados ──
-    prev_params = db.query(LeagueParameters).filter(
-        LeagueParameters.league_name == league_name,
-        LeagueParameters.is_calibrated == True
-    ).order_by(LeagueParameters.calibrated_at.desc()).first()
-
-    # Si no existía calibración previa, usar los valores por defecto del sistema
-    from src.ui.api.compare import LeagueStats
-    default_stats = LeagueStats()
-
-    # Crear una nueva versión de calibración en la base de datos
-    params = LeagueParameters(
-        league_name=league_name,
-        calibrated_at=datetime.utcnow(),
-        is_calibrated=True
-    )
-
-    updated_groups: list[str] = []
-    kept_groups: list[str] = []
-
-    if update_result:
-        params.home_win_pct = round((home_wins / total) * 100, 1)
-        params.draw_pct = round((draws / total) * 100, 1)
-        params.away_win_pct = round((away_wins / total) * 100, 1)
-        params.home_advantage_factor = round(home_adv, 2)
-        params.away_disadvantage_factor = round(away_dis, 2)
-        updated_groups.append("result/1X2")
-    else:
-        params.home_win_pct = prev_params.home_win_pct if prev_params else default_stats.home_win_pct
-        params.draw_pct = prev_params.draw_pct if prev_params else default_stats.draw_pct
-        params.away_win_pct = prev_params.away_win_pct if prev_params else default_stats.away_win_pct
-        params.home_advantage_factor = prev_params.home_advantage_factor if prev_params else default_stats.home_advantage_factor
-        params.away_disadvantage_factor = prev_params.away_disadvantage_factor if prev_params else default_stats.away_disadvantage_factor
-        kept_groups.append("result/1X2")
-
-    if update_goals:
-        params.avg_goals_per_game = round(avg_goals, 2)
-        updated_groups.append("goals/btts")
-    else:
-        params.avg_goals_per_game = prev_params.avg_goals_per_game if prev_params else default_stats.avg_goals_per_game
-        kept_groups.append("goals/btts")
-
-    if update_corners:
-        params.avg_corners_per_game = round(avg_corners, 2)
-        updated_groups.append("corners")
-    else:
-        params.avg_corners_per_game = prev_params.avg_corners_per_game if prev_params else default_stats.avg_corners_per_game
-        kept_groups.append("corners")
-
-    if update_cards:
-        params.avg_cards_per_game = round(avg_cards, 2)
-        params.avg_yellow_cards_per_game = round(avg_yellow, 2)
-        params.avg_red_cards_per_game = round(avg_red, 2)
-        updated_groups.append("cards")
-    else:
-        params.avg_cards_per_game = prev_params.avg_cards_per_game if prev_params else default_stats.avg_cards_per_game
-        params.avg_yellow_cards_per_game = prev_params.avg_yellow_cards_per_game if prev_params else default_stats.avg_yellow_cards_per_game
-        params.avg_red_cards_per_game = prev_params.avg_red_cards_per_game if prev_params else default_stats.avg_red_cards_per_game
-        kept_groups.append("cards")
-
-    if update_shots:
-        params.avg_shots_per_game = round(avg_shots, 2)
-        params.avg_shots_target_per_game = round(avg_sot, 2)
-        updated_groups.append("shots")
-    else:
-        params.avg_shots_per_game = prev_params.avg_shots_per_game if prev_params else default_stats.avg_shots_per_game
-        params.avg_shots_target_per_game = prev_params.avg_shots_target_per_game if prev_params else default_stats.avg_shots_target_per_game
-        kept_groups.append("shots")
-
-    # LRS siempre se actualiza (refleja confiabilidad global de la liga)
-    params.league_reliability_score = round(lrs, 2)
-
-    db.add(params)
-    db.commit()
-
-    return {
-        "avg_goals_per_game": params.avg_goals_per_game,
-        "avg_corners_per_game": params.avg_corners_per_game,
-        "avg_cards_per_game": params.avg_cards_per_game,
-        "home_win_pct": params.home_win_pct,
-        "draw_pct": params.draw_pct,
-        "away_win_pct": params.away_win_pct,
-        "avg_yellow_cards_per_game": params.avg_yellow_cards_per_game,
-        "avg_red_cards_per_game": params.avg_red_cards_per_game,
-        "avg_shots_per_game": params.avg_shots_per_game,
-        "avg_shots_target_per_game": params.avg_shots_target_per_game,
-        "home_advantage_factor": params.home_advantage_factor,
-        "away_disadvantage_factor": params.away_disadvantage_factor,
-        "league_reliability_score": params.league_reliability_score,
-        # Diagnóstico de calibración selectiva
-        "_calibration_info": {
-            "market_hit_rates": {k: round(v * 100, 1) for k, v in hit_rates.items()},
-            "market_profits_u": {k: round(v, 2) for k, v in profits.items()},
-            "threshold_pct": THRESHOLD * 100,
-            "profit_protect_threshold": PROFIT_PROTECT,
-            "updated_groups": updated_groups,
-            "kept_groups": kept_groups,
-            "total_picks_evaluated": total_picks_all,
-        },
-    }
-
-
-@app.post("/api/v1/leagues/{league_name}/recalculate-matches", tags=["Stats"])
-async def recalculate_league_matches(
-    league_name: str,
-    db: Session = Depends(get_db)
-):
-    """
-    Re-analiza todos los registros del historial para una liga específica:
-    1. Vuelve a calcular los picks usando el payload original (motor de predicción)
-       el cual cargará automáticamente los parámetros calibrados guardados en la BD.
-    2. Actualiza los snapshots y los picks calculados.
-    3. Si hay resultados finales, recalcula el acierto (accuracy_percentage).
-    """
-    history_list = db.query(AnalysisHistory).all()
-    count = 0
-    updated_accuracy_count = 0
-    
-    for history in history_list:
-        try:
-            if not history.payload:
-                continue
-                
-            # Filtrar por nombre de liga (case-insensitive)
-            try:
-                p_data = json.loads(str(history.payload))
-                record_comp = p_data.get("competition") or "Desconocida"
-                if record_comp.strip().lower() != league_name.strip().lower():
-                    continue
-            except:
-                continue
-
-            # Saltar partidos sin picks calculados
-            if not history.picks_calculados or not str(history.picks_calculados).strip() or str(history.picks_calculados).strip() == "[]":
-                continue
-                
-            payload_dict = json.loads(str(history.payload))
-            sport = history.sport
-            
-            # Cargar y actualizar league_stats desde los parámetros guardados de la liga si los hay
-            try:
-                comp_name = payload_dict.get("competition") or "Desconocida"
-                match_dt = history.match_date or history.date
-                query = db.query(LeagueParameters).filter(
-                    LeagueParameters.league_name.ilike(comp_name.strip()),
-                    LeagueParameters.is_calibrated == True
-                )
-                if match_dt:
-                    # Precisión por hora: calibraciones estrictamente ANTES del momento del partido
-                    from datetime import datetime as _dt, date as _date
-                    if isinstance(match_dt, _date) and not isinstance(match_dt, _dt):
-                        # Solo fecha sin hora → medianoche de ese día (conservador)
-                        match_cutoff = _dt.combine(match_dt, _dt.min.time())
-                    else:
-                        match_cutoff = match_dt  # datetime completo → comparación exacta
-                    query = query.filter(LeagueParameters.calibrated_at < match_cutoff)
-
-                db_params = query.order_by(LeagueParameters.calibrated_at.desc()).first()
-                if db_params:
-                    history.calibration_parameters = json.dumps({
-                        "avg_goals_per_game": db_params.avg_goals_per_game,
-                        "avg_corners_per_game": db_params.avg_corners_per_game,
-                        "avg_cards_per_game": db_params.avg_cards_per_game,
-                        "home_win_pct": db_params.home_win_pct,
-                        "draw_pct": db_params.draw_pct,
-                        "away_win_pct": db_params.away_win_pct,
-                        "avg_yellow_cards_per_game": db_params.avg_yellow_cards_per_game,
-                        "avg_red_cards_per_game": db_params.avg_red_cards_per_game,
-                        "avg_shots_per_game": db_params.avg_shots_per_game,
-                        "avg_shots_target_per_game": db_params.avg_shots_target_per_game,
-                        "home_advantage_factor": db_params.home_advantage_factor,
-                        "away_disadvantage_factor": db_params.away_disadvantage_factor,
-                        "league_reliability_score": db_params.league_reliability_score,
-                    })
-                    local_payload = copy.deepcopy(payload_dict)
-                    if "league_stats" not in local_payload:
-                        local_payload["league_stats"] = {}
-                    l_stats = local_payload["league_stats"]
-                    l_stats["avg_goals_per_game"] = db_params.avg_goals_per_game
-                    l_stats["avg_corners_per_game"] = db_params.avg_corners_per_game
-                    l_stats["avg_cards_per_game"] = db_params.avg_cards_per_game
-                    l_stats["home_win_pct"] = db_params.home_win_pct
-                    l_stats["draw_pct"] = db_params.draw_pct
-                    l_stats["away_win_pct"] = db_params.away_win_pct
-                    l_stats["avg_yellow_cards_per_game"] = db_params.avg_yellow_cards_per_game
-                    l_stats["avg_red_cards_per_game"] = db_params.avg_red_cards_per_game
-                    l_stats["avg_shots_per_game"] = db_params.avg_shots_per_game
-                    l_stats["avg_shots_target_per_game"] = db_params.avg_shots_target_per_game
-                    l_stats["home_advantage_factor"] = db_params.home_advantage_factor
-                    l_stats["away_disadvantage_factor"] = db_params.away_disadvantage_factor
-                    l_stats["league_reliability_score"] = db_params.league_reliability_score
-                else:
-                    history.calibration_parameters = None
-                    local_payload = payload_dict
-            except Exception as param_err:
-                print(f"Error actualizando league_stats en recalculate-league: {param_err}")
-                local_payload = payload_dict
-            
-            # Re-ejecutar el motor de comparación según el deporte
-            new_response = None
-            try:
-                if sport == Sport.FOOTBALL:
-                    req = FootballCompareRequest(**local_payload)
-                    new_response = await compare_football(req, db=db)
-            except Exception as comp_err:
-                print(f"Error en motor de comparación para {history.id} ({sport}): {comp_err}")
-                continue
-                
-            if new_response:
-                # 1. Actualizar picks_calculados y snapshot
-                picks = [v.model_dump() if hasattr(v, 'model_dump') else v.__dict__ for v in new_response.values]
-                history.picks_calculados = json.dumps(picks)
-                history.compare_response_snapshot = json.dumps(new_response.model_dump() if hasattr(new_response, 'model_dump') else new_response.__dict__)
-                
-                # 2. Si tiene resultados, recalcular acierto
-                if history.final_score_home is not None:
-                    results_dict = {
-                        "final_score_home": history.final_score_home,
-                        "final_score_away": history.final_score_away,
-                        "final_corners_home": history.final_corners_home,
-                        "final_corners_away": history.final_corners_away,
-                        "final_yellow_cards_home": history.final_yellow_cards_home,
-                        "final_yellow_cards_away": history.final_yellow_cards_away,
-                        "final_red_cards_home": history.final_red_cards_home,
-                        "final_red_cards_away": history.final_red_cards_away,
-                        "final_shots_home": history.final_shots_home,
-                        "final_shots_away": history.final_shots_away,
-                        "final_shots_on_target_home": history.final_shots_on_target_home,
-                        "final_shots_on_target_away": history.final_shots_on_target_away,
-                    }
-                    
-                    hits = 0
-                    total = 0
-                    
-                    for pick in picks:
-                        if pick.get("is_blacklisted"):
-                            continue
-                        if not (pick.get("is_publishable", pick.get("is_value", False))):
-                            continue
-                            
-                        success = _check_pick_success(pick, results_dict)
-                        if success is not None and success != "void":
-                            total += 1
-                            if _is_pick_hit(success):
-                                hits += 1
-                    
-                    if total > 0:
-                        history.accuracy_percentage = (hits / total) * 100
-                    else:
-                        history.accuracy_percentage = None
-                
-                    updated_accuracy_count += 1
-                count += 1
-        except Exception as e:
-            print(f"Error re-analizando registro {history.id}: {e}")
-
-    db.commit()
-    return {
-        "message": f"Se han re-analizado {count} partidos de la liga '{league_name}'. Se actualizó el acierto en {updated_accuracy_count} de ellos.",
-        "total_reanalyzed": count,
-        "accuracy_updated": updated_accuracy_count
-    }
-
-
 @app.post("/api/v1/analysis/{analysis_id}/results", response_model=AnalysisHistoryOut, tags=["Analysis History"])
 def update_analysis_results(
     analysis_id: str,
@@ -1955,37 +1401,6 @@ def update_analysis_profitability(
     db.refresh(history)
     out = AnalysisHistoryOut.model_validate(history)
     return _populate_history_extra_fields(history, out)
-
-
-@app.post("/api/v1/analysis/revert-overwritten-payloads", tags=["Analysis History"])
-def revert_overwritten_payloads(db: Session = Depends(get_db)):
-    """
-    Limpia los payloads modificados en la base de datos eliminando la clave 'league_stats'.
-    Esto hace que los partidos vuelvan a usar la data normal por defecto del sistema,
-    a menos que la liga esté calibrada activamente en la tabla de parámetros.
-    """
-    history_list = db.query(AnalysisHistory).all()
-    updated = 0
-    for history in history_list:
-        if not history.payload:
-            continue
-        try:
-            payload_dict = json.loads(str(history.payload)) if isinstance(history.payload, str) else history.payload
-            if "league_stats" in payload_dict:
-                # Al remover league_stats, el payload vuelve a ser limpio y usa
-                # los valores por defecto / dinámicos normales en lugar de los congelados obsoletos.
-                del payload_dict["league_stats"]
-                history.payload = json.dumps(payload_dict)
-                updated += 1
-        except Exception as e:
-            print(f"Error limpiando payload de {history.id}: {e}")
-            
-    db.commit()
-    return {
-        "status": "success",
-        "message": f"Se han restaurado {updated} partidos al estado de payload limpio original.",
-        "updated": updated
-    }
 
 
 @app.post("/api/v1/analysis/recalculate-accuracy", tags=["Analysis History"])
@@ -2108,65 +1523,6 @@ async def recalculate_all_accuracy(
             # Cargar el payload original
             payload_dict = json.loads(str(history.payload))
             sport = history.sport
-            
-            # Cargar y actualizar league_stats desde los parámetros guardados de la liga si los hay
-            try:
-                comp_name = payload_dict.get("competition") or "Desconocida"
-                match_dt = history.match_date or history.date
-                query = db.query(LeagueParameters).filter(
-                    LeagueParameters.league_name.ilike(comp_name.strip()),
-                    LeagueParameters.is_calibrated == True
-                )
-                if match_dt:
-                    # Precisión por hora: calibraciones estrictamente ANTES del momento del partido
-                    from datetime import datetime as _dt, date as _date
-                    if isinstance(match_dt, _date) and not isinstance(match_dt, _dt):
-                        # Solo fecha sin hora → medianoche de ese día (conservador)
-                        match_cutoff = _dt.combine(match_dt, _dt.min.time())
-                    else:
-                        match_cutoff = match_dt  # datetime completo → comparación exacta
-                    query = query.filter(LeagueParameters.calibrated_at < match_cutoff)
-
-                db_params = query.order_by(LeagueParameters.calibrated_at.desc()).first()
-                if db_params:
-                    history.calibration_parameters = json.dumps({
-                        "avg_goals_per_game": db_params.avg_goals_per_game,
-                        "avg_corners_per_game": db_params.avg_corners_per_game,
-                        "avg_cards_per_game": db_params.avg_cards_per_game,
-                        "home_win_pct": db_params.home_win_pct,
-                        "draw_pct": db_params.draw_pct,
-                        "away_win_pct": db_params.away_win_pct,
-                        "avg_yellow_cards_per_game": db_params.avg_yellow_cards_per_game,
-                        "avg_red_cards_per_game": db_params.avg_red_cards_per_game,
-                        "avg_shots_per_game": db_params.avg_shots_per_game,
-                        "avg_shots_target_per_game": db_params.avg_shots_target_per_game,
-                        "home_advantage_factor": db_params.home_advantage_factor,
-                        "away_disadvantage_factor": db_params.away_disadvantage_factor,
-                        "league_reliability_score": db_params.league_reliability_score,
-                    })
-                    local_payload = copy.deepcopy(payload_dict)
-                    if "league_stats" not in local_payload:
-                        local_payload["league_stats"] = {}
-                    l_stats = local_payload["league_stats"]
-                    l_stats["avg_goals_per_game"] = db_params.avg_goals_per_game
-                    l_stats["avg_corners_per_game"] = db_params.avg_corners_per_game
-                    l_stats["avg_cards_per_game"] = db_params.avg_cards_per_game
-                    l_stats["home_win_pct"] = db_params.home_win_pct
-                    l_stats["draw_pct"] = db_params.draw_pct
-                    l_stats["away_win_pct"] = db_params.away_win_pct
-                    l_stats["avg_yellow_cards_per_game"] = db_params.avg_yellow_cards_per_game
-                    l_stats["avg_red_cards_per_game"] = db_params.avg_red_cards_per_game
-                    l_stats["avg_shots_per_game"] = db_params.avg_shots_per_game
-                    l_stats["avg_shots_target_per_game"] = db_params.avg_shots_target_per_game
-                    l_stats["home_advantage_factor"] = db_params.home_advantage_factor
-                    l_stats["away_disadvantage_factor"] = db_params.away_disadvantage_factor
-                    l_stats["league_reliability_score"] = db_params.league_reliability_score
-                else:
-                    history.calibration_parameters = None
-                    local_payload = payload_dict
-            except Exception as param_err:
-                print(f"Error actualizando league_stats en recalculate-all: {param_err}")
-                local_payload = payload_dict
 
             # Determine correct use_general_stats based on parameter and threshold
             target_use_gen = False
@@ -2321,11 +1677,11 @@ def apply_blacklist(db: Session = Depends(get_db)):
                             edge_ev=pick.get("edge_ev", 0.0),
                             data_quality_score=pick.get("data_quality_score"),
                             sample_size_weight=pick.get("sample_size_weight"),
+                            stake_units=pick.get("stake_units"),
                             is_blacklisted=False
                         )
-                        # Re-calculamos usando las funciones de compare.py
                         pick["is_publishable"] = is_publishable_pick(v)
-                        pick["is_value"] = (v.edge_ev or 0.0) > 0.03
+                        pick["is_value"] = (v.edge_ev or 0.0) > 0.03 and (v.stake_units or 0.0) >= 1.0
                         pick["quality_score"] = score_pick_quality(v)
                         pick["display_score"] = _calculate_display_score(v)
                         pick["is_underdog"] = is_underdog_pick(v)
@@ -2876,23 +2232,78 @@ def get_global_stats(
         "category_stats": category_stats_out
     }
 
+def build_equity_curve(df_match_level: pd.DataFrame, bankroll_units: float = 100.0):
+    """
+    Construye la curva de equity y el drawdown correctamente, usando
+    un bankroll base como referencia (no el pico de profit).
+
+    Args:
+        df_match_level: DataFrame con columnas "Fecha de Partido" y
+                         "Beneficio Neto Partido (u)", ya ordenado o no.
+        bankroll_units: bankroll base asumido, en las mismas unidades
+                         que el profit (ver nota arriba).
+
+    Returns:
+        (df_equity, max_drawdown_u, max_drawdown_pct)
+    """
+    equity_rows = []
+    max_drawdown_u = 0.0
+    max_drawdown_pct = 0.0
+
+    if df_match_level.empty:
+        return pd.DataFrame(equity_rows), max_drawdown_u, max_drawdown_pct
+
+    df = df_match_level.copy()
+    df["Fecha de Partido"] = pd.to_datetime(df["Fecha de Partido"])
+    df = df.sort_values("Fecha de Partido").reset_index(drop=True)
+
+    cumulative_profit = 0.0
+    # El bankroll arranca en bankroll_units, NUNCA en 0 — esto es lo que
+    # evita la distorsión de porcentajes gigantes al inicio de la serie.
+    running_max_bankroll = bankroll_units
+
+    for _, row in df.iterrows():
+        cumulative_profit += row["Beneficio Neto Partido (u)"]
+        bankroll_value = bankroll_units + cumulative_profit
+
+        running_max_bankroll = max(running_max_bankroll, bankroll_value)
+
+        drawdown_u = bankroll_value - running_max_bankroll  # <= 0
+        drawdown_pct = (drawdown_u / running_max_bankroll * 100.0) if running_max_bankroll > 0 else 0.0
+
+        equity_rows.append({
+            "Fecha": row["Fecha de Partido"].strftime("%Y-%m-%d"),
+            "Partido": row["Partido"],
+            "Beneficio Partido (u)": row["Beneficio Neto Partido (u)"],
+            "Profit Acumulado (u)": round(cumulative_profit, 2),
+            "Bankroll Estimado (u)": round(bankroll_value, 2),
+            "Máximo Bankroll Histórico (u)": round(running_max_bankroll, 2),
+            "Drawdown (u)": round(drawdown_u, 2),
+            "Drawdown (%)": round(drawdown_pct, 2),
+        })
+
+        max_drawdown_u = min(max_drawdown_u, drawdown_u)
+        max_drawdown_pct = min(max_drawdown_pct, drawdown_pct)
+
+    return pd.DataFrame(equity_rows), max_drawdown_u, max_drawdown_pct
 
 @app.get("/api/v1/report/excel", tags=["Stats"])
 def export_excel_report(
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
     use_stake: bool = Query(False),
+    bankroll_units: float = Query(
+        100.0,
+        description="Bankroll base en 'unidades', usado como referencia "
+                     "para calcular el % de drawdown. Ej: si 1u = 1% de "
+                     "tu bankroll real, usa 100. Si 1u = 0.5%, usa 200."
+    ),
     db: Session = Depends(get_db)
 ):
-    """Genera y descarga un reporte detallado en Excel (.xlsx) con los datos del modelo, partidos, picks y rentabilidad."""
-    import io
-    import json
-    import pandas as pd
-    import openpyxl
-    from openpyxl.utils import get_column_letter
-    from datetime import datetime
+    """Genera y descarga un reporte detallado en Excel (.xlsx) con los datos
+    del modelo, partidos, picks, rentabilidad y análisis de significancia
+    ajustado por clustering (a nivel de partido)."""
 
-    # 1. Consultar registros
     query = db.query(AnalysisHistory)
     if date_from:
         try:
@@ -2904,13 +2315,13 @@ def export_excel_report(
             query = query.filter(AnalysisHistory.date <= datetime.fromisoformat(date_to))
         except Exception:
             pass
-            
+
     history = query.filter(AnalysisHistory.count_in_profitability == True).all()
-    
+
     matches_data = []
     picks_data = []
-    
-    # Métricas generales de resumen
+    match_level_data = []  # NUEVO: una fila por partido, para el análisis clustering-adjusted
+
     total_matches = len(history)
     matches_with_results = 0
     total_picks = 0
@@ -2923,50 +2334,39 @@ def export_excel_report(
     winning_picks_count = 0
     total_exact_scores_predicted = 0
     total_exact_scores_hits = 0
-    
-    # Acumuladores de categorías
+
     categories = ["professional", "underdog"]
     cat_accumulators = {
         cat: {
-            "picks": 0,
-            "hits": 0,
-            "pending": 0,
-            "profit": 0.0,
-            "staked": 0,
-            "odds": 0.0,
-            "winning_odds": 0.0,
-            "winning_count": 0
+            "picks": 0, "hits": 0, "pending": 0, "profit": 0.0,
+            "staked": 0, "odds": 0.0, "winning_odds": 0.0, "winning_count": 0
         }
         for cat in categories
     }
-    
-    # Acumuladores de ligas y mercados
+
     league_counters = {}
     market_counters = {}
-    
+
     for h in history:
         has_result = h.final_score_home is not None
         if has_result:
             matches_with_results += 1
-            
-        # Obtener liga del payload
+
         league = "Desconocida"
         if h.payload:
             try:
                 p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
                 league = p_data.get("competition") or "Desconocida"
-            except:
+            except Exception:
                 pass
-                
-        # Obtener equipos del título del partido
+
         teams = []
         if h.match_title:
             if " vs " in h.match_title:
                 teams = [t.strip() for t in h.match_title.split(" vs ")]
             elif " - " in h.match_title:
                 teams = [t.strip() for t in h.match_title.split(" - ")]
-                
-        # Verificar marcador exacto
+
         exact_score_pred = "N/A"
         exact_score_hit = "N/A"
         if h.final_score_home is not None and h.final_score_away is not None and h.compare_response_snapshot:
@@ -2984,16 +2384,16 @@ def export_excel_report(
                             exact_score_hit = "Sí"
                         else:
                             exact_score_hit = "No"
-            except:
+            except Exception:
                 pass
-                
-        # Añadir datos de partidos
+
         matches_data.append({
             "ID Partido": h.id,
             "Fecha de Análisis": h.date.strftime("%Y-%m-%d %H:%M") if h.date else "",
             "Fecha de Partido": h.match_date.strftime("%Y-%m-%d %H:%M") if h.match_date else "",
             "Deporte": h.sport.value if hasattr(h.sport, 'value') else str(h.sport),
             "Partido": h.match_title,
+            "Liga": league,
             "Goles Local": h.final_score_home,
             "Goles Visitante": h.final_score_away,
             "Corners Local": h.final_corners_home,
@@ -3016,8 +2416,14 @@ def export_excel_report(
             "Cuenta en Rentabilidad": "Sí" if getattr(h, "count_in_profitability", True) else "No",
             "Tiene Stats Reales": "Sí" if getattr(h, "has_real_stats", True) else "No",
         })
-        
-        # Procesar Picks
+
+        # ── Acumuladores a nivel de PARTIDO (para el análisis clustering-adjusted) ──
+        match_profit = 0.0
+        match_picks_resolved = 0
+        match_hits = 0
+        match_pending = 0
+        match_odds_list = []
+
         if h.picks_calculados:
             try:
                 picks = json.loads(str(h.picks_calculados))
@@ -3040,41 +2446,39 @@ def export_excel_report(
                         "final_offsides_home": h.final_offsides_home,
                         "final_offsides_away": h.final_offsides_away,
                     }
-                    
+
                     for pick in picks:
                         if pick.get("is_blacklisted"):
                             continue
                         is_pub = pick.get("is_publishable", False)
                         is_und = pick.get("is_underdog", False)
-                        
+
                         if not is_pub and not is_und:
                             if pick.get("is_value", False):
                                 is_pub = True
-                                
+
                         if not (is_pub or is_und):
                             continue
-                            
+
                         cat = "professional" if is_pub else "underdog"
-                        
+
                         odds = float(pick.get("odds", 0.0))
                         market = pick.get("market")
                         if not market or market == "N/A" or market == "Otro":
                             market = get_market_name(pick.get("selection", ""))
-                            
+
                         success = None
                         if has_result:
                             success = _check_pick_success(pick, results_dict)
-                            
-                        counts_in_prof = getattr(h, "count_in_profitability", True)
-                        
+
                         success_str = "Pendiente"
                         pick_profit = 0.0
-                        
+
                         if use_stake:
                             stake = _resolve_stake_from_pick(pick)
                         else:
                             stake = MIN_STAKE
-                            
+
                         if success is not None:
                             if success is True:
                                 success_str = "Hit"
@@ -3086,17 +2490,19 @@ def export_excel_report(
                                 success_str = "Half Win"
                             elif success == "half_loss":
                                 success_str = "Half Loss"
-                                
+
                             pick_profit = _calculate_pick_profit(success, odds) * stake
-                        
+
                         if success is None:
                             total_pending += 1
                             cat_accumulators[cat]["pending"] += 1
+                            match_pending += 1
                         else:
                             counts_for_accuracy = success != "void"
                             total_profit += pick_profit
                             cat_accumulators[cat]["profit"] += pick_profit
-                                
+                            match_profit += pick_profit
+
                             if counts_for_accuracy:
                                 total_picks += 1
                                 total_staked_picks += stake
@@ -3104,17 +2510,19 @@ def export_excel_report(
                                 cat_accumulators[cat]["picks"] += 1
                                 cat_accumulators[cat]["staked"] += stake
                                 cat_accumulators[cat]["odds"] += odds
-                                
+                                match_picks_resolved += 1
+                                match_odds_list.append(odds)
+
                                 if league not in league_counters:
                                     league_counters[league] = {"picks": 0, "hits": 0, "profit": 0.0}
                                 league_counters[league]["picks"] += 1
                                 league_counters[league]["profit"] += pick_profit
-                                
+
                                 if market not in market_counters:
                                     market_counters[market] = {"picks": 0, "hits": 0, "profit": 0.0}
                                 market_counters[market]["picks"] += 1
                                 market_counters[market]["profit"] += pick_profit
-                                
+
                                 if _is_pick_hit(success):
                                     total_hits += 1
                                     total_winning_odds += odds
@@ -3122,39 +2530,87 @@ def export_excel_report(
                                     cat_accumulators[cat]["hits"] += 1
                                     cat_accumulators[cat]["winning_odds"] += odds
                                     cat_accumulators[cat]["winning_count"] += 1
-                                    
+                                    match_hits += 1
+
                                     league_counters[league]["hits"] += 1
                                     market_counters[market]["hits"] += 1
-                                        
+
+                        # ── Fila de pick individual (con fix de nomenclatura y placeholder CLV) ──
+                        edge_prob = float(pick.get("edge", 0.0)) if pick.get("edge") is not None else None
+                        edge_ev_frac = pick.get("edge_ev")
+                        ev_real_pct = float(edge_ev_frac) * 100.0 if edge_ev_frac is not None else None
+
+                        # Placeholder CLV: hoy no disponible. Cuando exista `closing_odds`
+                        # en el pick, esto se calcula solo, sin más cambios en el exportador.
+                        closing_odds = pick.get("closing_odds")
+                        clv_pct = None
+                        if closing_odds and odds:
+                            try:
+                                own_implied = 1.0 / odds
+                                closing_implied = 1.0 / float(closing_odds)
+                                clv_pct = round((closing_implied - own_implied) / closing_implied * 100.0, 2)
+                            except Exception:
+                                clv_pct = None
+
                         picks_data.append({
                             "ID Partido": h.id,
                             "Fecha": h.date.strftime("%Y-%m-%d %H:%M") if h.date else "",
                             "Partido": h.match_title,
+                            "Liga": league,
                             "Deporte": h.sport.value if hasattr(h.sport, 'value') else str(h.sport),
                             "Selección": pick.get("selection", ""),
                             "Mercado": market,
                             "Línea": pick.get("line"),
                             "Cuota": odds,
+                            "Cuota Cierre": closing_odds if closing_odds else "",   # placeholder CLV
+                            "CLV (%)": clv_pct if clv_pct is not None else "",       # placeholder CLV
                             "Prob Calibrada (%)": float(pick.get("calibrated_prob", 0.0)) if pick.get("calibrated_prob") is not None else None,
                             "Prob Modelo (%)": float(pick.get("model_prob", 0.0)) if pick.get("model_prob") is not None else None,
-                            "EV Edge (%)": float(pick.get("edge", 0.0)) if pick.get("edge") is not None else None,
-                            "Fracción Kelly (%)": float(pick.get("kelly_fraction", 0.0)) if pick.get("kelly_fraction") is not None else None,
+                            "Edge Prob (%)": edge_prob,          # ANTES mal llamado "EV Edge (%)"
+                            "EV Real (%)": ev_real_pct,          # AHORA sí es el EV real
+                            "Fracción Kelly (%)": float(pick.get("kelly_fraction", 0.0)) * 100.0 if pick.get("kelly_fraction") is not None else None,
                             "Stake Sugerido (u)": pick.get("stake_units"),
                             "Resultado": success_str,
                             "Beneficio (u)": pick_profit if success is not None else None,
                             "Categoría": cat,
-                            "Cuenta en Rentabilidad": "Sí" if counts_in_prof else "No"
+                            "Cuenta en Rentabilidad": "Sí" if getattr(h, "count_in_profitability", True) else "No"
                         })
-            except Exception as ex:
+            except Exception:
                 pass
-                
-    # 3. Crear DataFrames de Pandas
+
+        # Fila agregada a nivel de partido (solo si hubo al menos un pick resuelto)
+        if match_picks_resolved > 0:
+            match_level_data.append({
+                "ID Partido": h.id,
+                "Fecha de Partido": h.match_date or h.date,
+                "Partido": h.match_title,
+                "Liga": league,
+                "Picks Resueltos": match_picks_resolved,
+                "Aciertos": match_hits,
+                "% Acierto Partido": round(match_hits / match_picks_resolved * 100, 1) if match_picks_resolved else None,
+                "Cuota Promedio Partido": round(sum(match_odds_list) / len(match_odds_list), 2) if match_odds_list else None,
+                "Beneficio Neto Partido (u)": round(match_profit, 2),
+                "Partido Ganador (Profit > 0)": match_profit > 0,
+            })
+
+    # ── DataFrames base ──
     global_accuracy = (total_hits / total_picks * 100) if total_picks > 0 else 0.0
     global_roi = (total_profit / total_staked_picks * 100) if total_staked_picks > 0 else 0.0
     global_avg_odds = (total_odds / total_picks) if total_picks > 0 else 0.0
     global_avg_winning_odds = (total_winning_odds / winning_picks_count) if winning_picks_count > 0 else 0.0
     exact_hit_rate = (total_exact_scores_hits / total_exact_scores_predicted * 100) if total_exact_scores_predicted > 0 else 0.0
-    
+
+    # ── NUEVO: Curva de equity y drawdown A NIVEL DE PARTIDO (clustering-adjusted) ──
+    df_match_level = pd.DataFrame(match_level_data)
+    df_equity, max_drawdown_u, max_drawdown_pct = build_equity_curve(
+       df_match_level, bankroll_units=bankroll_units
+    )
+
+    # ── Test de significancia clustering-adjusted (a nivel de partido, no de pick) ──
+    n_matches_clustered = len(df_match_level) if not df_match_level.empty else 0
+    matches_won = int(df_match_level["Partido Ganador (Profit > 0)"].sum()) if not df_match_level.empty else 0
+    match_level_winrate = round(matches_won / n_matches_clustered * 100, 1) if n_matches_clustered > 0 else 0.0
+
     summary_general_rows = [
         {"Métrica": "Partidos Analizados Totales", "Valor": total_matches},
         {"Métrica": "Partidos con Resultado", "Valor": matches_with_results},
@@ -3169,9 +2625,16 @@ def export_excel_report(
         {"Métrica": "Predicciones Marcador Exacto", "Valor": total_exact_scores_predicted},
         {"Métrica": "Aciertos Marcador Exacto", "Valor": total_exact_scores_hits},
         {"Métrica": "Tasa Acierto Marcador Exacto (%)", "Valor": round(exact_hit_rate, 2)},
+        {"Métrica": "── Análisis ajustado por clustering (a nivel de partido) ──", "Valor": ""},
+        {"Métrica": "Partidos con picks resueltos", "Valor": n_matches_clustered},
+        {"Métrica": "Partidos netos ganadores (%)", "Valor": match_level_winrate},
+        {"Métrica": "Bankroll Base Asumido (u)", "Valor": bankroll_units},
+        {"Métrica": "Máximo Drawdown (unidades)", "Valor": round(max_drawdown_u, 2)},
+        {"Métrica": "Máximo Drawdown (%)", "Valor": round(max_drawdown_pct, 2)},
+        {"Métrica": "Nota CLV", "Valor": "No disponible aún — columnas 'Cuota Cierre' y 'CLV (%)' quedan listas para cuando se implemente la captura de cuota de cierre."},
     ]
     df_summary_general = pd.DataFrame(summary_general_rows)
-    
+
     category_summary_rows = []
     for cat in categories:
         cat_acc = cat_accumulators[cat]
@@ -3181,7 +2644,7 @@ def export_excel_report(
         cat_roi = (cat_acc["profit"] / cat_acc["staked"] * 100) if cat_acc["staked"] > 0 else 0.0
         cat_avg_odds = (cat_acc["odds"] / cat_picks) if cat_picks > 0 else 0.0
         cat_avg_winning_odds = (cat_acc["winning_odds"] / cat_acc["winning_count"]) if cat_acc["winning_count"] > 0 else 0.0
-        
+
         category_summary_rows.append({
             "Categoría": cat.capitalize(),
             "Picks Evaluados": cat_picks,
@@ -3194,11 +2657,10 @@ def export_excel_report(
             "Cuota Ganadora Promedio": round(cat_avg_winning_odds, 2)
         })
     df_summary_categories = pd.DataFrame(category_summary_rows)
-    
+
     df_matches = pd.DataFrame(matches_data)
     df_picks = pd.DataFrame(picks_data)
-    
-    # Desglose de Ligas
+
     league_rows = []
     for league, stats in league_counters.items():
         l_picks = stats["picks"]
@@ -3214,8 +2676,7 @@ def export_excel_report(
     df_leagues = pd.DataFrame(league_rows)
     if not df_leagues.empty:
         df_leagues = df_leagues.sort_values(by="Rentabilidad (u)", ascending=False)
-        
-    # Desglose de Mercados
+
     market_rows = []
     for market, stats in market_counters.items():
         m_picks = stats["picks"]
@@ -3231,41 +2692,45 @@ def export_excel_report(
     df_markets = pd.DataFrame(market_rows)
     if not df_markets.empty:
         df_markets = df_markets.sort_values(by="Rentabilidad (u)", ascending=False)
-        
-    # 4. Escribir archivo Excel en memoria
+
+    # ── Escribir Excel ──
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df_summary_general.to_excel(writer, sheet_name="Resumen", index=False, startrow=1)
-        df_summary_categories.to_excel(writer, sheet_name="Resumen", index=False, startrow=18)
-        
+        df_summary_categories.to_excel(writer, sheet_name="Resumen", index=False, startrow=len(summary_general_rows) + 3)
+
         df_matches.to_excel(writer, sheet_name="Partidos Analizados", index=False)
         df_picks.to_excel(writer, sheet_name="Detalle de Picks", index=False)
         df_leagues.to_excel(writer, sheet_name="Rentabilidad por Liga", index=False)
         df_markets.to_excel(writer, sheet_name="Rentabilidad por Mercado", index=False)
-        
+
+        # NUEVO: análisis clustering-adjusted (a nivel de partido)
+        df_match_level.to_excel(writer, sheet_name="Análisis por Partido", index=False)
+        df_equity.to_excel(writer, sheet_name="Curva de Equity", index=False)
+
         workbook = writer.book
-        
-        # Formatos en pestaña Resumen
+
         resumen_ws = workbook["Resumen"]
         resumen_ws["A1"] = "Estadísticas Generales Sherlock"
         resumen_ws["A1"].font = openpyxl.styles.Font(size=14, bold=True)
-        resumen_ws["A17"] = "Desglose por Categoría"
-        resumen_ws["A17"].font = openpyxl.styles.Font(size=14, bold=True)
-        
+        cat_header_row = len(summary_general_rows) + 3
+        resumen_ws[f"A{cat_header_row}"] = "Desglose por Categoría"
+        resumen_ws[f"A{cat_header_row}"].font = openpyxl.styles.Font(size=14, bold=True)
+
         for sheet_name in workbook.sheetnames:
             ws = workbook[sheet_name]
             for col in ws.columns:
                 max_len = 0
                 for cell in col:
                     if cell.value:
-                        if sheet_name == "Resumen" and cell.coordinate in ["A1", "A17"]:
+                        if sheet_name == "Resumen" and cell.coordinate in ["A1", f"A{cat_header_row}"]:
                             continue
                         max_len = max(max_len, len(str(cell.value)))
                 col_letter = get_column_letter(col[0].column)
                 ws.column_dimensions[col_letter].width = max(max_len + 3, 11)
-                
+
     output.seek(0)
-    
+
     filename = f"Reporte_Sherlock_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
     return StreamingResponse(
         output,

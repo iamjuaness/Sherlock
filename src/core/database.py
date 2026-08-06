@@ -32,15 +32,6 @@ def _column_exists(conn, table: str, column: str) -> bool:
 
 def init_db() -> None:
     """Create all tables and run idempotent schema migrations."""
-    # Force recreation of league_parameters to remove unique constraint on league_name
-    with engine.connect() as conn:
-        if not _column_exists(conn, "league_parameters", "calibrated_at"):
-            try:
-                conn.execute(text("DROP TABLE IF EXISTS league_parameters"))
-                conn.commit()
-                print("Dropped old league_parameters table to apply versioned calibration migration.")
-            except Exception as drop_ex:
-                print(f"Failed to drop old league_parameters table: {drop_ex}")
                 
     Base.metadata.create_all(bind=engine)
     create_indexes()
@@ -173,7 +164,6 @@ def init_db() -> None:
             ("compare_response_snapshot", "TEXT"),
             ("llm_response", "TEXT"),
             ("llm_timestamp", "TEXT"),
-            ("calibration_parameters", "TEXT"),
         ]
         for col, dtype in json_fields:
             if not _column_exists(conn, "analysis_history", col):
@@ -184,16 +174,6 @@ def init_db() -> None:
                     print(f"DB migrated: {col} added to analysis_history.")
                 except Exception as e:
                     print(f"DB migration warning for {col}: {e}")
-
-        # ── league_parameters columns ──
-        if not _column_exists(conn, "league_parameters", "is_calibrated"):
-            try:
-                conn.execute(text(
-                    "ALTER TABLE league_parameters ADD COLUMN is_calibrated BOOLEAN NOT NULL DEFAULT 0"
-                ))
-                print("DB migrated: is_calibrated added to league_parameters.")
-            except Exception as e:
-                print(f"DB migration warning for is_calibrated: {e}")
 
         conn.commit()
         print("Database initialization complete.")
