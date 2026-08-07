@@ -68,7 +68,7 @@ Al pulsar **"Analizar"**, el frontend envía un `FootballCompareRequest` a `POST
 
 1. **Calcula lambdas (λ)** por equipo y mercado (goles, corners, tarjetas, tiros, faltas, offsides).
 2. **Construye matriz Dixon-Coles** de marcadores corregida con factor ρ.
-3. **Deriva probabilidades** para: 1X2, BTTS, DC, Over/Under goles, Asian Handicap, corners, tarjetas, tiros, tiros a puerta, faltas, offsides.
+3. **Deriva probabilidades** para: 1X2, BTTS, DC, Over/Under goles, corners, tarjetas, tiros, tiros a puerta, faltas, offsides.
 4. **Compara** probabilidades del modelo vs. cuotas de la casa (sin overround).
 5. **Clasifica** cada pick en categorías: **Profesional**, **Underdog**, **Alta Confianza**.
 
@@ -140,7 +140,7 @@ def _default_dc_rho(h_lam, a_lam):
     return base
 ```
 
-De la matriz se derivan: **1X2, BTTS, Over/Under goles, Marcador Exacto, Asian Handicap**.
+De la matriz se derivan: **1X2, BTTS, Over/Under goles, Marcador Exacto**.
 
 ---
 
@@ -205,19 +205,6 @@ $$\lambda_{\text{final}} = \lambda_{\text{modelo}} \cdot (1 - w) + \lambda_{\tex
 - **Faltas**: tasa propia × factor posesión (rival con más posesión → más faltas) × intensidad física (km, sprints, duelos).
 - **Offsides**: tasa propia × factor posesión (más posesión propia → más offsides) × contraataques + dribbles exitosos.
 - **Shrinkage** a media de liga (prior_n=2).
-
----
-
-### Líneas Asiáticas (Over/Under y Handicap)
-
-Las líneas `.25` y `.75` se dividen en dos componentes:
-
-| Línea | Componentes |
-| ----- | ----------- |
-| 2.25  | 2.0 + 2.5   |
-| -0.75 | -0.5 + -1.0 |
-
-Resultados posibles: **win, loss, push (void), half_win, half_loss**.
 
 ---
 
@@ -302,7 +289,7 @@ Transformación potencial (power function) + shrinkage hacia 50%:
 
 | Familia                                              | Exponente (b) | Shrinkage extra |
 | ---------------------------------------------------- | ------------- | --------------- |
-| `result`, `btts`, `goals`, `handicap`                | 0.85          | —               |
+| `result`, `btts`, `goals`                            | 0.85          | —               |
 | `corners`, `cards`, `shots`, `shots_target`, `fouls` | 0.75          | —               |
 | `double_chance`                                      | 0.70–0.78     | 7–12% hacia 50% |
 | Cuota > 3.0                                          | —             | ×0.90           |
@@ -322,7 +309,7 @@ Score 0.25–1.0 que combina:
 
 **Penalización al EV efectivo**:
 
-- Mercados principales (result, goals, btts, handicap, dc): `EV_adj = EV × LRS`
+- Mercados principales (result, goals, btts, dc): `EV_adj = EV × LRS`
 - Mercados secundarios (corners, cards, shots): `EV_adj = EV × LRS^1.5` (penalización extra por alta varianza).
 
 **Penalización adicional por mercado**: si la liga tiene historial por familia de mercado y rinde peor que referencia, factor extra (cap ±35%/-15%).
@@ -365,7 +352,7 @@ Reglas de bloqueo (pick marcado `is_blacklisted=true`, `is_publishable=false`, `
 }
 ```
 
-- `market_family`: goals, corners, cards, result, btts, handicap, double_chance, shots, shots_target, fouls.
+- `market_family`: goals, corners, cards, result, btts, double_chance, shots, shots_target, fouls.
 - `market_side`: over, under, home, away, draw, yes, no, home_draw (1X), draw_away (X2), home_away (12).
 - `category` (opcional): "profesional", "underdog", "high_confidence". Si se omite, aplica a todas.
 
@@ -404,9 +391,7 @@ Reglas de bloqueo (pick marcado `is_blacklisted=true`, `is_publishable=false`, `
 
 ### Mercados con Push/Void
 
-- **Asian Handicap** línea entera: empate ajustado → void.
 - **Over/Under** línea entera (ej. Over 2.0 con exactamente 2 goles) → void.
-- **Líneas .25/.75**: resultado half-win o half-loss.
 
 ### Gráficos
 
@@ -465,18 +450,16 @@ Betano (página partido) → betano_content.js (fetch API interna) → POST /api
 
 **Mercados mapeados** (códigos Betano → Sherlock):
 
-| Betano Type          | Mercado Sherlock     | Selections             |
-| -------------------- | -------------------- | ---------------------- |
-| `MRES`               | 1X2 (Moneyline)      | 1, X, 2                |
-| `DBLC`               | Doble Oportunidad    | 1X, X2, 12             |
-| `BTSC`               | Ambos Marcan (BTTS)  | Sí, No                 |
-| `HCTG`               | Goles Totales O/U    | Líneas .5 (Over/Under) |
-| `CNOU`               | Corners O/U          | Líneas .5              |
-| `TCOU`               | Tarjetas Totales O/U | Líneas .5              |
-| `X002`               | Tiros a Puerta O/U   | Líneas .5              |
-| `4159`               | Remates Totales O/U  | Líneas .5              |
-| `DNOB`               | Draw No Bet          | Local, Visitante       |
-| `FHMR`/`AHRF`/`FHH1` | Asian Handicap       | Líneas con handicap    |
+| Betano Type | Mercado Sherlock     | Selections             |
+| ----------- | -------------------- | ---------------------- |
+| `MRES`      | 1X2 (Moneyline)      | 1, X, 2                |
+| `DBLC`      | Doble Oportunidad    | 1X, X2, 12             |
+| `BTSC`      | Ambos Marcan (BTTS)  | Sí, No                 |
+| `HCTG`      | Goles Totales O/U    | Líneas .5 (Over/Under) |
+| `CNOU`      | Corners O/U          | Líneas .5              |
+| `TCOU`      | Tarjetas Totales O/U | Líneas .5              |
+| `X002`      | Tiros a Puerta O/U   | Líneas .5              |
+| `4159`      | Remates Totales O/U  | Líneas .5              |
 
 **Normalización**: `columnIndex=0` → Over, `columnIndex=1` → Under. Solo líneas `.5` (filtra enteras).
 

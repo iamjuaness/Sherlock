@@ -1,14 +1,9 @@
 {
   "manifest_version": 3,
   "name": "Watson - SofaScore to Sherlock",
-  "version": "1.1.0",
+  "version": "2.0.0",
   "description": "Extrae estadísticas de SofaScore y las envía a Sherlock Analytics",
-  "permissions": [
-    "activeTab",
-    "storage",
-    "tabs",
-    "scripting"
-  ],
+  "permissions": ["activeTab", "storage", "tabs", "scripting"],
   "host_permissions": [
     "https://www.sofascore.com/*",
     "https://www.betano.co/*",

@@ -111,6 +111,70 @@ let loadedHistoryEntryDate = null;
   });
 })();
 
+// Etiquetas legibles por bookmaker — agrega aquí nuevas casas a futuro
+const BOOKMAKER_LABELS = {
+  betano: "Betano",
+  betplay: "BetPlay",
+  manual: "Cuotas Guardadas",
+  best_of: "Mejor Cuota",
+};
+
+function fmtOdd(v) {
+  return v != null && !isNaN(v) ? Number(v).toFixed(2) : "-";
+}
+
+/**
+ * Renderiza una card por cada casa de apuestas presente en `sources`.
+ * Si no hay cuotas pendientes, oculta y limpia el contenedor.
+ */
+function renderOddsBookmakerCards(sources) {
+  const container = document.getElementById("odds-bookmakers-container");
+  if (!container) return;
+
+  if (!sources || Object.keys(sources).length === 0) {
+    container.innerHTML = "";
+    container.style.display = "none";
+    return;
+  }
+
+  container.style.display = "flex";
+
+  const cardsHtml = Object.entries(sources).map(([bookmakerKey, odds]) => {
+    const label = BOOKMAKER_LABELS[bookmakerKey] || bookmakerKey;
+    const home = fmtOdd(odds.home);
+    const draw = fmtOdd(odds.draw);
+    const away = fmtOdd(odds.away);
+
+    let goalsPreview = "";
+    const goalsLines = odds.goals_lines || [];
+    if (goalsLines.length > 0) {
+      const line = goalsLines.map(String).includes("2.5")
+        ? "2.5"
+        : String(goalsLines[0]);
+      const over = odds.goalsOverOdds ? odds.goalsOverOdds[line] : null;
+      const under = odds.goalsUnderOdds ? odds.goalsUnderOdds[line] : null;
+      if (over != null || under != null) {
+        goalsPreview = `
+        <div class="odds-bookmaker-card__row">
+          <span>Goles ${line} (O/U)</span>
+          <strong>${fmtOdd(over)} / ${fmtOdd(under)}</strong>
+        </div>`;
+      }
+    }
+
+    return `
+    <div class="odds-bookmaker-card">
+      <div class="odds-bookmaker-card__name">🎰 ${label}</div>
+      <div class="odds-bookmaker-card__row"><span>1</span><strong>${home}</strong></div>
+      <div class="odds-bookmaker-card__row"><span>X</span><strong>${draw}</strong></div>
+      <div class="odds-bookmaker-card__row"><span>2</span><strong>${away}</strong></div>
+      ${goalsPreview}
+    </div>`;
+  });
+
+  container.innerHTML = cardsHtml.join("");
+}
+
 // ── Prefill polling (for browser extension integration) ─────────
 (function startPrefillPolling() {
   const POLL_INTERVAL = 2500; // ms
@@ -119,29 +183,48 @@ let loadedHistoryEntryDate = null;
   async function checkPrefill() {
     try {
       const res = await fetch("/api/v1/prefill");
-      if (!res.ok) return;
+      if (!res.ok) {
+        console.warn("[Sherlock] /api/v1/prefill respondió", res.status);
+        return;
+      }
       const data = await res.json();
       if (data.pending && data.payload) {
         const payload = data.payload;
         const sport = payload.sport || "football";
 
-        // Preserve the real match date from the extension
         if (payload.start_timestamp) {
           loadedHistoryEntryDate = new Date(
             payload.start_timestamp * 1000 - 18000000,
           ).toISOString();
         }
 
-        // Show notification banner
         showPrefillBanner(sport, payload);
-
-        // Fill in the form
         populateAppForm(sport, payload);
+
+        if (payload.odds) {
+          // Detalle crudo por casa -> tarjetas existentes
+          renderOddsBookmakerCards(payload.odds.sources);
+
+          // Guardamos las cuotas crudas de TODAS las casas: esto es lo que
+          // se reenvía al backend en buildFootballPayloadFromForm. El line
+          // shopping (elegir la mejor cuota por mercado) ya NO se hace acá:
+          // se hace en el backend, dentro de /api/v1/compare/football,
+          // justo cuando se calculan todos los picks.
+          window.currentPrefillSources = payload.odds.sources || null;
+
+          // Panel informativo (preview) de mejor cuota/casa por mercado,
+          // usando lo que el backend ya calculó para el prefill.
+          renderLineShoppingPanel(
+            payload.odds.best_odds,
+            payload.odds.best_bookmaker,
+          );
+        }
       }
-    } catch (_) {
-      /* silently ignore network errors */
+    } catch (err) {
+      console.error("[Sherlock] Error en checkPrefill:", err);
+    } finally {
+      _prefillTimer = setTimeout(checkPrefill, POLL_INTERVAL);
     }
-    _prefillTimer = setTimeout(checkPrefill, POLL_INTERVAL);
   }
 
   function showPrefillBanner(sport, payload) {
@@ -243,23 +326,22 @@ function renderMultiLineCards(values) {
   // Función auxiliar de renderizado de item
   const renderItem = (v, targetGrid) => {
     const edgeVal = Number(v.edge ?? 0);
-    const probText = Number(v.model_prob ?? 0).toFixed(1) + "%";
+    const probText = `${Number(v.model_prob ?? 0).toFixed(1)}%`;
     const oddsText = Number(v.odds).toFixed(2);
     const edgeText =
       edgeVal >= 0 ? `+${edgeVal.toFixed(1)}%` : `${edgeVal.toFixed(1)}%`;
 
     let mod = "neutral";
     let badgeText = "";
-
     if (v.is_publishable) {
       mod = "strong";
-      badgeText = "🎯 PROFESIONAL";
+      badgeText = "PROFESIONAL";
     } else if (v.is_underdog) {
       mod = "underdog";
-      badgeText = "🦄 UNDERDOG";
+      badgeText = "UNDERDOG";
     } else if (v.is_value) {
       mod = "value";
-      badgeText = "⚖️ VALOR";
+      badgeText = "VALOR";
     }
 
     const dqScore =
@@ -280,27 +362,27 @@ function renderMultiLineCards(values) {
           : lrs >= 0.65
             ? "var(--color-warning)"
             : "var(--color-error)";
-    const lrsLabel =
-      lrs == null
-        ? "—"
-        : lrs >= 0.85
-          ? `${Math.round(lrs * 100)}% ✅`
-          : lrs >= 0.65
-            ? `${Math.round(lrs * 100)}% ⚠️`
-            : `${Math.round(lrs * 100)}% 🔴`;
+    const lrsLabel = lrs == null ? "N/A" : `${Math.round(lrs * 100)}%`;
+
+    // Casa que ofrece la mejor cuota para este pick (line shopping)
+    const bookmakerRow = v.bookmaker
+      ? `<div class="value-line-card__row">
+           <span>Casa</span>
+           <span style="font-weight:600;color:#10b981;text-transform:uppercase;font-size:0.8rem;">🏠 ${v.bookmaker}</span>
+         </div>`
+      : "";
 
     // Success indicator
     let successHtml = "";
     let statusClass = "";
     if (v.success === true) {
-      successHtml = '<div class="value-line-card__success-marker">✅</div>';
+      successHtml = `<div class="value-line-card__success-marker">✓</div>`;
       statusClass = "value-line-card--success";
     } else if (v.success === false) {
-      successHtml = '<div class="value-line-card__success-marker">❌</div>';
+      successHtml = `<div class="value-line-card__success-marker">✗</div>`;
       statusClass = "value-line-card--fail";
     } else if (v.success === "void") {
-      successHtml =
-        '<div class="value-line-card__success-marker" style="background: var(--void-bg, rgba(100,116,139,0.25)); color: #94a3b8; border: 1px solid rgba(148,163,184,0.3);">↩️</div>';
+      successHtml = `<div class="value-line-card__success-marker" style="background:var(--void-bg, rgba(100,116,139,0.25));color:#94a3b8;border:1px solid rgba(148,163,184,0.3)">−</div>`;
       statusClass = "value-line-card--void";
     }
 
@@ -308,31 +390,43 @@ function renderMultiLineCards(values) {
     el.className = `value-line-card value-line-card--${mod} ${statusClass}`;
     el.innerHTML = `
       ${successHtml}
-      <div class="value-line-card__market" title="${v.selection}">
-        ${v.selection}
-      </div>
+      <div class="value-line-card__market" title="${v.selection}">${v.selection}</div>
       <div class="value-line-card__row">
         <span>Confianza Datos</span>
-        <span style="color: ${dqScore > 70 ? "var(--color-success)" : dqScore > 40 ? "var(--color-warning)" : "var(--color-error)"}">${dqScore ?? "—"}% (${confTier})</span>
+        <span style="color:${dqScore >= 70 ? "var(--color-success)" : dqScore >= 40 ? "var(--color-warning)" : "var(--color-error)"}">${dqScore ?? confTier}</span>
       </div>
       <div class="value-line-card__row">
         <span>Confiab. Liga (LRS)</span>
-        <span style="color: ${lrsColor}; font-weight: 600;">${lrsLabel}${lrsPenalty != null && lrsPenalty > 0.001 ? ` <span style="opacity:0.7; font-size:0.78em;">(-${(lrsPenalty * 100).toFixed(1)}% EV)</span>` : ""}</span>
+        <span style="color:${lrsColor};font-weight:600">${lrsLabel}${
+          lrsPenalty != null && lrsPenalty > 0.001
+            ? `<span style="opacity:0.7;font-size:0.78em"> (-${(lrsPenalty * 100).toFixed(1)} EV)</span>`
+            : ""
+        }</span>
       </div>
       <div class="value-line-card__row">
         <span>Prob. Modelo</span>
         <span>${probText}</span>
       </div>
       <div class="value-line-card__row">
-        <span>Cuota Bookie</span>
+        <span>Cuota (Bookie)</span>
         <span>${oddsText}</span>
       </div>
+      ${bookmakerRow}
       <div class="value-line-card__row">
         <span>Stake Recomendado</span>
-        <span style="font-weight: bold; color: var(--accent-light);">${v.stake_units !== undefined && v.stake_units !== null ? v.stake_units.toFixed(1) : v.kelly_fraction > 0 ? Math.min(MAX_STAKE, Math.max(MIN_STAKE, Math.round(v.kelly_fraction * 100))) : MIN_STAKE}u</span>
+        <span style="font-weight:bold;color:var(--accent-light)">${
+          v.stake_units !== undefined && v.stake_units !== null
+            ? v.stake_units.toFixed(1)
+            : v.kelly_fraction > 0
+              ? Math.min(
+                  MAX_STAKE,
+                  Math.max(MIN_STAKE, Math.round(v.kelly_fraction * 100)),
+                )
+              : MIN_STAKE
+        }u</span>
       </div>
-      <div class="value-line-card__edge" style="font-weight: bold; font-size: 1.1rem; margin-top: 0.5rem;">
-        Edge ${edgeText}
+      <div class="value-line-card__edge" style="font-weight:bold;font-size:1.1rem;margin-top:0.5rem;">
+        Edge: ${edgeText}
       </div>
       <span class="value-line-card__badge badge--${mod}">${badgeText}</span>
     `;
@@ -341,9 +435,10 @@ function renderMultiLineCards(values) {
 
   valuePicks.forEach((v) => renderItem(v, grid));
   underdogPicks.forEach((v) => renderItem(v, underdogGrid));
+
   // High Confidence picks - disabled until implemented
-  // const hcPicks = values.filter((v) => v.is_high_confidence === true);
-  // hcPicks.forEach((v) => renderItem(v, hcGrid));
+  const hcPicks = values.filter((v) => v.is_high_confidence === true);
+  hcPicks.forEach((v) => renderItem(v, hcGrid));
 }
 
 function renderResults(data) {
@@ -415,13 +510,6 @@ function renderResults(data) {
           let extraLabel = "";
 
           if (
-            p.type === "handicap_prob" &&
-            p.prob !== null &&
-            p.prob !== undefined
-          ) {
-            displayVal = `${p.prob}%`;
-            extraLabel = `<div style="font-size: 0.7rem; opacity: 0.8; margin-top: 0.1rem;">Línea: ${p.value >= 0 ? "+" : ""}${p.value.toFixed(2)}</div>`;
-          } else if (
             p.type === "double_chance" ||
             p.type === "btts" ||
             (p.type === "goals" && p.label.toLowerCase().includes("over"))
@@ -2281,70 +2369,54 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-referee-red", data.league_stats.referee_avg_red);
     }
 
+    // Restaurar cuotas para: (a) permitir recalcular con line shopping si hay
+    // varias casas, y (b) siempre mostrar al menos una card visual de cuotas,
+    // sea el partido nuevo (con sources) o viejo (cuotas planas sin sources).
     if (odds) {
-      setSafeValue("fb-bookmaker", odds.bookmaker);
-      setSafeValue("fb-odds-home", odds.home);
-      setSafeValue("fb-odds-draw", odds.draw);
-      setSafeValue("fb-odds-away", odds.away);
-      setSafeValue("fb-odds-over25", odds.over_25);
-      setSafeValue("fb-odds-under25", odds.under_25);
-      setSafeValue("fb-odds-btts-yes", odds.btts_yes);
-      setSafeValue("fb-odds-btts-no", odds.btts_no);
-      setSafeValue("fb-odds-dc-1x", odds.dc_1x);
-      setSafeValue("fb-odds-dc-x2", odds.dc_x2);
-      setSafeValue("fb-odds-dc-12", odds.dc_12);
+      console.debug("[Sherlock] populateAppForm → odds recibido:", odds);
 
-      const populateTable = (tbodyId, lines, overOdds, underOdds) => {
-        const tb = document.getElementById(tbodyId);
-        if (!tb) return;
-        tb.innerHTML = ""; // Clear existing rows
-        if (lines && lines.length > 0) {
-          lines.forEach((line) => {
-            const over =
-              overOdds && overOdds[line] !== undefined ? overOdds[line] : "";
-            const under =
-              underOdds && underOdds[line] !== undefined ? underOdds[line] : "";
-            const tr = document.createElement("tr");
-            tr.innerHTML = `
-              <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${line}" /></td>
-              <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${over}" /></td>
-              <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${under}" /></td>
-            `;
-            tb.appendChild(tr);
-          });
-        }
-      };
-
-      populateTable(
-        "goals-odds-tbody",
-        odds.goals_lines || ["1.5", "2.5", "3.5", "4.5"],
-        odds.goalsOverOdds,
-        odds.goalsUnderOdds,
-      );
-      populateTable(
-        "corners-odds-tbody",
-        odds.corners_lines || ["7.5", "8.5", "9.5", "10.5"],
-        odds.cornersOverOdds,
-        odds.cornersUnderOdds,
-      );
-      populateTable(
-        "cards-odds-tbody",
-        odds.cards_lines || ["2.5", "3.5", "4.5", "5.5"],
-        odds.cardsOverOdds,
-        odds.cardsUnderOdds,
-      );
-      populateTable(
-        "shots-odds-tbody",
-        odds.shots_lines || ["21.5", "22.5", "23.5", "24.5"],
-        odds.shotsOverOdds,
-        odds.shotsUnderOdds,
-      );
-      populateTable(
-        "shots-target-odds-tbody",
-        odds.shots_target_lines || ["7.5", "8.5", "9.5", "10.5"],
-        odds.shotsTargetOverOdds,
-        odds.shotsTargetUnderOdds,
-      );
+      if (odds.sources && Object.keys(odds.sources).length > 0) {
+        window.currentPrefillSources = odds.sources;
+        renderOddsBookmakerCards(odds.sources);
+      } else if (odds.home != null || odds.draw != null || odds.away != null) {
+        const syntheticSources = {
+          manual: {
+            bookmaker: "manual",
+            home: odds.home,
+            draw: odds.draw,
+            away: odds.away,
+            btts_yes: odds.btts_yes,
+            btts_no: odds.btts_no,
+            dc_1x: odds.dc_1x,
+            dc_x2: odds.dc_x2,
+            dc_12: odds.dc_12,
+            goals_lines: (odds.goals_lines || []).map(Number),
+            goalsOverOdds: odds.goalsOverOdds || {},
+            goalsUnderOdds: odds.goalsUnderOdds || {},
+            corners_lines: (odds.corners_lines || []).map(Number),
+            cornersOverOdds: odds.cornersOverOdds || {},
+            cornersUnderOdds: odds.cornersUnderOdds || {},
+            cards_lines: (odds.cards_lines || []).map(Number),
+            cardsOverOdds: odds.cardsOverOdds || {},
+            cardsUnderOdds: odds.cardsUnderOdds || {},
+            shots_lines: (odds.shots_lines || []).map(Number),
+            shotsOverOdds: odds.shotsOverOdds || {},
+            shotsUnderOdds: odds.shotsUnderOdds || {},
+            shots_target_lines: (odds.shots_target_lines || []).map(Number),
+            shotsTargetOverOdds: odds.shotsTargetOverOdds || {},
+            shotsTargetUnderOdds: odds.shotsTargetUnderOdds || {},
+          },
+        };
+        window.currentPrefillSources = syntheticSources;
+        renderOddsBookmakerCards(syntheticSources);
+      } else {
+        console.debug(
+          "[Sherlock] odds no tiene sources ni cuotas planas usables:",
+          odds,
+        );
+        window.currentPrefillSources = null;
+        renderOddsBookmakerCards(null);
+      }
     }
 
     // Restore use_general_stats checkbox from payload data
@@ -2758,12 +2830,12 @@ function buildFootballPayloadFromForm() {
   const home = _fbTeam("home");
   const away = _fbTeam("away");
 
-  const getSafeNumber = (id, defaultValue) => {
+  function getSafeNumber(id, defaultValue) {
     const el = document.getElementById(id);
-    if (!el || el.value === "") return defaultValue;
+    if (!el || !el.value) return defaultValue;
     const num = parseFloat(el.value);
     return isNaN(num) ? defaultValue : num;
-  };
+  }
 
   function getVal(id) {
     const el = document.getElementById(id);
@@ -2772,7 +2844,7 @@ function buildFootballPayloadFromForm() {
     return isNaN(val) ? null : val;
   }
 
-  const getOddsFromTable = (tbodyId) => {
+  function getOddsFromTable(tbodyId) {
     const lines = [];
     const overOdds = {};
     const underOdds = {};
@@ -2780,16 +2852,14 @@ function buildFootballPayloadFromForm() {
     if (tb) {
       tb.querySelectorAll("tr").forEach((tr) => {
         let lineVal = null;
-        const inputLine = tr.children[0].querySelector("input");
+        const inputLine = tr.children[0]?.querySelector("input");
         if (inputLine) {
           if (inputLine.value) lineVal = inputLine.value.trim();
-        } else {
+        } else if (tr.children[0]) {
           lineVal = tr.children[0].innerText.trim();
         }
-
-        const inputOver = tr.children[1].querySelector("input");
-        const inputUnder = tr.children[2].querySelector("input");
-
+        const inputOver = tr.children[1]?.querySelector("input");
+        const inputUnder = tr.children[2]?.querySelector("input");
         if (lineVal) {
           let added = false;
           if (
@@ -2808,13 +2878,12 @@ function buildFootballPayloadFromForm() {
             underOdds[lineVal] = parseFloat(inputUnder.value);
             added = true;
           }
-          // Only include line if at least one odd was provided. But if user adds line dynamically, it might be partial. Wait, allow empty as well if lineVal is there. Actually only push if there are odds.
           if (added) lines.push(lineVal);
         }
       });
     }
     return { lines, overOdds, underOdds };
-  };
+  }
 
   const goalsParsed = getOddsFromTable("goals-odds-tbody");
   const cornersParsed = getOddsFromTable("corners-odds-tbody");
@@ -2831,29 +2900,30 @@ function buildFootballPayloadFromForm() {
     dc_1x: getVal("fb-odds-dc-1x"),
     dc_x2: getVal("fb-odds-dc-x2"),
     dc_12: getVal("fb-odds-dc-12"),
-
     goals_lines: goalsParsed.lines,
     goalsOverOdds: goalsParsed.overOdds,
     goalsUnderOdds: goalsParsed.underOdds,
-
     corners_lines: cornersParsed.lines,
     cornersOverOdds: cornersParsed.overOdds,
     cornersUnderOdds: cornersParsed.underOdds,
-
     cards_lines: cardsParsed.lines,
     cardsOverOdds: cardsParsed.overOdds,
     cardsUnderOdds: cardsParsed.underOdds,
-
     shots_lines: shotsParsed.lines,
     shotsOverOdds: shotsParsed.overOdds,
     shotsUnderOdds: shotsParsed.underOdds,
-
     shots_target_lines: shotsTargetParsed.lines,
     shotsTargetOverOdds: shotsTargetParsed.overOdds,
     shotsTargetUnderOdds: shotsTargetParsed.underOdds,
+
+    // Line shopping: cuotas crudas de todas las casas detectadas por la
+    // extensión. El backend decide la mejor cuota por mercado al analizar.
+    sources: window.currentPrefillSources || null,
   };
 
-  const competition = val("fb-competition") || "General";
+  const competitionEl = document.getElementById("fb-competition");
+  const competition =
+    competitionEl && competitionEl.value ? competitionEl.value : "General";
 
   const league_stats = {
     avg_goals_per_game: getSafeNumber("fb-league-goals", 2.74),
@@ -2868,7 +2938,14 @@ function buildFootballPayloadFromForm() {
   const useGeneralEl = document.getElementById("dashboard-use-general-stats");
   const use_general_stats = useGeneralEl ? useGeneralEl.checked : false;
 
-  return { home, away, odds, competition, league_stats, use_general_stats };
+  return {
+    home,
+    away,
+    odds,
+    competition,
+    league_stats,
+    use_general_stats,
+  };
 }
 
 async function onGeneralStatsChange() {
@@ -2893,27 +2970,36 @@ async function onGeneralStatsChange() {
 }
 
 async function analyzeFootball() {
-  const payload = buildFootballPayloadFromForm();
-  if (!payload.home.name || !payload.away.name)
-    return showError("Ingresa los nombres de ambos equipos");
-  if (!validatePayload(payload, "football")) return;
-  currentSport = "football";
-  currentPayload = payload;
+  try {
+    const payload = buildFootballPayloadFromForm();
 
-  // FASE 1: stats + gráficos → inmediato
-  const data = await apiCompare("football", {
-    ...payload,
-    generatellmanalysis: false,
-  });
-  if (!data) return;
-  window._currentSnapshot = data;
-  renderResults(data);
+    if (!payload.home.name || !payload.away.name) {
+      return showError("Ingresa los nombres de ambos equipos");
+    }
+    if (!validatePayload(payload, "football")) return;
 
-  // Persistir en DB inmediatamente para tener el registro
-  await saveAnalysisDataToDB("football", payload, data);
+    currentSport = "football";
+    currentPayload = payload;
 
-  // FASE 2: análisis LLM (Opcional si ya existe en DB, pero aquí es nuevo análisis)
-  // streamLlmAnalysis("football", payload);
+    // FASE 1: stats + gráficos inmediato
+    const data = await apiCompare("football", {
+      ...payload,
+      generate_llm_analysis: false,
+    });
+    if (!data) return;
+
+    window.currentSnapshot = data;
+    renderResults(data);
+
+    // Persistir en DB inmediatamente para tener el registro
+    await saveAnalysisDataToDB("football", payload, data);
+
+    // FASE 2: análisis LLM (opcional, si ya existe en DB, pero aquí es nuevo análisis)
+    // streamLlmAnalysis("football", payload);
+  } catch (err) {
+    console.error("[Sherlock] Error en analyzeFootball:", err);
+    showError("Error al analizar: " + err.message);
+  }
 }
 
 function saveFootballPreset() {

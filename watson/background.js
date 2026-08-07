@@ -1,7 +1,12 @@
 // background.js - Service Worker de Watson (SofaScore Extractor)
-// Versión corregida con standings reales
+// Versión corregida con standings reales + cuotas Betano automáticas (búsqueda por nombres)
 
-importScripts("sofaScoreToSherlock.js");
+importScripts("sofaScoreToSherlock.js", "betanoOdds.js", "betplayOdds.js");
+
+const BOOKMAKER_FETCHERS = [
+  { key: "betano", fetch: fetchBetanoOddsForTeams },
+  { key: "betplay", fetch: fetchBetPlayOddsForTeams },
+];
 
 // ═══════════════════════════════════════════════════════════════
 // INSTALACIÓN
@@ -72,7 +77,42 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     sendResponse({ success: true });
     return true;
   }
+
+  // NUEVO: reintentar solo la búsqueda de cuotas Betano para el partido actual
+  if (request.action === "refetchBetanoOdds") {
+    handleRefetchBetanoOdds(request.data)
+      .then(sendResponse)
+      .catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+    return true;
+  }
 });
+
+/**
+ * Busca cuotas en todas las casas registradas, en paralelo.
+ * Devuelve un objeto { betano: {...}, betplay: {...}, ... } con el resultado
+ * de cada una (success true/false), sin que un fallo bloquee a las demás.
+ */
+async function fetchAllBookmakerOdds(homeTeam, awayTeam, leagueName) {
+  const results = await Promise.allSettled(
+    BOOKMAKER_FETCHERS.map((b) => b.fetch(homeTeam, awayTeam, leagueName)),
+  );
+
+  const oddsByBookmaker = {};
+  results.forEach((res, idx) => {
+    const key = BOOKMAKER_FETCHERS[idx].key;
+    if (res.status === "fulfilled") {
+      oddsByBookmaker[key] = res.value;
+    } else {
+      oddsByBookmaker[key] = {
+        success: false,
+        error: res.reason?.message || "Error desconocido",
+      };
+    }
+  });
+  return oddsByBookmaker;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // EXTRACCIÓN DE RESULTADOS
@@ -147,8 +187,10 @@ async function handleExtractResults(data) {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         sport: "football",
-        home_team: eventData.event.homeTeam.name,
-        away_team: eventData.event.awayTeam.name,
+        home_team:
+          eventData.event.homeTeam.shortName || eventData.event.homeTeam.name,
+        away_team:
+          eventData.event.awayTeam.shortName || eventData.event.awayTeam.name,
         ...payload,
       }),
     });
@@ -204,12 +246,49 @@ async function handleExtractStats(data) {
       incidents: null,
       homeTeamStats: null,
       awayTeamStats: null,
-      standings: null, // ← NUEVO: standings del torneo
+      standings: null,
+      betanoOdds: null, // ← NUEVO: cuotas de Betano obtenidas automáticamente
     };
 
     // 1. Info del evento
     const eventData = await fetchSofaScore(`/api/v1/event/${eventId}`);
     result.match = eventData.event;
+
+    // 1.b Cuotas de todas las casas registradas — búsqueda automática por
+    // nombres, SIN visitar ninguna página. El envío real ocurre 1s después
+    // de presionar "Enviar a Endpoint" (ver popup.js).
+    try {
+      const homeTeamObj = eventData.event?.homeTeam || null;
+      const awayTeamObj = eventData.event?.awayTeam || null;
+      const leagueName =
+        eventData.event?.tournament?.uniqueTournament?.name ||
+        eventData.event?.tournament?.name ||
+        "";
+
+      if (
+        (homeTeamObj?.shortName || homeTeamObj?.name) &&
+        (awayTeamObj?.shortName || awayTeamObj?.name)
+      ) {
+        result.oddsByBookmaker = await fetchAllBookmakerOdds(
+          homeTeamObj,
+          awayTeamObj,
+          leagueName,
+        );
+        // Compatibilidad con el flujo anterior (popup.js usa extractedData.betanoOdds)
+        result.betanoOdds = result.oddsByBookmaker.betano;
+        Object.entries(result.oddsByBookmaker).forEach(([bk, res]) => {
+          if (!res?.success) {
+            console.warn(`[Watson] Cuotas ${bk}:`, res?.error);
+          }
+        });
+      }
+    } catch (e) {
+      console.warn(
+        "[Watson] Excepción obteniendo cuotas de casas de apuestas:",
+        e.message,
+      );
+      result.oddsByBookmaker = {};
+    }
 
     // 2. STANDINGS (para wins/draws/losses reales)
     if (tournamentId && seasonId) {
@@ -314,6 +393,90 @@ async function handleExtractStats(data) {
 }
 
 // ═══════════════════════════════════════════════════════════════
+// REINTENTAR SOLO CUOTAS BETANO (por si el auto-match falló)
+// ═══════════════════════════════════════════════════════════════
+async function handleRefetchBetanoOdds(data) {
+  const { homeTeamName, awayTeamName } = data || {};
+  if (!homeTeamName || !awayTeamName) {
+    return { success: false, error: "Faltan nombres de equipos" };
+  }
+
+  // Opcional: recuperar el leagueName del último resultado cacheado para
+  // que el reintento manual también pueda usar el fallback de ligas.
+  const cachedForLeague = await chrome.storage.local.get([
+    "lastExtractedStats",
+  ]);
+  const leagueName =
+    cachedForLeague.lastExtractedStats?.match?.tournament?.uniqueTournament
+      ?.name ||
+    cachedForLeague.lastExtractedStats?.match?.tournament?.name ||
+    "";
+
+  const betanoOdds = await fetchBetanoOddsForTeams(
+    homeTeamName,
+    awayTeamName,
+    leagueName,
+  );
+  if (betanoOdds?.success) {
+    betanoOdds.sentToSherlock = await sendBetanoOddsToSherlock(
+      betanoOdds.payload,
+    );
+
+    // Actualizar el resultado cacheado para que el popup lo refleje
+    const cached = await chrome.storage.local.get(["lastExtractedStats"]);
+    if (cached.lastExtractedStats) {
+      cached.lastExtractedStats.betanoOdds = betanoOdds;
+      await chrome.storage.local.set({
+        lastExtractedStats: cached.lastExtractedStats,
+      });
+    }
+  }
+  return betanoOdds;
+}
+
+/** Envía el payload de cuotas de Betano al endpoint /odds de Sherlock */
+async function sendBetanoOddsToSherlock(payload) {
+  try {
+    const stored = await chrome.storage.sync.get(["endpointUrl"]);
+    let endpointUrl =
+      stored.endpointUrl || "http://localhost:8000/api/v1/prefill";
+    endpointUrl = endpointUrl.replace(/\/+$/, ""); // sin slash final
+
+    let oddsUrl;
+    if (endpointUrl.includes("/api/v1/prefill")) {
+      // Ej: http://localhost:8000/api/v1/prefill -> .../api/v1/prefill/odds
+      oddsUrl = `${endpointUrl}/odds`;
+    } else {
+      // El usuario guardó solo la raíz (ej: http://localhost:8000)
+      oddsUrl = `${endpointUrl}/api/v1/prefill/odds`;
+    }
+
+    const response = await fetch(oddsUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ odds: payload }),
+    });
+
+    if (!response.ok) {
+      console.error(
+        "[Watson] Error enviando cuotas Betano automáticas:",
+        response.status,
+        oddsUrl,
+      );
+    } else {
+      console.log(
+        "[Watson] ✅ Cuotas Betano enviadas automáticamente a",
+        oddsUrl,
+      );
+    }
+    return response.ok;
+  } catch (err) {
+    console.error("[Watson] Excepción enviando cuotas Betano:", err);
+    return false;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // ENVÍO AL ENDPOINT
 // ═══════════════════════════════════════════════════════════════
 async function handleSendToEndpoint(data) {
@@ -350,6 +513,7 @@ async function handleSendToEndpoint(data) {
         : `Bearer ${settings.authToken}`;
   }
 
+  let statsResult;
   try {
     const response = await fetch(endpointUrl, {
       method: "POST",
@@ -357,7 +521,7 @@ async function handleSendToEndpoint(data) {
       body: JSON.stringify(payload),
     });
 
-    return {
+    statsResult = {
       success: response.ok,
       status: response.status,
       statusText: response.statusText,
@@ -365,6 +529,68 @@ async function handleSendToEndpoint(data) {
   } catch (error) {
     return { success: false, error: error.message };
   }
+
+  // ── Enviar TODAS las cuotas exitosas (Betano, BetPlay, futuras casas) ──
+  // en un solo POST combinado, igual que hace popup.js en handleSendToSherlock.
+  const oddsByBookmaker = data.oddsByBookmaker || {};
+  const successfulEntries = Object.entries(oddsByBookmaker).filter(
+    ([, res]) => res?.success,
+  );
+
+  if (statsResult.success && successfulEntries.length > 0) {
+    try {
+      const combinedPayload = {};
+      successfulEntries.forEach(([bookmakerKey, res]) => {
+        combinedPayload[bookmakerKey] = res.payload;
+      });
+
+      const base = endpointUrl.replace(/\/+$/, "");
+      const oddsUrl = base.includes("/api/v1/prefill")
+        ? `${base}/odds`
+        : `${base}/api/v1/prefill/odds`;
+
+      const oddsResponse = await fetch(oddsUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ odds_by_bookmaker: combinedPayload }),
+      });
+
+      statsResult.betanoOddsSent = oddsResponse.ok;
+      statsResult.bookmakersSent = successfulEntries.map(([k]) => k);
+
+      if (!oddsResponse.ok) {
+        console.error(
+          "[Watson] Error enviando cuotas combinadas:",
+          oddsResponse.status,
+          oddsUrl,
+        );
+      }
+
+      // Reflejar en el caché local para que el popup lo muestre actualizado
+      const cached = await chrome.storage.local.get(["lastExtractedStats"]);
+      if (cached.lastExtractedStats) {
+        successfulEntries.forEach(([bookmakerKey, res]) => {
+          res.sentToSherlock = oddsResponse.ok;
+        });
+        await chrome.storage.local.set({
+          lastExtractedStats: cached.lastExtractedStats,
+        });
+      }
+    } catch (e) {
+      console.warn(
+        "[Watson] Error enviando cuotas combinadas tras stats:",
+        e.message,
+      );
+      statsResult.betanoOddsSent = false;
+    }
+  } else if (!statsResult.success && successfulEntries.length > 0) {
+    console.warn(
+      "[Watson] Stats no se guardaron correctamente — se omite el envío de cuotas para mantener el orden",
+    );
+    statsResult.betanoOddsSent = false;
+  }
+
+  return statsResult;
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -445,7 +671,6 @@ function mergeStatsPeriods(p1, p2) {
 /** Aplica todos los keys de estadísticas al payload (home/away) */
 function applyStatsToPayload(statPeriod, payload) {
   const STAT_MAP = {
-    // Keys del planning.txt
     accurateCross: ["accurate_cross_home", "accurate_cross_away"],
     accurateLongBalls: ["accurate_long_balls_home", "accurate_long_balls_away"],
     accuratePasses: ["accurate_passes_home", "accurate_passes_away"],
@@ -513,8 +738,6 @@ function applyStatsToPayload(statPeriod, payload) {
     touchesInOppBox: ["touches_in_opp_box_home", "touches_in_opp_box_away"],
     wonTacklePercent: ["won_tackle_percent_home", "won_tackle_percent_away"],
     yellowCards: ["yellow_cards_home", "yellow_cards_away"],
-    // Aliases legacy usados en handleExtractResults
-    // (se mantienen los final_* para compatibilidad)
   };
 
   (statPeriod.groups || []).forEach((group) => {
@@ -530,7 +753,6 @@ function applyStatsToPayload(statPeriod, payload) {
           ? parseFloat(item.awayValue) || 0
           : parseInt(item.awayValue) || 0;
       }
-      // Legacy aliases
       if (item.key === "cornerKicks") {
         payload.final_corners_home = parseInt(item.homeValue) || 0;
         payload.final_corners_away = parseInt(item.awayValue) || 0;
@@ -581,19 +803,15 @@ async function handleExtractHistoricalData(data) {
   if (!baseUrl) throw new Error("Endpoint de Sherlock no configurado");
   if (!tournamentId) throw new Error("ID de competición no encontrado");
 
-  // ── 0. Cargar estado previo (para poder reanudar) ──────────────────────
   const masterKey = `tournament_${tournamentId}_events`;
   const completedKey = `tournament_${tournamentId}_completed_seasons`;
 
   const storedState = await chrome.storage.local.get([masterKey, completedKey]);
-  // Temporadas ya completadas en ejecuciones anteriores
   const completedSeasons = new Set(storedState[completedKey] || []);
-  // Eventos acumulados de ejecuciones previas
   const allEvents = storedState[masterKey] || [];
 
   const completedCount = completedSeasons.size;
 
-  // ── 1. Obtener temporadas ──────────────────────────────────────────────
   sendProgress({ phase: "seasons", message: "Obteniendo temporadas..." });
   const seasonsData = await fetchSofaScore(
     `/api/v1/unique-tournament/${tournamentId}/seasons`,
@@ -617,7 +835,6 @@ async function handleExtractHistoricalData(data) {
   let totalSaved = 0;
   let totalErrors = 0;
 
-  // ── 2. Iterar temporadas ───────────────────────────────────────────────
   for (let si = 0; si < seasons.length; si++) {
     if (_historicalCancelled) {
       sendProgress({
@@ -636,7 +853,6 @@ async function handleExtractHistoricalData(data) {
     const season = seasons[si];
     const seasonKey = String(season.id);
 
-    // ── ¿Esta temporada ya fue completada? ────────────────────────────
     if (completedSeasons.has(seasonKey)) {
       sendProgress({
         phase: "season_skipped",
@@ -645,7 +861,7 @@ async function handleExtractHistoricalData(data) {
         seasonYear: season.year,
         message: `⏭ T.${season.year} ya completada — saltando`,
       });
-      continue; // Los eventos ya están en allEvents desde el storage
+      continue;
     }
 
     sendProgress({
@@ -657,7 +873,6 @@ async function handleExtractHistoricalData(data) {
       message: `Temporada ${season.year} (${si + 1}/${seasons.length})`,
     });
 
-    // ── 3. Paginar eventos de la temporada ────────────────────────────
     let page = 0;
     let hasNextPage = true;
     const seasonEvents = [];
@@ -667,7 +882,7 @@ async function handleExtractHistoricalData(data) {
 
       try {
         const eventsData = await fetchSofaScore(
-          `/api/v1/unique-tournament/${uniqueTournamentId}/season/${season.id}/events/last/${page}`,
+          `/api/v1/unique-tournament/${tournamentId}/season/${season.id}/events/last/${page}`,
         );
         const events = eventsData.events || [];
         hasNextPage = eventsData.hasNextPage === true;
@@ -697,9 +912,7 @@ async function handleExtractHistoricalData(data) {
       }
     }
 
-    // ── Sin eventos en esta temporada → terminar anticipadamente ────────
     if (seasonEvents.length === 0 && !_historicalCancelled) {
-      // Determinar la última temporada que sí tuvo datos
       const lastSavedSeason = si > 0 ? seasons[si - 1].year : null;
       const msg = lastSavedSeason
         ? `⛔ T.${season.year} sin datos — proceso detenido. Última temporada guardada: T.${lastSavedSeason}`
@@ -714,17 +927,15 @@ async function handleExtractHistoricalData(data) {
         message: msg,
       });
 
-      break; // Las temporadas anteriores tampoco tendrán datos
+      break;
     }
 
-    // Enriquecer con metadatos de temporada
     const enrichedSeasonEvents = seasonEvents.map((e) => ({
       ...e,
       _seasonYear: season.year,
       _seasonId: season.id,
     }));
 
-    // ── 4. Procesar cada evento de la temporada ───────────────────────
     let seasonSaved = 0;
     let seasonErrors = 0;
 
@@ -742,11 +953,13 @@ async function handleExtractHistoricalData(data) {
         eventIndex: ei,
         totalSeasonEvents: enrichedSeasonEvents.length,
         eventId: event.id,
-        homeTeam: event.homeTeam?.name,
-        awayTeam: event.awayTeam?.name,
+        homeTeam: event.homeTeam?.shortName || event.homeTeam?.name,
+        awayTeam: event.awayTeam?.shortName || event.awayTeam?.name,
         totalProcessed,
         totalSaved,
-        message: `${event.homeTeam?.name} vs ${event.awayTeam?.name}`,
+        message: `${event.homeTeam?.shortName || event.homeTeam?.name} vs ${
+          event.awayTeam?.shortName || event.awayTeam?.name
+        }`,
       });
 
       try {
@@ -798,23 +1011,18 @@ async function handleExtractHistoricalData(data) {
       }
     }
 
-    // ── 5. Guardar progreso de esta temporada (aunque esté cancelada) ──
-    // Solo marcar como completada si NO fue interrumpida a mitad
     const seasonWasCancelled =
       _historicalCancelled &&
       seasonErrors === 0 &&
       enrichedSeasonEvents.length > 0;
 
     if (!_historicalCancelled || seasonWasCancelled === false) {
-      // Agregar eventos de esta temporada al array maestro
-      // Evitar duplicados por si hay eventos ya cargados de ejecuciones previas
       const existingIds = new Set(allEvents.map((e) => e.id));
       const newEvents = enrichedSeasonEvents.filter(
         (e) => !existingIds.has(e.id),
       );
       allEvents.push(...newEvents);
 
-      // Guardar en storage: temporada individual + lista maestra + temporadas completadas
       const seasonStorageKey = `tournament_${tournamentId}_season_${season.id}_events`;
       completedSeasons.add(seasonKey);
 
@@ -840,18 +1048,10 @@ async function handleExtractHistoricalData(data) {
     }
 
     if (!_historicalCancelled && si < seasons.length - 1) {
-      await delay(1000); // Espera entre temporadas
+      await delay(1000);
     }
   }
 
-  // ── 6. Señal final ─────────────────────────────────────────────────────
-  // Determinar la última temporada que efectivamente se guardó
-  const lastSavedIdx =
-    [...completedSeasons].length > 0
-      ? seasons.findIndex((s) => completedSeasons.has(String(s.id)))
-      : -1;
-  // El array de temporadas viene ordenado de más reciente a más antigua;
-  // la última completada en orden de iteración es la de índice más alto.
   const lastCompletedSeason = seasons
     .filter((s) => completedSeasons.has(String(s.id)))
     .at(-1);
@@ -880,8 +1080,8 @@ function buildHistoricalPayload(
 ) {
   const payload = {
     sport: "football",
-    home_team: event.homeTeam?.name || "",
-    away_team: event.awayTeam?.name || "",
+    home_team: event.homeTeam?.shortName || event.homeTeam?.name || "",
+    away_team: event.awayTeam?.shortName || event.awayTeam?.name || "",
     event_id: event.id,
     round: event.roundInfo?.round || null,
     start_timestamp: event.startTimestamp || null,
@@ -894,7 +1094,6 @@ function buildHistoricalPayload(
     final_score_away: event.awayScore?.current ?? 0,
   };
 
-  // Stats del partido
   if (statisticsData && statisticsData.statistics) {
     const statPeriod = getStatsPeriod(statisticsData);
     if (statPeriod) {
@@ -902,7 +1101,6 @@ function buildHistoricalPayload(
     }
   }
 
-  // Tarjetas rojas desde incidentes
   if (incidentsData && incidentsData.incidents) {
     let rcHome = 0,
       rcAway = 0;

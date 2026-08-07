@@ -326,6 +326,10 @@ async function handleExtract() {
 // ═══════════════════════════════════════════════════════════════
 // ENVÍO A SHERLOCK
 // ═══════════════════════════════════════════════════════════════
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 async function handleSendToSherlock() {
   if (!extractedData) {
     showStatus("error", "Primero extrae las estadísticas");
@@ -339,8 +343,6 @@ async function handleSendToSherlock() {
   showStatus("loading", "Enviando a Sherlock...");
   showProgress(20);
   try {
-    // El background ya tiene el mapeador, pero construimos payload aquí también
-    // para poder mostrarlo en View JSON
     const payload = buildSherlockPayload(extractedData);
     showProgress(60);
     const response = await fetch(sherlockEndpoint, {
@@ -360,13 +362,86 @@ async function handleSendToSherlock() {
     }
     const result = await response.json().catch(() => ({}));
     showStatus("success", `✅ Enviado a Sherlock. ${result.message || ""}`);
+
+    // ── NUEVO: 1s después, mandar TODAS las cuotas exitosas en un solo POST ──
+    const oddsByBookmaker = extractedData.oddsByBookmaker || {};
+    const successfulEntries = Object.entries(oddsByBookmaker).filter(
+      ([, res]) => res?.success,
+    );
+
+    if (successfulEntries.length > 0) {
+      await delay(1000);
+
+      const combinedPayload = {};
+      successfulEntries.forEach(([bookmakerKey, res]) => {
+        combinedPayload[bookmakerKey] = res.payload;
+      });
+
+      const base = sherlockEndpoint.replace(/\/+$/, "");
+      const oddsUrl = base.includes("/api/v1/prefill")
+        ? `${base}/odds`
+        : `${base}/api/v1/prefill/odds`;
+
+      try {
+        const oddsResponse = await fetch(oddsUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ odds_by_bookmaker: combinedPayload }),
+        });
+
+        const bookmakerNames = successfulEntries.map(([k]) => k).join(", ");
+
+        if (oddsResponse.ok) {
+          showStatus(
+            "success",
+            `✅ Stats + cuotas enviadas (${bookmakerNames})`,
+          );
+        } else {
+          console.error(
+            "[Watson] Error enviando cuotas combinadas:",
+            oddsResponse.status,
+            oddsUrl,
+          );
+          showStatus(
+            "error",
+            `⚠️ Stats enviadas, pero las cuotas fallaron (HTTP ${oddsResponse.status})`,
+          );
+        }
+
+        // Reflejar en caché
+        successfulEntries.forEach(([, res]) => {
+          res.sentToSherlock = oddsResponse.ok;
+        });
+        await chrome.storage.local.set({ lastExtractedStats: extractedData });
+      } catch (oddsErr) {
+        console.error(
+          "[Watson] Excepción enviando cuotas combinadas:",
+          oddsErr,
+        );
+        showStatus(
+          "error",
+          `⚠️ Stats enviadas, pero hubo un error con las cuotas: ${oddsErr.message}`,
+        );
+      }
+    } else {
+      const errores = Object.entries(oddsByBookmaker)
+        .map(([bk, res]) => `${bk}: ${res?.error || "sin datos"}`)
+        .join(" | ");
+      if (errores) {
+        console.warn(
+          "[Watson] Ninguna casa de apuestas encontró cuotas:",
+          errores,
+        );
+      }
+    }
   } catch (error) {
     showStatus("error", `❌ Error: ${error.message}`);
     console.error("Error enviando a Sherlock:", error);
   } finally {
-    setTimeout(() => hideProgress(), 1500);
+    setTimeout(() => hideProgress(), 2500);
   }
 }
+
 // ═══════════════════════════════════════════════════════════════
 // VER JSON
 // ═══════════════════════════════════════════════════════════════
@@ -409,9 +484,11 @@ async function showMatchInfo(eventId, url) {
         start_timestamp: event.startTimestamp,
       };
       // Mostrar equipos
-      els.homeTeam.textContent = event.homeTeam?.name || "Local";
+      els.homeTeam.textContent =
+        event.homeTeam?.shortName || event.homeTeam?.name || "Local";
       els.homeTeamId.textContent = `ID: ${event.homeTeam?.id || "-"}`;
-      els.awayTeam.textContent = event.awayTeam?.name || "Visitante";
+      els.awayTeam.textContent =
+        event.awayTeam?.shortName || event.awayTeam?.name || "Visitante";
       els.awayTeamId.textContent = `ID: ${event.awayTeam?.id || "-"}`;
       els.eventId.textContent = `Event ID: ${eventId}`;
       // Mostrar marcador actual si está disponible
@@ -622,7 +699,9 @@ function showStatsPreview() {
     // Posesión
     els.avgPossession.textContent = `${homeStats.averageBallPossession?.toFixed(1) || 0}%`;
     els.avgPossessionTeam.textContent =
-      extractedData.match?.homeTeam?.name || "Local";
+      extractedData.match?.homeTeam?.shortName ||
+      extractedData.match?.homeTeam?.name ||
+      "Local";
     // Tiros a puerta
     els.shotsOnTarget.textContent = `${homeStats.shotsOnTarget ?? "-"} - ${awayStats.shotsOnTarget ?? "-"}`;
     els.shotsOnTargetTeam.textContent = "Total en torneo";
@@ -888,8 +967,12 @@ function renderMatchesList(events, filter) {
   if (q) {
     filtered = events.filter(
       (e) =>
-        (e.homeTeam?.name || "").toLowerCase().includes(q) ||
-        (e.awayTeam?.name || "").toLowerCase().includes(q),
+        (e.homeTeam?.shortName || e.homeTeam?.name || "")
+          .toLowerCase()
+          .includes(q) ||
+        (e.awayTeam?.shortName || e.awayTeam?.name || "")
+          .toLowerCase()
+          .includes(q),
     );
   }
 
@@ -905,8 +988,8 @@ function renderMatchesList(events, filter) {
 
   const rows = filtered.map((e) => {
     const date = e.start_timestamp ? formatTimestamp(e.start_timestamp) : "?";
-    const home = e.homeTeam?.name || "Local";
-    const away = e.awayTeam?.name || "Visitante";
+    const home = e.homeTeam?.shortName || e.homeTeam?.name || "Local";
+    const away = e.awayTeam?.shortName || e.awayTeam?.name || "Visitante";
     const hs = e.homeScore?.current ?? "?";
     const as = e.awayScore?.current ?? "?";
     const season = e._seasonYear || "";

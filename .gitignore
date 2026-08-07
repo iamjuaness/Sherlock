@@ -50,4 +50,5 @@ htmlcov/
 
 planning.txt
 data/*
+backup/*
 scratch/

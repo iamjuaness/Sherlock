@@ -39,7 +39,6 @@ class Sport(str, enum.Enum):
 class MarketType(str, enum.Enum):
     MONEYLINE = "moneyline"
     OVER_UNDER = "over_under"
-    HANDICAP = "handicap"
 
 
 # ---------------------------------------------------------------------------
@@ -168,7 +167,7 @@ class BettingLine(Base):
 
     market_type = Column(Enum(MarketType), nullable=False)
     selection = Column(String(50), nullable=False)  # e.g. "home", "away", "over", "under"
-    line = Column(Float, nullable=True)  # e.g. 2.5 for over/under, -1.5 for handicap
+    line = Column(Float, nullable=True)  # e.g. 2.5 for over/under
     odds = Column(Float, nullable=False)
     bookmaker = Column(String(100), nullable=True)
     timestamp = Column(DateTime, nullable=True, default=datetime.utcnow)

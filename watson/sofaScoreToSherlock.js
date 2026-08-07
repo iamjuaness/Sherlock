@@ -512,8 +512,9 @@ function buildSherlockPayload(extractedData) {
     throw new Error("Datos incompletos: se requiere match");
   }
 
-  const homeName = match.homeTeam?.name || "Local";
-  const awayName = match.awayTeam?.name || "Visitante";
+  const homeName = match.homeTeam?.shortName || match.homeTeam?.name || "Local";
+  const awayName =
+    match.awayTeam?.shortName || match.awayTeam?.name || "Visitante";
 
   // Fix: Asegurar la correcta extracción de competition desde el evento
   const competition =

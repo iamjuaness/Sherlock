@@ -44,13 +44,10 @@
       shotsTargetLines: [],
       shotsTargetOverOdds: {},
       shotsTargetUnderOdds: {},
-      handicapLines: [],
-      handicapHomeOdds: {},
-      handicapAwayOdds: {},
     };
 
     // Extraer nombres de equipos del nombre del evento
-    const nameParts = (eventData.name || eventData.shortName || "")
+    const nameParts = (eventData.shortName || eventData.name || "")
       .split(" - ")
       .map((s) => s.trim());
     odds.homeTeam = nameParts[0] || "Local";
@@ -86,45 +83,6 @@
         if (sel.columnIndex === 0) overDict[key] = sel.price;
         else if (sel.columnIndex === 1) underDict[key] = sel.price;
       });
-    };
-    // ── Helper: Draw No Bet (DNOB) ─────────────────────────────
-    // ── Helper: Hándicap (FHMR / FHH1) ─────────────────────────
-    const extractHandicap = (market, linesArr, homeDict, awayDict) => {
-      const homeL = odds.homeTeam.toLowerCase();
-      const awayL = odds.awayTeam.toLowerCase();
-
-      const processRow = (selections, line) => {
-        if (!Array.isArray(selections)) return;
-        selections.forEach((sel) => {
-          const n = (sel.name || "").toLowerCase();
-          const s = (sel.shortName || "").toLowerCase();
-          const strLine = line !== null ? String(line) : null;
-          if (!strLine) return;
-          if (!linesArr.includes(line)) linesArr.push(line);
-          const isHome = s === "1" || n.includes(homeL) || n.includes("local");
-          const isAway =
-            s === "2" || n.includes(awayL) || n.includes("visitante");
-          if (isHome && !n.includes("empate")) homeDict[strLine] = sel.price;
-          else if (isAway && !n.includes("empate"))
-            awayDict[strLine] = sel.price;
-        });
-      };
-
-      if (market.tableLayout && Array.isArray(market.tableLayout.rows)) {
-        market.tableLayout.rows.forEach((row) => {
-          const gs = row.groupSelections && row.groupSelections[0];
-          if (!gs) return;
-          let line = gs.handicap != null ? Number(gs.handicap) : null;
-          if (line === null && row.title) {
-            const m = row.title.match(/([+-]?\d+\.?\d*)/);
-            if (m) line = parseFloat(m[1]);
-          }
-          processRow(gs.selections, line);
-        });
-      } else if (Array.isArray(market.selections)) {
-        const line = market.handicap != null ? Number(market.handicap) : null;
-        processRow(market.selections, line);
-      }
     };
 
     // ── Iterar mercados ──────────────────────────────────────────
@@ -220,16 +178,6 @@
           odds.shotsUnderOdds,
         );
       }
-
-      // ── Hándicap ──
-      else if (mType === "FHMR" || mType === "AHRF" || mType === "FHH1") {
-        extractHandicap(
-          m,
-          odds.handicapLines,
-          odds.handicapHomeOdds,
-          odds.handicapAwayOdds,
-        );
-      }
     });
 
     // ── Eliminar líneas O/U sin contraparte ─────────────────────
@@ -280,7 +228,6 @@
     odds.cardsLines.sort((a, b) => a - b);
     odds.shotsLines.sort((a, b) => a - b);
     odds.shotsTargetLines.sort((a, b) => a - b);
-    odds.handicapLines.sort((a, b) => a - b);
 
     return odds;
   }
@@ -316,9 +263,6 @@
       shots_target_lines: parsed.shotsTargetLines.map(String),
       shots_target_over: parsed.shotsTargetOverOdds,
       shots_target_under: parsed.shotsTargetUnderOdds,
-      handicap_lines: parsed.handicapLines.map(String),
-      handicap_home: parsed.handicapHomeOdds,
-      handicap_away: parsed.handicapAwayOdds,
     };
   }
 

@@ -179,10 +179,14 @@ def list_sports() -> list[SportOut]:
 # Prefill endpoint — used by browser extensions to push form data
 # ---------------------------------------------------------------------------
 # In-memory slot: stores the last payload pushed by the extension.
-# Only one active slot is kept; it is cleared once the UI consumes it.
-_prefill_store: dict | None = None
-# Separate slot for Betano odds (merged into stats prefill on GET)
-_prefill_odds_store: dict | None = None
+# Solo un slot activo a la vez; se limpia una vez el frontend lo consume.
+prefill_store: dict | None = None
+
+# Acumulador por casa de apuestas: {"betano": {...normalizado...}, "betplay": {...}}
+prefill_odds_store: dict[str, dict] = {}
+
+# A qué partido pertenece lo acumulado actualmente (para resetear si cambia el partido)
+prefill_odds_match: tuple | None = None
 
 
 
@@ -191,57 +195,10 @@ async def push_prefill(payload: dict) -> dict:
     """
     Browser extension pushes a (partial) form payload here.
     The Sherlock dashboard polls this endpoint and auto-fills the form.
-
-    Expected body: any subset of the standard football payload.
-    Example minimal body for football:
-    {
-      "sport": "football",
-      "home": { "name": "Real Madrid", "goals_per_game": 2.1, ... },
-      "away": { "name": "Barcelona", ... },
-      "odds": { "home": 1.85, "draw": 3.50, "away": 4.20 }
-    }
     """
-    global _prefill_store
-    _prefill_store = payload
+    global prefill_store
+    prefill_store = payload
     return {"status": "ok", "message": "Datos recibidos. Sherlock los cargará en el formulario."}
-
-
-@app.get("/api/v1/prefill", tags=["Prefill"])
-async def consume_prefill() -> dict:
-    """
-    Dashboard polls this to detect pending prefill data.
-    Returns the payload once and clears the slot (single-use).
-    If there are pending Betano odds, they are merged into the payload.
-    """
-    global _prefill_store, _prefill_odds_store
-    if _prefill_store is None and _prefill_odds_store is None:
-        return {"pending": False}
-        
-    if _prefill_store is not None:
-        data = dict(_prefill_store)
-        _prefill_store = None
-        # Merge pending Betano odds if present
-        if _prefill_odds_store is not None:
-            data["odds"] = _prefill_odds_store
-            _prefill_odds_store = None
-        return {"pending": True, "payload": data}
-        
-    # Only odds are pending
-    data = {
-        "odds": _prefill_odds_store,
-        "sport": "football"
-    }
-    
-    # Extract team names so the UI banner and form inputs can display them
-    home_name = _prefill_odds_store.get("home_team")
-    away_name = _prefill_odds_store.get("away_team")
-    if home_name:
-        data["home"] = {"name": home_name}
-    if away_name:
-        data["away"] = {"name": away_name}
-        
-    _prefill_odds_store = None
-    return {"pending": True, "payload": data}
 
 
 # ---------------------------------------------------------------------------
@@ -259,7 +216,6 @@ def _normalize_betano_odds(raw: dict) -> dict:
       cards_over  → cardsOverOdds      cards_under  → cardsUnderOdds
       shots_over  → shotsOverOdds      shots_under  → shotsUnderOdds
       shots_target_over → shotsTargetOverOdds  shots_target_under → shotsTargetUnderOdds
-      handicap_home → handicapHomeOdds handicap_away → handicapAwayOdds
       goals_lines  → goals_lines  (kept as-is for FootballOdds model)
     """
     def _to_float_dict(d) -> dict:
@@ -290,7 +246,6 @@ def _normalize_betano_odds(raw: dict) -> dict:
         "cards_lines":       _to_float_list(raw.get("cards_lines", [])),
         "shots_lines":       _to_float_list(raw.get("shots_lines", [])),
         "shots_target_lines": _to_float_list(raw.get("shots_target_lines", [])),
-        "handicap_lines":    _to_float_list(raw.get("handicap_lines", [])),
         # Odds dicts — converted to camelCase for comparator.js
         "goalsOverOdds":          _to_float_dict(raw.get("goals_over", {})),
         "goalsUnderOdds":         _to_float_dict(raw.get("goals_under", {})),
@@ -301,9 +256,7 @@ def _normalize_betano_odds(raw: dict) -> dict:
         "shotsOverOdds":          _to_float_dict(raw.get("shots_over", {})),
         "shotsUnderOdds":         _to_float_dict(raw.get("shots_under", {})),
         "shotsTargetOverOdds":    _to_float_dict(raw.get("shots_target_over", {})),
-        "shotsTargetUnderOdds":   _to_float_dict(raw.get("shots_target_under", {})),
-        "handicapHomeOdds":       _to_float_dict(raw.get("handicap_home", {})),
-        "handicapAwayOdds":       _to_float_dict(raw.get("handicap_away", {})),
+        "shotsTargetUnderOdds":   _to_float_dict(raw.get("shots_target_under", {}))
     }
 
     # Derive over_25 / under_25 / over_15 / under_15 for legacy fields
@@ -316,49 +269,273 @@ def _normalize_betano_odds(raw: dict) -> dict:
 
     return normalized
 
+def _merge_best_odds(sources: dict) -> dict:
+    """
+    Recorre las cuotas crudas de todas las casas (formato de
+    prefill_odds_store / _normalize_betano_odds) y calcula, para cada
+    campo de FootballOdds, la MEJOR cuota disponible entre casas.
+
+    Devuelve:
+      - "odds_update": dict con nombres de campo de FootballOdds (snake_case)
+         listo para pasar a `FootballOdds.model_copy(update=...)`.
+      - "bookmaker_map": mismo shape, pero con el nombre de la casa que
+         ofrece esa mejor cuota (para anotar los picks después).
+    """
+    if not sources:
+        return {"odds_update": {}, "bookmaker_map": {}}
+
+    simple_field_map = {
+        "home": "home", "draw": "draw", "away": "away",
+        "btts_yes": "btts_yes", "btts_no": "btts_no",
+        "dc_1x": "dc_1x", "dc_x2": "dc_x2", "dc_12": "dc_12",
+    }
+    line_dict_field_map = [
+        ("goalsOverOdds", "goals_over_odds"), ("goalsUnderOdds", "goals_under_odds"),
+        ("cornersOverOdds", "corners_over_odds"), ("cornersUnderOdds", "corners_under_odds"),
+        ("cardsOverOdds", "cards_over_odds"), ("cardsUnderOdds", "cards_under_odds"),
+        ("shotsOverOdds", "shots_over_odds"), ("shotsUnderOdds", "shots_under_odds"),
+        ("shotsTargetOverOdds", "shots_target_over_odds"), ("shotsTargetUnderOdds", "shots_target_under_odds")
+    ]
+    lines_field_map = [
+        "goals_lines", "corners_lines", "cards_lines",
+        "shots_lines", "shots_target_lines"
+    ]
+
+    best: dict = {}
+    bookmaker_map: dict = {}
+
+    for bookmaker_key, odds in sources.items():
+        if not isinstance(odds, dict):
+            continue
+        bk_label = odds.get("bookmaker") or bookmaker_key
+
+        for src_key, dst_key in simple_field_map.items():
+            val = odds.get(src_key)
+            if val is None:
+                continue
+            current = best.get(dst_key)
+            if current is None or val > current:
+                best[dst_key] = val
+                bookmaker_map[dst_key] = bk_label
+
+        for src_key, dst_key in line_dict_field_map:
+            incoming = odds.get(src_key) or {}
+            if not incoming:
+                continue
+            best.setdefault(dst_key, {})
+            bookmaker_map.setdefault(dst_key, {})
+            for line_str, val in incoming.items():
+                if val is None:
+                    continue
+                current = best[dst_key].get(line_str)
+                if current is None or val > current:
+                    best[dst_key][line_str] = val
+                    bookmaker_map[dst_key][line_str] = bk_label
+
+        for lines_key in lines_field_map:
+            incoming_lines = odds.get(lines_key) or []
+            if not incoming_lines:
+                continue
+            merged = set(best.get(lines_key, [])) | set(incoming_lines)
+            best[lines_key] = sorted(merged)
+
+    return {"odds_update": best, "bookmaker_map": bookmaker_map}
+
+def _annotate_best_bookmaker(res: CompareResponse, bookmaker_map: dict, home_name: str, away_name: str) -> None:
+    """
+    Anota en cada ValueIndicator.bookmaker qué casa ofreció la mejor cuota
+    para ese mercado, haciendo match por el texto exacto del `selection`
+    que genera el motor de picks. Es puramente informativo: si no encuentra
+    coincidencia para algún pick, simplemente deja `bookmaker=None` (nunca
+    lanza error ni bloquea el análisis).
+    """
+    label_to_bookmaker: dict[str, str] = {}
+
+    simple_labels = {
+        "home": "Local",
+        "draw": "Empate",
+        "away": "Visitante",
+        "btts_yes": "BTTS Sí",
+        "btts_no": "BTTS No",
+        "dc_1x": "Doble Oportunidad 1X",
+        "dc_x2": "Doble Oportunidad X2",
+        "dc_12": "Doble Oportunidad 12",
+    }
+    for field, label in simple_labels.items():
+        bk = bookmaker_map.get(field)
+        if isinstance(bk, str):
+            label_to_bookmaker[label] = bk
+
+    line_labels = [
+        ("goals_over_odds", "Over {line} Goles"), ("goals_under_odds", "Under {line} Goles"),
+        ("corners_over_odds", "Over {line} Corners"), ("corners_under_odds", "Under {line} Corners"),
+        ("cards_over_odds", "Over {line} Tarjetas"), ("cards_under_odds", "Under {line} Tarjetas"),
+        ("shots_over_odds", "Over {line} Tiros"), ("shots_under_odds", "Under {line} Tiros"),
+        ("shots_target_over_odds", "Over {line} Tiros a Pta"), ("shots_target_under_odds", "Under {line} Tiros a Pta"),
+    ]
+    for field, template in line_labels:
+        line_map = bookmaker_map.get(field) or {}
+        if not isinstance(line_map, dict):
+            continue
+        for line_str, bk in line_map.items():
+            try:
+                line_fmt = f"{float(line_str):g}"
+            except (TypeError, ValueError):
+                line_fmt = line_str
+            label_to_bookmaker[template.format(line=line_fmt)] = bk
+
+    for v in res.values:
+        bk = label_to_bookmaker.get(v.selection)
+        if bk:
+            v.bookmaker = bk
+
+def _apply_line_shopping(request: FootballCompareRequest) -> tuple[FootballCompareRequest, dict]:
+    """
+    Si el payload trae odds.sources (cuotas crudas de varias casas), calcula
+    la mejor cuota por mercado y devuelve una COPIA de `request` con esas
+    cuotas ya fusionadas, junto con el mapa de qué casa dio cada mejor cuota
+    (para anotar los picks después con _annotate_best_bookmaker).
+
+    Si no hay sources (o ninguna covers ningún mercado), devuelve el request
+    tal cual y un bookmaker_map vacío — no rompe el flujo normal.
+    """
+    if not request.odds.sources:
+        return request, {}
+
+    merged = _merge_best_odds(request.odds.sources)
+    odds_update = merged["odds_update"]
+    bookmaker_map = merged["bookmaker_map"]
+
+    if not odds_update:
+        return request, {}
+
+    new_odds = request.odds.model_copy(update=odds_update)
+    new_request = request.model_copy(update={"odds": new_odds})
+    return new_request, bookmaker_map
 
 @app.post("/api/v1/prefill/odds", tags=["Prefill"])
 async def push_prefill_odds(payload: dict) -> dict:
     """
-    Watson extension (betano_content.js) pushes Betano odds here separately
-    from the SofaScore stats payload.
-
-    Expected body (wrapped by betano_content.js):
-    {
-      "odds": {
-        "bookmaker": "betano",
-        "home_team": "Mushuc Runa",
-        "away_team": "Orense",
-        "home": 2.02, "draw": 3.4, "away": 3.6,
-        "btts_yes": 1.82, "btts_no": 1.9,
-        "dc_1x": 1.31, "dc_x2": 1.82, "dc_12": 1.3,
-        "goals_lines": ["1.5","2.5"], "goals_over": {"1.5":...,"2.5":...}, ...
-      }
-    }
+    Recibe cuotas de una o varias casas de apuestas para el mismo partido.
+    Las cuotas se ACUMULAN por casa: un nuevo envío nunca borra las cuotas
+    de una casa distinta ya guardadas, salvo que el partido haya cambiado.
     """
-    global _prefill_odds_store
-    raw_odds = payload.get("odds", payload)  # unwrap if wrapped in {"odds": ...}
-    _prefill_odds_store = _normalize_betano_odds(raw_odds)
+    global prefill_odds_store, prefill_odds_match
+
+    if "odds_by_bookmaker" in payload and isinstance(payload["odds_by_bookmaker"], dict):
+        raw_map = payload["odds_by_bookmaker"]
+        incoming: dict[str, dict] = {}
+        match_key = None
+
+        for bookmaker_key, raw_odds in raw_map.items():
+            normalized = _normalize_betano_odds(raw_odds)
+            normalized["bookmaker"] = normalized.get("bookmaker") or bookmaker_key
+            incoming[bookmaker_key] = normalized
+            if match_key is None:
+                match_key = (normalized.get("home_team"), normalized.get("away_team"))
+
+        # Si el partido cambió, se reinicia el acumulador (no mezclar
+        # cuotas de partidos distintos). Si es el mismo partido (o el
+        # acumulador estaba vacío), se FUSIONA con lo que ya había.
+        if prefill_odds_match is not None and prefill_odds_match != match_key:
+            prefill_odds_store = {}
+
+        prefill_odds_store.update(incoming)  # ← merge, ya no reemplaza todo
+        prefill_odds_match = match_key
+
+        return {
+            "status": "ok",
+            "message": (
+                f"Cuotas recibidas de {len(incoming)} casa(s) "
+                f"({', '.join(incoming.keys())}). "
+                f"Total acumulado: {len(prefill_odds_store)} casa(s)."
+            ),
+            "bookmakers_received": list(incoming.keys()),
+            "bookmakers_accumulated": list(prefill_odds_store.keys()),
+        }
+
+    # ── Legacy: una sola casa por llamada (ya fusionaba correctamente) ──
+    raw_odds = payload.get("odds", payload)
+    normalized = _normalize_betano_odds(raw_odds)
+    bookmaker = normalized.get("bookmaker") or "unknown"
+
+    match_key = (normalized.get("home_team"), normalized.get("away_team"))
+    if prefill_odds_match is not None and prefill_odds_match != match_key:
+        prefill_odds_store = {}
+
+    prefill_odds_match = match_key
+    prefill_odds_store[bookmaker] = normalized
+
     return {
         "status": "ok",
-        "message": "Cuotas Betano recibidas. Se inyectarán en el comparador.",
+        "message": (
+            f"Cuotas de {bookmaker} recibidas "
+            f"({len(prefill_odds_store)} casa(s) acumulada(s))."
+        ),
         "home_team": raw_odds.get("home_team"),
         "away_team": raw_odds.get("away_team"),
+        "bookmakers_received": list(prefill_odds_store.keys()),
     }
+
+
+@app.get("/api/v1/prefill", tags=["Prefill"])
+async def consume_prefill() -> dict:
+    global prefill_store, prefill_odds_store, prefill_odds_match
+
+    try:
+        if prefill_store is None and not prefill_odds_store:
+            return {"pending": False}
+
+        if prefill_store is not None:
+            data = dict(prefill_store)
+            prefill_store = None
+
+            if prefill_odds_store:
+                data["odds"] = {"sources": prefill_odds_store}
+            prefill_odds_store = {}
+            prefill_odds_match = None       
+
+            return {"pending": True, "payload": data}
+
+        sources = prefill_odds_store or {}
+        data = {"odds": {"sources": sources}, "sport": "football"}
+
+        any_entry = next(iter(sources.values()), {}) if sources else {}
+        home_name = any_entry.get("home_team") if isinstance(any_entry, dict) else None
+        away_name = any_entry.get("away_team") if isinstance(any_entry, dict) else None
+        if home_name:
+            data["home"] = {"name": home_name}
+        if away_name:
+            data["away"] = {"name": away_name}
+
+        prefill_odds_store = {}
+        prefill_odds_match = None
+        return {"pending": True, "payload": data}
+
+    except Exception as e:
+        # NUNCA dejar que esto se propague como 500: eso mata el polling
+        # del dashboard (ver bug de checkPrefill en el frontend).
+        print(f"[Sherlock] Error en consume_prefill: {e}")
+        # Limpiamos el estado para no quedar atascados repitiendo el error
+        prefill_store = None
+        prefill_odds_store = {}
+        prefill_odds_match = None
+        return {"pending": False}
 
 
 @app.get("/api/v1/prefill/odds", tags=["Prefill"])
 async def consume_prefill_odds() -> dict:
     """
-    Returns the last Betano odds payload (standalone, without stats).
-    Single-use: clears the slot after returning.
+    Devuelve el detalle crudo de cuotas por casa acumulado hasta ahora.
+    Single-use: limpia el slot después de devolverlo.
     """
-    global _prefill_odds_store
-    if _prefill_odds_store is None:
+    global prefill_odds_store, prefill_odds_match
+    if not prefill_odds_store:
         return {"pending": False}
-    data = _prefill_odds_store
-    _prefill_odds_store = None
-    return {"pending": True, "odds": data}
+    sources = prefill_odds_store
+    prefill_odds_store = {}
+    prefill_odds_match = None
+    return {"pending": True, "odds": {"sources": sources}}
 
 
 # ---------------------------------------------------------------------------
@@ -917,7 +1094,17 @@ async def _enrich_with_results(sport: Sport, home: str, away: str, response: Com
 
 @app.post("/api/v1/compare/football", response_model=CompareResponse, tags=["Comparator"])
 async def compare_teams_football(request: FootballCompareRequest, db: Session = Depends(get_db)) -> CompareResponse:
+    """
+    Analiza el partido y calcula TODOS los picks, aplicando line shopping
+    automático si el payload trae cuotas de varias casas (odds.sources).
+    """
+    request, bookmaker_map = _apply_line_shopping(request)
+
     res = await compare_football(request)
+
+    if bookmaker_map:
+        _annotate_best_bookmaker(res, bookmaker_map, request.home.name, request.away.name)
+
     return await _enrich_with_results(Sport.FOOTBALL, request.home.name, request.away.name, res, db)
 
 
@@ -1493,7 +1680,8 @@ async def recalculate_all_accuracy(
 ):
     """
     Re-analiza todos los registros del historial:
-    1. Vuelve a calcular los picks usando el payload original (motor de predicción).
+    1. Vuelve a calcular los picks usando el payload original (motor de predicción),
+       aplicando line shopping si el payload trae odds.sources de varias casas.
     2. Actualiza los snapshots y los picks calculados.
     3. Si hay resultados finales, recalcula el acierto (accuracy_percentage).
     """
@@ -1510,18 +1698,19 @@ async def recalculate_all_accuracy(
     history_list = db.query(AnalysisHistory).all()
     count = 0
     updated_accuracy_count = 0
-    
+
     for history in history_list:
         try:
             if not history.payload:
                 continue
-                
+
             # Skip matches with no calculated picks (picks_calculados is empty/null/[])
             if not history.picks_calculados or not str(history.picks_calculados).strip() or str(history.picks_calculados).strip() == "[]":
                 continue
-                
-            # Cargar el payload original
+
+            # Cargar el payload original (incluye odds.sources si se guardó)
             payload_dict = json.loads(str(history.payload))
+            local_payload = dict(payload_dict)
             sport = history.sport
 
             # Determine correct use_general_stats based on parameter and threshold
@@ -1535,25 +1724,34 @@ async def recalculate_all_accuracy(
                         target_use_gen = True
                 else:
                     target_use_gen = True
-            
+
             local_payload["use_general_stats"] = target_use_gen
-            
+
             # Re-ejecutar el motor de comparación según el deporte
             new_response = None
+            bookmaker_map: dict = {}
             try:
                 if sport == Sport.FOOTBALL:
                     req = FootballCompareRequest(**local_payload)
+                    # ── Line shopping: si el payload guardó cuotas de varias
+                    # casas (odds.sources), recalcula la mejor cuota por
+                    # mercado ANTES de correr el motor, igual que en el
+                    # análisis original. ──
+                    req, bookmaker_map = _apply_line_shopping(req)
                     new_response = await compare_football(req, db=db)
             except Exception as comp_err:
                 print(f"Error en motor de comparación para {history.id} ({sport}): {comp_err}")
                 continue
-                
+
             if new_response:
+                if bookmaker_map:
+                    _annotate_best_bookmaker(new_response, bookmaker_map, req.home.name, req.away.name)
+
                 # 1. Actualizar picks_calculados y snapshot
                 picks = [v.model_dump() if hasattr(v, 'model_dump') else v.__dict__ for v in new_response.values]
-                history.picks_calculados = json.dumps(picks)  # type: ignore[bad-assignment]
-                history.compare_response_snapshot = json.dumps(new_response.model_dump() if hasattr(new_response, 'model_dump') else new_response.__dict__)  # type: ignore[bad-assignment]
-                
+                history.picks_calculados = json.dumps(picks)
+                history.compare_response_snapshot = json.dumps(new_response.model_dump() if hasattr(new_response, 'model_dump') else new_response.__dict__)
+
                 # 2. Si tiene resultados, recalcular acierto
                 if history.final_score_home is not None:
                     results_dict = {
@@ -1570,30 +1768,30 @@ async def recalculate_all_accuracy(
                         "final_shots_on_target_home": history.final_shots_on_target_home,
                         "final_shots_on_target_away": history.final_shots_on_target_away,
                     }
-                    
+
                     hits = 0
                     total = 0
-                    
+
                     for pick in picks:
                         if pick.get("is_blacklisted"):
                             continue
                         # Filtro: Solo picks de valor cuentan para la estadística oficial
                         if not (pick.get("is_publishable", pick.get("is_value", False))):
                             continue
-                            
+
                         success = _check_pick_success(pick, results_dict)
                         if success is not None and success != "void":
                             total += 1
                             if _is_pick_hit(success):
                                 hits += 1
-                    
+
                     if total > 0:
-                        history.accuracy_percentage = (hits / total) * 100  # type: ignore[bad-assignment]
+                        history.accuracy_percentage = (hits / total) * 100
                     else:
-                        history.accuracy_percentage = None  # type: ignore[bad-assignment]
-                
+                        history.accuracy_percentage = None
+
                     updated_accuracy_count += 1
-                
+
                 count += 1
         except Exception as e:
             print(f"Error re-analizando registro {history.id}: {e}")
@@ -1759,9 +1957,6 @@ def get_market_name(selection: str) -> str:
         return "Tiros: Over/Under"
     if any(k in s for k in ["over", "under", "más de", "menos de"]) and any(k in s for k in ["gol", "goles", "goal", "goals"]):
         return "Goles: Over/Under"
-    if any(k in s for k in ["handicap", "hándicap", "asian", "ah "]):
-        return "Hándicap"
-
     if any(k in s for k in ["double chance", "doble oportunidad", "1x", "x2", "12"]):
         return "Doble Oportunidad"
     if s in ["local", "visitante", "empate", "home", "away", "draw"] or any(k in s for k in ["moneyline", "ml", "1x2", "ganador"]):
@@ -2904,25 +3099,6 @@ def _check_projected_line_success(p_line: dict, res: dict, home_name: str, away_
                 return total_g > line_val
         return None
 
-    # Handicap checking
-    elif t == "handicap_prob":
-        if h_score is not None and a_score is not None:
-            p_line["actual_val"] = f"{h_score}-{a_score}"
-            if home_name.lower() in label:
-                diff = h_score + val - a_score
-                return diff > 0
-            elif away_name.lower() in label:
-                diff = a_score + val - h_score
-                return diff > 0
-        return None
-
-    elif t == "handicap" and "spread" in label:
-        if h_score is not None and a_score is not None:
-            p_line["actual_val"] = f"{h_score}-{a_score}"
-            diff = h_score + val - a_score
-            return diff > 0
-        return None
-
     # Stats check - all stats are maximums (at_most)
     actual = None
 
@@ -3095,31 +3271,6 @@ def _resolve_ou_outcome(total: float | None, line: float | None, side: str) -> P
     return _combine_split_outcomes(results)
 
 
-def _resolve_ah_outcome(h_score: int, a_score: int, line: float, for_home: bool) -> PickOutcome:
-    """Resuelve Asian Handicap para local o visitante."""
-    margin_base = (h_score - a_score) if for_home else (a_score - h_score)
-    lines = split_asian_line(line)
-    results = []
-    for l in lines:
-        margin = margin_base + l
-        if margin > 0:
-            results.append("win")
-        elif margin < 0:
-            results.append("loss")
-        else:
-            results.append("push")
-    return _combine_split_outcomes(results)
-
-
-def _parse_ah_line(selection: str) -> float | None:
-    """Extrae la línea de un pick AH, p.ej. 'AH -0.50 Real Madrid'."""
-    import re
-    match = re.search(r"ah\s*([+-]?\d+(?:\.\d+)?)", selection, re.IGNORECASE)
-    if match:
-        return float(match.group(1))
-    return None
-
-
 def _calculate_pick_profit(outcome: PickOutcome, odds: float) -> float:
     """Calcula beneficio en unidades con stake plano de 1u."""
     if outcome is None:
@@ -3148,18 +3299,6 @@ def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
     
     h_score = res.get("final_score_home")
     a_score = res.get("final_score_away")
-
-    # Asian Handicap
-    if sel.startswith("ah ") or " ah " in sel:
-        if h_score is not None and a_score is not None:
-            line = _parse_ah_line(sel)
-            if line is not None:
-                home_name = (pick.get("home_team") or "").lower()
-                for_home = "local" in sel or "home" in sel or (home_name and home_name in sel)
-                if not for_home and not ("visitante" in sel or "away" in sel):
-                    # Inferir lado por el signo si no hay pista explícita
-                    for_home = line <= 0
-                return _resolve_ah_outcome(h_score, a_score, line, for_home=for_home)
     
     # 1X2 / Winner (Common for all sports)
     if sel == "local":

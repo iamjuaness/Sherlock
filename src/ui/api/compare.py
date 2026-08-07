@@ -329,15 +329,22 @@ class FootballOdds(BaseModel):
     shots_target_lines: list[float]                = [7.5, 8.5, 9.5, 10.5]
     shots_target_over_odds:  Dict[str, Optional[float]] = Field(default_factory=dict)
     shots_target_under_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
-    
-    handicap_lines:     list[float]                = []
-    handicap_home_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
-    handicap_away_odds: Dict[str, Optional[float]] = Field(default_factory=dict)
 
     bookmaker: str = ""
 
+    # ── NUEVO: cuotas crudas por casa, para line shopping automático ──
+    # Shape: { "betano": {...normalizado...}, "betplay": {...} }
+    # Si viene poblado, compare_teams_football() en main.py calcula la
+    # mejor cuota por mercado/línea ANTES de correr el motor de picks.
+    sources: Optional[Dict[str, dict]] = Field(default=None)
+
 
 class FootballCompareRequest(BaseModel):
+    model_config = ConfigDict(
+        alias_generator=to_camel,
+        populate_by_name=True,
+    )
+
     home: FootballTeamStats
     away: FootballTeamStats
     odds: FootballOdds
@@ -497,12 +504,12 @@ class ValueIndicator(BaseModel):
     data_quality_score:     Optional[float] = None
 
     # League Reliability
-    league_reliability_score:   Optional[float] = None  # 0–1, penaliza ligas con peor rendimiento
-    league_reliability_penalty: Optional[float] = None  # EV ajustado por confiabilidad de liga
+    league_reliability_score:   Optional[float] = None
+    league_reliability_penalty: Optional[float] = None
 
     # Clasificación de Mercado
-    market_confidence_tier: Optional[str]   = None 
-    market_variance_tier:   Optional[str]   = None 
+    market_confidence_tier: Optional[str]   = None
+    market_variance_tier:   Optional[str]   = None
 
     # Flags de Decisión
     is_publishable:        bool = False
@@ -517,6 +524,9 @@ class ValueIndicator(BaseModel):
     is_blacklisted:        bool = False
     stake_units:           Optional[float] = None
 
+    # ── NUEVO: line shopping — casa que ofrece la mejor cuota para este pick ──
+    bookmaker: Optional[str] = None
+
 
 class StatComparison(BaseModel):
     label:      str
@@ -528,7 +538,7 @@ class StatComparison(BaseModel):
 class ProjectedLine(BaseModel):
     label: str
     value: float
-    type: str  # 'goals', 'corners', 'cards', 'handicap', 'btts'
+    type: str  # 'goals', 'corners', 'cards','btts'
     prob: Optional[float] = None # Probabilidad (0-100)
 
 
@@ -702,7 +712,7 @@ FULL_WEIGHT_PICKS = 60.0
 MARKET_REF_ACCURACY = {
     "corners": 0.52, "cards": 0.52, "shots": 0.52, "shots_target": 0.52, "fouls": 0.52,
     "goals": 0.55, "btts": 0.54, "result": 0.55,
-    "handicap": 0.54, "double_chance": 0.57, "generic": 0.53,
+    "double_chance": 0.57, "generic": 0.53,
 }
 
 
@@ -754,7 +764,7 @@ def apply_calibration(raw_prob: float, odds: float, market_family: str,
 
 def get_market_confidence_tier(selection: str) -> str:
     family = _market_family(selection)
-    if family in {"result", "btts", "goals", "handicap", "double_chance"}:
+    if family in {"result", "btts", "goals", "double_chance"}:
         return "segmented"
     if family == "corners":
         return "hybrid"
@@ -764,8 +774,6 @@ def get_market_variance_tier(selection: str) -> str:
     family = _market_family(selection)
     if family in {"result", "btts", "goals"}:
         return "low"
-    if family in {"handicap", "double_chance"}:
-        return "medium"
     return "high"
 
 def get_data_quality_score(selection: str, h: FootballTeamStats, a: FootballTeamStats) -> float:
@@ -899,7 +907,6 @@ def _calculate_stake_units(
         "btts": 1.00,
         "goals": 0.90,
         "double_chance": 0.85,
-        "handicap": 0.75,
         "corners": 0.60,
         "cards": 0.55,
         "shots": 0.60,
@@ -1058,7 +1065,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             MARKET_REF = {
                 "corners": 0.52, "cards": 0.52, "shots": 0.52, "shots_target": 0.52, "fouls": 0.52,
                 "goals": 0.55,   "btts": 0.54,  "result": 0.55,
-                "handicap": 0.54, "double_chance": 0.57, "generic": 0.53,
+                "double_chance": 0.57, "generic": 0.53,
             }
             ref_rate = MARKET_REF.get(family, 0.53)
             # Penalizar mercados que rinden peor que la referencia en esta liga
@@ -1654,48 +1661,6 @@ def split_asian_line(line: float) -> list[float]:
         return [line - 0.25, line + 0.25]
     return [line]
 
-def settle_handicap_outcome(home_goals: int, away_goals: int, line: float) -> str:
-    """Liquida una línea simple de handicap."""
-    margin = home_goals - away_goals + line
-    if margin > 0: return "win"
-    if margin < 0: return "loss"
-    return "push"
-
-def _compute_asian_handicap_probs(
-    h_lam: float,
-    a_lam: float,
-    line: float,
-    max_goals: int = 10
-) -> dict[str, float]:
-    matrix, _ = _dc_score_matrix(h_lam, a_lam, max_goals=max_goals)
-    lines = split_asian_line(line)
-
-    p_w, p_hw, p_p, p_hl, p_l = 0.0, 0.0, 0.0, 0.0, 0.0
-
-    for i in range(max_goals + 1):
-        for j in range(max_goals + 1):
-            p = matrix[i][j]
-            res = [settle_handicap_outcome(i, j, l) for l in lines]
-
-            if len(res) == 1:
-                if res[0] == "win": p_w += p
-                elif res[0] == "loss": p_l += p
-                else: p_p += p
-            else:
-                if res[0] == "win" and res[1] == "win": p_w += p
-                elif (res[0] == "win" and res[1] == "push") or (res[0] == "push" and res[1] == "win"): p_hw += p
-                elif res[0] == "push" and res[1] == "push": p_p += p
-                elif (res[0] == "loss" and res[1] == "push") or (res[0] == "push" and res[1] == "loss"): p_hl += p
-                elif res[0] == "loss" and res[1] == "loss": p_l += p
-
-    return {
-        "win": p_w * 100.0,
-        "half_win": p_hw * 100.0,
-        "push": p_p * 100.0,
-        "half_loss": p_hl * 100.0,
-        "loss": p_l * 100.0
-    }
-
 
 # ───────────────────────────────────────────────────────────────
 # Dixon-Coles helpers
@@ -2086,9 +2051,6 @@ def _market_family(text: str) -> str:
         return "shots"
     if any(k in s for k in ["goal", "goals", "goles"]):
         return "goals"
-    if any(k in s for k in ["handicap", "hándicap", "asian"]):
-        return "handicap"
-
     if any(k in s for k in ["double chance", "doble oportunidad", "1x", "x2", "12"]):
         return "double_chance"
     if any(k in s for k in ["moneyline", "ml", "1x2", "ganador", "local", "visitante", "empate"]):
@@ -2186,7 +2148,7 @@ def is_market_blacklisted_for_league(league_name: str, selection: str, category:
 def _market_risk_weight(selection: str) -> int:
     family = _market_family(selection)
 
-    if family in {"result", "handicap"}:
+    if family in {"result"}:
         return -14
     if family == "double_chance":
         return -7
@@ -2727,7 +2689,7 @@ def _canonical_pick_signature(selection: str) -> tuple[str, str, float | None]:
 
 
 def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["ValueIndicator"]:
-    DEDUP_FAMILIES = {"goals", "corners", "cards", "shots", "shots_target", "handicap"}
+    DEDUP_FAMILIES = {"goals", "corners", "cards", "shots", "shots_target"}
     
     # NUEVO: Límite máximo de picks por familia de mercado
     MAX_PICKS_PER_FAMILY = {
@@ -2735,8 +2697,7 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
         "corners": 1,
         "cards": 0,
         "shots": 2,
-        "shots_target": 2,
-        "handicap": 1,
+        "shots_target": 2
     }
 
     groups: dict[tuple[str, str], list["ValueIndicator"]] = {}
@@ -2909,7 +2870,7 @@ def _rate_pick_quality(v: ValueIndicator, h, a, proj: list[ProjectedLine]) -> tu
         elif delta >= 3:  score += 2
 
     # Penalizaciones por inconsistencia
-    if family in {"result", "btts", "handicap"} and odds >= 2.25 and prob < 64:
+    if family in {"result", "btts"} and odds >= 2.25 and prob < 64:
         score -= 8
 
     if family in {"goals", "cards", "corners", "shots"} and odds >= 2.60 and prob < 60:
@@ -3527,37 +3488,6 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         market_configs.append((f"Over {line} Tiros a Pta",  over_odds,  p_over,  _or_shots_t, p_push))
         market_configs.append((f"Under {line} Tiros a Pta", under_odds, p_under, _or_shots_t, p_push))
 
-    # ── Handicap Asiático ──────────────────────────────────────
-    proj_hcap = h_lam - a_lam
-    projected_lines.append(ProjectedLine(
-        label="Handicap (Local)", value=round(proj_hcap, 2),
-        type="handicap", prob=None
-    ))
-
-    hcap_lines_to_calc = req.odds.handicap_lines if req.odds.handicap_lines else [-1.5, -1.25, -1.0, -0.75, -0.5, -0.25, 0.0, 0.25, 0.5, 0.75, 1.0, 1.25, 1.5]
-    
-    for hc_line in hcap_lines_to_calc:
-        probs = _compute_asian_handicap_probs(h_lam, a_lam, hc_line)
-        p_home_covers = probs["win"] + probs["half_win"]
-        p_away_covers = probs["loss"] + probs["half_loss"]
-        
-        projected_lines.append(ProjectedLine(
-            label=f"AH {hc_line:+.2f} {h.name}",
-            value=hc_line,
-            type="handicap_prob",
-            prob=round(p_home_covers, 1),
-            push_prob=round(probs["push"], 1)
-        ))
-
-        h_odds = req.odds.handicap_home_odds.get(str(hc_line))
-        a_odds = req.odds.handicap_away_odds.get(str(hc_line))
-        _or_hc = _overround(h_odds, a_odds)
-
-        if h_odds:
-            market_configs.append((f"AH {hc_line:+.2f} {h.name}", h_odds, p_home_covers, _or_hc, probs["push"]))
-        if a_odds:
-            market_configs.append((f"AH {(-hc_line):+.2f} {a.name}", a_odds, p_away_covers, _or_hc, probs["push"]))
-
     # ── Values: Cálculo masivo ─────────────
     values = [_vi(sel, odds, mp, ornd, pushp) for sel, odds, mp, ornd, pushp in market_configs]
 
@@ -3636,7 +3566,6 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         f"Goles por equipo: {h.name} {h_goals_lam:.2f} | {a.name} {a_goals_lam:.2f}\\n"
         f"Corners por equipo: {h.name} {h_corners_lam:.1f} | {a.name} {a_corners_lam:.1f}\\n"
         f"Tarjetas por equipo: {h.name} {h_cards_lam:.1f} | {a.name} {a_cards_lam:.1f}\\n"
-        f"Handicap Estimado: {h.name} {proj_hcap:+.2f}\\n"
         + (f"✅ Value detectado en: {', '.join(v.selection for v in vp)}"
            if vp else "⚖️ Sin value claro en las cuotas actuales.")
     )
