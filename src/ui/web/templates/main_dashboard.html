@@ -376,6 +376,16 @@
               🐕 Picks Underdog
             </button>
             <a
+              href="/rules"
+              class="tab-link"
+              style="
+                text-decoration: none;
+                display: inline-flex;
+                align-items: center;
+              "
+              >📐 Reglas de Picks</a
+            >
+            <a
               href="/leagues"
               class="tab-link"
               style="
@@ -427,16 +437,12 @@
             >
             <select
               id="dashboard-date-range"
-              class="tab-link"
+              class="input"
               style="
-                background: var(--bg-card);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                padding: 0.35rem 1.5rem 0.35rem 0.75rem;
-                border-radius: 6px;
+                width: auto;
+                padding: 0.25rem 2rem 0.25rem 0.75rem;
+                height: 36px;
                 font-size: 0.85rem;
-                cursor: pointer;
-                color: var(--text-primary);
-                outline: none;
               "
               onchange="handleDashboardDateRangeChange()"
             >

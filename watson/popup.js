@@ -493,7 +493,7 @@ async function showMatchInfo(eventId, url) {
       els.eventId.textContent = `Event ID: ${eventId}`;
       // Mostrar marcador actual si está disponible
       if (event.homeScore) {
-        els.goalsScored.textContent = `${event.homeScore.current || 0} - ${event.awayScore.current || 0}`;
+        els.goalsScored.textContent = `${event.homeScore.normaltime || 0} - ${event.awayScore.normaltime || 0}`;
         els.goalsScoredTeam.textContent = "Marcador actual";
       }
     } else {
@@ -990,8 +990,8 @@ function renderMatchesList(events, filter) {
     const date = e.start_timestamp ? formatTimestamp(e.start_timestamp) : "?";
     const home = e.homeTeam?.shortName || e.homeTeam?.name || "Local";
     const away = e.awayTeam?.shortName || e.awayTeam?.name || "Visitante";
-    const hs = e.homeScore?.current ?? "?";
-    const as = e.awayScore?.current ?? "?";
+    const hs = e.homeScore?.normaltime ?? "?";
+    const as = e.awayScore?.normaltime ?? "?";
     const season = e._seasonYear || "";
     return `
       <div class="match-row">

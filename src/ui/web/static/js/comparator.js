@@ -115,7 +115,7 @@ let loadedHistoryEntryDate = null;
 const BOOKMAKER_LABELS = {
   betano: "Betano",
   betplay: "BetPlay",
-  manual: "Cuotas Guardadas",
+  manual: "Cuotas Guardadas - Betano",
   best_of: "Mejor Cuota",
 };
 
@@ -1453,7 +1453,10 @@ async function loadHistoryEntry(id) {
       }
 
       populateAppForm(entry.sport, payload);
-      toggleHistoryModal();
+      const modal = document.getElementById("history-modal");
+      if (modal && modal.style.display === "flex") {
+        toggleHistoryModal();
+      }
 
       if (entry.compare_response_snapshot && !entry.needs_reanalysis) {
         const snapshot =
@@ -1536,7 +1539,10 @@ async function reanalyzeHistoryEntry(id) {
           ? JSON.parse(entry.payload)
           : entry.payload;
       populateAppForm(entry.sport, payload);
-      toggleHistoryModal();
+      const modal = document.getElementById("history-modal");
+      if (modal && modal.style.display === "flex") {
+        toggleHistoryModal();
+      }
 
       // Trigger specific sport analysis
       if (entry.sport === "football") analyzeFootball();
@@ -2369,11 +2375,72 @@ function populateAppForm(sport, data) {
       setSafeValue("fb-referee-red", data.league_stats.referee_avg_red);
     }
 
+    function populateOddsTable(tbodyId, lines, overOdds, underOdds) {
+      const tb = document.getElementById(tbodyId);
+      if (!tb) return;
+      tb.innerHTML = "";
+      (lines || []).forEach(line => {
+        const lineStr = String(line);
+        const overVal = overOdds ? overOdds[lineStr] : "";
+        const underVal = underOdds ? underOdds[lineStr] : "";
+        
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${lineStr}" placeholder="Ej: 5.5" /></td>
+          <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${overVal ?? ''}" placeholder="" /></td>
+          <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${underVal ?? ''}" placeholder="" /></td>
+        `;
+        tb.appendChild(tr);
+      });
+    }
+
     // Restaurar cuotas para: (a) permitir recalcular con line shopping si hay
     // varias casas, y (b) siempre mostrar al menos una card visual de cuotas,
     // sea el partido nuevo (con sources) o viejo (cuotas planas sin sources).
     if (odds) {
       console.debug("[Sherlock] populateAppForm → odds recibido:", odds);
+
+      // Populate simple inputs in form
+      setSafeValue("fb-odds-home", odds.home);
+      setSafeValue("fb-odds-draw", odds.draw);
+      setSafeValue("fb-odds-away", odds.away);
+      setSafeValue("fb-odds-btts-yes", odds.btts_yes);
+      setSafeValue("fb-odds-btts-no", odds.btts_no);
+      setSafeValue("fb-odds-dc-1x", odds.dc_1x);
+      setSafeValue("fb-odds-dc-x2", odds.dc_x2);
+      setSafeValue("fb-odds-dc-12", odds.dc_12);
+
+      // Populate odds tables in form (checking both camelCase and snake_case properties)
+      populateOddsTable(
+        "goals-odds-tbody",
+        odds.goals_lines || odds.goalsLines,
+        odds.goalsOverOdds || odds.goals_over_odds,
+        odds.goalsUnderOdds || odds.goals_under_odds
+      );
+      populateOddsTable(
+        "corners-odds-tbody",
+        odds.corners_lines || odds.cornersLines,
+        odds.cornersOverOdds || odds.corners_over_odds,
+        odds.cornersUnderOdds || odds.corners_under_odds
+      );
+      populateOddsTable(
+        "cards-odds-tbody",
+        odds.cards_lines || odds.cardsLines,
+        odds.cardsOverOdds || odds.cards_over_odds,
+        odds.cardsUnderOdds || odds.cards_under_odds
+      );
+      populateOddsTable(
+        "shots-odds-tbody",
+        odds.shots_lines || odds.shotsLines,
+        odds.shotsOverOdds || odds.shots_over_odds,
+        odds.shotsUnderOdds || odds.shots_under_odds
+      );
+      populateOddsTable(
+        "shots-target-odds-tbody",
+        odds.shots_target_lines || odds.shotsTargetLines,
+        odds.shotsTargetOverOdds || odds.shots_target_over_odds,
+        odds.shotsTargetUnderOdds || odds.shots_target_under_odds
+      );
 
       if (odds.sources && Object.keys(odds.sources).length > 0) {
         window.currentPrefillSources = odds.sources;
@@ -2390,21 +2457,21 @@ function populateAppForm(sport, data) {
             dc_1x: odds.dc_1x,
             dc_x2: odds.dc_x2,
             dc_12: odds.dc_12,
-            goals_lines: (odds.goals_lines || []).map(Number),
-            goalsOverOdds: odds.goalsOverOdds || {},
-            goalsUnderOdds: odds.goalsUnderOdds || {},
-            corners_lines: (odds.corners_lines || []).map(Number),
-            cornersOverOdds: odds.cornersOverOdds || {},
-            cornersUnderOdds: odds.cornersUnderOdds || {},
-            cards_lines: (odds.cards_lines || []).map(Number),
-            cardsOverOdds: odds.cardsOverOdds || {},
-            cardsUnderOdds: odds.cardsUnderOdds || {},
-            shots_lines: (odds.shots_lines || []).map(Number),
-            shotsOverOdds: odds.shotsOverOdds || {},
-            shotsUnderOdds: odds.shotsUnderOdds || {},
-            shots_target_lines: (odds.shots_target_lines || []).map(Number),
-            shotsTargetOverOdds: odds.shotsTargetOverOdds || {},
-            shotsTargetUnderOdds: odds.shotsTargetUnderOdds || {},
+            goals_lines: (odds.goals_lines || odds.goalsLines || []).map(Number),
+            goalsOverOdds: odds.goalsOverOdds || odds.goals_over_odds || {},
+            goalsUnderOdds: odds.goalsUnderOdds || odds.goals_under_odds || {},
+            corners_lines: (odds.corners_lines || odds.cornersLines || []).map(Number),
+            cornersOverOdds: odds.cornersOverOdds || odds.corners_over_odds || {},
+            cornersUnderOdds: odds.cornersUnderOdds || odds.corners_under_odds || {},
+            cards_lines: (odds.cards_lines || odds.cardsLines || []).map(Number),
+            cardsOverOdds: odds.cardsOverOdds || odds.cards_over_odds || {},
+            cardsUnderOdds: odds.cardsUnderOdds || odds.cards_under_odds || {},
+            shots_lines: (odds.shots_lines || odds.shotsLines || []).map(Number),
+            shotsOverOdds: odds.shotsOverOdds || odds.shots_over_odds || {},
+            shotsUnderOdds: odds.shotsUnderOdds || odds.shots_under_odds || {},
+            shots_target_lines: (odds.shots_target_lines || odds.shotsTargetLines || []).map(Number),
+            shotsTargetOverOdds: odds.shotsTargetOverOdds || odds.shots_target_over_odds || {},
+            shotsTargetUnderOdds: odds.shotsTargetUnderOdds || odds.shots_target_under_odds || {},
           },
         };
         window.currentPrefillSources = syntheticSources;
@@ -2945,6 +3012,7 @@ function buildFootballPayloadFromForm() {
     competition,
     league_stats,
     use_general_stats,
+    matchDate: loadedHistoryEntryDate,
   };
 }
 

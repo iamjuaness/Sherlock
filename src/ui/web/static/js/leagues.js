@@ -700,7 +700,7 @@ function updateStatsSummaryForFiltered(filteredMatches) {
       : [];
     const visiblePicks = rawPicks.filter(
       (p) =>
-        !p.is_blacklisted && (p.is_publishable || p.is_underdog || p.is_value),
+        !p.is_blacklisted && !p.is_rule_blocked && (p.is_publishable || p.is_underdog || p.is_value),
     );
 
     const hasResult = match.final_score_home != null;

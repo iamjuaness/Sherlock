@@ -157,8 +157,8 @@ async function handleExtractResults(data) {
 
     // 4. Parse results
     const payload = {
-      final_score_home: eventData.event.homeScore?.current || 0,
-      final_score_away: eventData.event.awayScore?.current || 0,
+      final_score_home: eventData.event.homeScore?.normaltime || 0,
+      final_score_away: eventData.event.awayScore?.normaltime || 0,
     };
 
     if (statisticsData && statisticsData.statistics) {
@@ -1090,8 +1090,8 @@ function buildHistoricalPayload(
     tournament_id: event.tournament?.id || null,
     tournament_name: tournamentName || event.tournament?.name || null,
     competition: tournamentName || event.tournament?.name || null,
-    final_score_home: event.homeScore?.current ?? 0,
-    final_score_away: event.awayScore?.current ?? 0,
+    final_score_home: event.homeScore?.normaltime ?? 0,
+    final_score_away: event.awayScore?.normaltime ?? 0,
   };
 
   if (statisticsData && statisticsData.statistics) {

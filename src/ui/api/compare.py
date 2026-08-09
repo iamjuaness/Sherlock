@@ -9,6 +9,7 @@ from pydantic.alias_generators import to_camel
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from typing import Optional, Any, Dict, List
+from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
 
 load_dotenv()
 
@@ -527,6 +528,9 @@ class ValueIndicator(BaseModel):
     # ── NUEVO: line shopping — casa que ofrece la mejor cuota para este pick ──
     bookmaker: Optional[str] = None
 
+    # ── Reglas de pick: True si fue bloqueado por una regla estadística ──
+    is_rule_blocked: bool = False
+
 
 class StatComparison(BaseModel):
     label:      str
@@ -1021,7 +1025,7 @@ def _calculate_kelly_fraction(
 
     return round(min(f_fractional, hard_cap), 4)
 
-def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None):
+def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None, odds_obj: Any = None):
     if odds is None or odds <= 1.0:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
 
@@ -1155,7 +1159,18 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         v.quality_score = score_pick_quality(v)
         v.display_score = _calculate_display_score(v)
         v.is_underdog = is_underdog_pick(v)
+
+    # Check stat-based pick rules (if enabled)
+    if not v.is_blacklisted and h is not None and a is not None:
+        rule_blocked = is_pick_blocked_by_rules(sel, h, a, odds_obj)
+        if rule_blocked:
+            v.is_rule_blocked = True
+            v.is_publishable = False
+            v.is_value = False
+            v.quality_score = -1
+
     return v
+
 
 
 # ───────────────────────────────────────────────────────────────
@@ -2083,6 +2098,32 @@ def _market_side(text: str) -> str:
             return side
     
     return "none"
+
+
+def is_pick_blocked_by_rules(selection: str, home: "FootballTeamStats", away: "FootballTeamStats", odds_obj: Any = None) -> bool:
+    """
+    Checks pick_rules.json using the unified pick_rules_engine.
+    If a rule is enabled for this pick's market family/side and any of its
+    conditions is NOT met, returns True (the pick should be blocked).
+    If all conditions pass, or no matching enabled rule exists, returns False.
+    """
+    try:
+        rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "pick_rules.json")
+        if not os.path.exists(rules_path):
+            return False
+        import json
+        with open(rules_path, "r", encoding="utf-8") as f:
+            rules = json.load(f)
+        if not isinstance(rules, list):
+            return False
+
+        stat_source = StatSource.from_team_stats(home, away, odds_obj)
+        blocked, _ = evaluate_pick_rules(selection, stat_source, rules)
+        return blocked
+    except Exception as e:
+        import logging
+        logging.getLogger("sherlock.pick_rules").error(f"Error evaluating pick rules in compare: {e}")
+        return False
 
 
 def is_market_blacklisted_for_league(league_name: str, selection: str, category: str | None = None) -> bool:
@@ -3364,7 +3405,7 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         return sum(raw) * 100.0 if raw else 100.0
 
     def _vi(sel: str, odds: float | None, modelp: float, overround: float = 100.0, push_p: float = 0.0) -> ValueIndicator:
-        return _value_indicator(sel, odds, modelp, h=h, a=a, overround=overround, push_p=push_p, league=req.league_stats, league_name=req.competition)
+        return _value_indicator(sel, odds, modelp, h=h, a=a, overround=overround, push_p=push_p, league=req.league_stats, league_name=req.competition, odds_obj=req.odds)
 
     _or_1x2  = _overround(req.odds.home, req.odds.draw, req.odds.away)
     _or_btts = _overround(req.odds.btts_yes, req.odds.btts_no)
