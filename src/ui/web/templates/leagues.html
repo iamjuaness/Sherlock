@@ -351,8 +351,19 @@
         <!-- Columna Derecha: Detalles de la Liga seleccionada -->
         <div id="league-detail-section">
           <div class="detail-header">
-            <div class="detail-header__title" id="selected-league-name">
-              Selecciona una liga
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
+              <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+                <div class="detail-header__title" id="selected-league-name" style="margin-bottom: 0;">
+                  Selecciona una liga
+                </div>
+                <label id="league-profit-toggle-card" style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); cursor: pointer; user-select: none; background: rgba(255,255,255,0.03); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);">
+                  <input type="checkbox" id="chk-league-profitability" style="width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer;" onchange="toggleActiveLeagueProfitability(this.checked)" />
+                  <span>Contar en Rentabilidad</span>
+                </label>
+              </div>
+              <button id="btn-delete-league" onclick="deleteCurrentLeague()" style="background: rgba(239, 68, 68, 0.15); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); padding: 0.4rem 0.85rem; border-radius: 6px; font-weight: 600; font-size: 0.8rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.3)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.15)'">
+                🗑️ Eliminar competición
+              </button>
             </div>
             <div class="league-stats-grid">
               <div class="league-stat-box">

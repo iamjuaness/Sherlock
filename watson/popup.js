@@ -808,8 +808,11 @@ async function initHistoricalSection(tournamentId, url) {
 
   // Intentar obtener nombre de la competición
   try {
-    const info = await fetchSofaScoreAPI(`/api/v1/tournament/${tournamentId}`);
-    _currentTournamentName = info?.tournament?.name || "Competición";
+    const info = await fetchSofaScoreAPI(
+      `/api/v1/unique-tournament/${tournamentId}`,
+    );
+    _currentTournamentName =
+      info?.uniqueTournament?.name || info?.tournament?.name || "Competición";
     els.competitionName.textContent = _currentTournamentName;
   } catch (e) {
     _currentTournamentName = "Competición";

@@ -819,7 +819,11 @@ async function handleExtractHistoricalData(data) {
   if (!seasonsData || !seasonsData.seasons)
     throw new Error("No se pudieron obtener las temporadas");
 
+  // Las temporadas vienen de más reciente (índice 0) a más antigua.
+  // Detectar la temporada actual (la primera de la lista) para tratarla
+  // distinto si no tiene partidos finalizados aún.
   const seasons = seasonsData.seasons;
+  const currentSeasonId = seasons.length > 0 ? String(seasons[0].id) : null;
   const pendingCount = seasons.filter(
     (s) => !completedSeasons.has(String(s.id)),
   ).length;
@@ -905,7 +909,7 @@ async function handleExtractHistoricalData(data) {
         });
 
         page++;
-        await delay(600);
+        await delay(1500);
       } catch (e) {
         console.warn(`Error en pág ${page} de temp ${season.year}:`, e.message);
         hasNextPage = false;
@@ -913,6 +917,22 @@ async function handleExtractHistoricalData(data) {
     }
 
     if (seasonEvents.length === 0 && !_historicalCancelled) {
+      const isCurrentSeason = String(season.id) === currentSeasonId;
+
+      if (isCurrentSeason) {
+        // La temporada en curso puede no tener partidos finalizados todavía.
+        // Se omite sin detener el proceso para continuar con el historial.
+        sendProgress({
+          phase: "season_skipped",
+          seasonIndex: si,
+          totalSeasons: seasons.length,
+          seasonYear: season.year,
+          message: `⏭ T.${season.year} (temporada actual) sin partidos finalizados aún — continuando con historial`,
+        });
+        continue;
+      }
+
+      // Para temporadas pasadas: sin datos = llegamos al límite del historial.
       const lastSavedSeason = si > 0 ? seasons[si - 1].year : null;
       const msg = lastSavedSeason
         ? `⛔ T.${season.year} sin datos — proceso detenido. Última temporada guardada: T.${lastSavedSeason}`
@@ -973,20 +993,9 @@ async function handleExtractHistoricalData(data) {
         }
         await delay(300);
 
-        let incidentsData = null;
-        try {
-          incidentsData = await fetchSofaScore(
-            `/api/v1/event/${event.id}/incidents`,
-          );
-        } catch (e) {
-          /* sin incidentes */
-        }
-        await delay(300);
-
         const payload = buildHistoricalPayload(
           event,
           statisticsData,
-          incidentsData,
           tournamentName,
         );
 
@@ -1009,6 +1018,8 @@ async function handleExtractHistoricalData(data) {
         seasonErrors++;
         console.warn(`Error procesando evento ${event.id}:`, e.message);
       }
+
+      await delay(1000);
     }
 
     const seasonWasCancelled =
@@ -1017,18 +1028,12 @@ async function handleExtractHistoricalData(data) {
       enrichedSeasonEvents.length > 0;
 
     if (!_historicalCancelled || seasonWasCancelled === false) {
-      const existingIds = new Set(allEvents.map((e) => e.id));
-      const newEvents = enrichedSeasonEvents.filter(
-        (e) => !existingIds.has(e.id),
-      );
-      allEvents.push(...newEvents);
-
-      const seasonStorageKey = `tournament_${tournamentId}_season_${season.id}_events`;
+      // Agregamos la temporada actual a la lista de "Completadas"
       completedSeasons.add(seasonKey);
 
+      // SOLO guardamos la lista de IDs de temporadas completadas y la fecha.
+      // Ya no guardamos el JSON de los partidos porque eso lo maneja FastAPI.
       await chrome.storage.local.set({
-        [seasonStorageKey]: enrichedSeasonEvents,
-        [masterKey]: allEvents,
         [completedKey]: Array.from(completedSeasons),
         [`tournament_${tournamentId}_lastSync`]: Date.now(),
       });
@@ -1043,12 +1048,11 @@ async function handleExtractHistoricalData(data) {
         totalSaved,
         totalErrors,
         message: `✅ T.${season.year} guardada: ${seasonSaved} OK, ${seasonErrors} errores`,
-        allEvents,
       });
     }
 
     if (!_historicalCancelled && si < seasons.length - 1) {
-      await delay(1000);
+      await delay(3000);
     }
   }
 
@@ -1065,7 +1069,6 @@ async function handleExtractHistoricalData(data) {
     totalSaved,
     totalErrors,
     lastSavedSeasonYear: lastCompletedSeason?.year ?? null,
-    allEvents,
   });
 
   return { success: true, totalProcessed, totalSaved, totalErrors };

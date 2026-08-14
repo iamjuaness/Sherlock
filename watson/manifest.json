@@ -3,7 +3,7 @@
   "name": "Watson - SofaScore to Sherlock",
   "version": "2.0.0",
   "description": "Extrae estadísticas de SofaScore y las envía a Sherlock Analytics",
-  "permissions": ["activeTab", "storage", "tabs", "scripting"],
+  "permissions": ["activeTab", "storage", "tabs", "scripting", "sidePanel"],
   "host_permissions": [
     "https://www.sofascore.com/*",
     "https://www.betano.co/*",
@@ -32,6 +32,9 @@
       "48": "icons/icon48.png",
       "128": "icons/icon128.png"
     }
+  },
+  "side_panel": {
+    "default_path": "popup.html"
   },
   "options_page": "options.html",
   "icons": {

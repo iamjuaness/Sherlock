@@ -258,6 +258,157 @@ class StatSource:
         return max(diff_home, diff_away)
 
 
+DEFAULT_CORRELATION_RULES: dict[str, Any] = {
+    "max_picks_per_event": 2,
+    "max_stake_per_event": 3.5,
+    "exclusive_groups": [
+        ["goals", "btts"],
+        ["shots", "shots_target"]
+    ]
+}
+
+
+def load_pick_rules_data(rules_path: Optional[str] = None) -> tuple[list[dict], dict]:
+    """
+    Carga el archivo pick_rules.json y devuelve tuple (rules_list, correlation_rules_dict).
+    Soporta formato antiguo (lista de reglas) y formato nuevo (objeto con "rules" y "correlation_rules").
+    """
+    import os
+    import json
+
+    if rules_path is None:
+        rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "pick_rules.json")
+
+    rules_list: list[dict] = []
+    correlation_rules: dict = dict(DEFAULT_CORRELATION_RULES)
+
+    if os.path.exists(rules_path):
+        try:
+            with open(rules_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, list):
+                    rules_list = data
+                elif isinstance(data, dict):
+                    rules_list = data.get("rules", [])
+                    corr = data.get("correlation_rules")
+                    if isinstance(corr, dict):
+                        correlation_rules.update(corr)
+        except Exception as e:
+            logger.error("Error loading pick rules from %s: %s", rules_path, e)
+
+    return rules_list, correlation_rules
+
+
+def resolve_match_picks_correlation(
+    candidates: list[Any],
+    correlation_rules: Optional[dict] = None,
+    max_picks_per_match: Optional[int] = None,
+    max_total_stake: Optional[float] = None,
+) -> list[Any]:
+    """
+    Filtra picks correlacionados en un mismo evento garantizando
+    la máxima expectativa matemática sin sobreexposición de varianza.
+
+    Soporta tanto objetos (ValueIndicator) como diccionarios.
+    """
+    if not candidates:
+        return candidates
+
+    if correlation_rules is None:
+        _, correlation_rules = load_pick_rules_data()
+
+    max_picks = max_picks_per_match if max_picks_per_match is not None else correlation_rules.get("max_picks_per_event", 2)
+    max_stake = max_total_stake if max_total_stake is not None else correlation_rules.get("max_stake_per_event", 3.5)
+    exclusive_groups = correlation_rules.get("exclusive_groups", [["goals", "btts"], ["shots", "shots_target"]])
+
+    def get_attr(item: Any, key: str, default: Any = None) -> Any:
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
+
+    def set_attr(item: Any, key: str, value: Any) -> None:
+        if isinstance(item, dict):
+            item[key] = value
+        else:
+            setattr(item, key, value)
+
+    # 1. Filtrar solo picks activos/publicables que no estén ya bloqueados por blacklist o reglas
+    def is_candidate_valid(v: Any) -> bool:
+        pub = get_attr(v, "is_publishable", False)
+        und = get_attr(v, "is_underdog", False)
+        val = get_attr(v, "is_value", False)
+        bl = get_attr(v, "is_blacklisted", False)
+        rb = get_attr(v, "is_rule_blocked", False)
+        return (pub or und or val) and not bl and not rb
+
+    valid_picks = [v for v in candidates if is_candidate_valid(v)]
+    if len(valid_picks) <= 1 and max_picks >= 1:
+        return candidates
+
+    # 2. Ordenar por mérito (Display Score, Edge EV, Edge, Quality Score descendente)
+    def pick_merit_score(x: Any) -> tuple[float, float, float, float]:
+        ds = get_attr(x, "display_score") or 0.0
+        ev = get_attr(x, "edge_ev") or 0.0
+        edge = get_attr(x, "edge") or 0.0
+        qs = get_attr(x, "quality_score") or 0.0
+        return (float(ds), float(ev), float(edge), float(qs))
+
+    valid_picks.sort(key=pick_merit_score, reverse=True)
+
+    selected_families: set[str] = set()
+    accepted_picks: list[Any] = []
+    current_stake: float = 0.0
+
+    for pick in valid_picks:
+        selection = get_attr(pick, "selection", "")
+        family = market_family(selection)
+        stake = float(get_attr(pick, "stake_units") or 1.0)
+
+        # Regla A: Máximo 1 pick por familia (evita Over 2.5 + Over 3.5 en el mismo mercado)
+        if family in selected_families:
+            set_attr(pick, "is_publishable", False)
+            set_attr(pick, "is_underdog", False)
+            set_attr(pick, "is_value", False)
+            set_attr(pick, "correlation_blocked", True)
+            set_attr(pick, "rule_blocked_reason", f"Correlación: Ya existe un pick en la familia '{family}'")
+            continue
+
+        # Regla B: Correlación cruzada entre familias de grupos excluyentes
+        is_excluded = False
+        excluded_reason = ""
+        for group in exclusive_groups:
+            if family in group:
+                conflicting = [f for f in group if f != family and f in selected_families]
+                if conflicting:
+                    is_excluded = True
+                    excluded_reason = f"Correlación: Exclusión mutua entre '{family}' y '{conflicting[0]}'"
+                    break
+
+        if is_excluded:
+            set_attr(pick, "is_publishable", False)
+            set_attr(pick, "is_underdog", False)
+            set_attr(pick, "is_value", False)
+            set_attr(pick, "correlation_blocked", True)
+            set_attr(pick, "rule_blocked_reason", excluded_reason)
+            continue
+
+        # Regla C: Control de límite de picks y stake total por evento
+        if len(accepted_picks) >= max_picks or (current_stake + stake) > max_stake:
+            set_attr(pick, "is_publishable", False)
+            set_attr(pick, "is_underdog", False)
+            set_attr(pick, "is_value", False)
+            set_attr(pick, "correlation_blocked", True)
+            set_attr(pick, "rule_blocked_reason", f"Límite de evento alcanzado (picks: {len(accepted_picks)}/{max_picks}, stake: {current_stake + stake:.1f}/{max_stake})")
+            continue
+
+        # Pick aceptado
+        selected_families.add(family)
+        accepted_picks.append(pick)
+        current_stake += stake
+
+    return candidates
+
+
 # ─────────────────────────────────────────────────────────────
 # Evaluador principal
 # ─────────────────────────────────────────────────────────────

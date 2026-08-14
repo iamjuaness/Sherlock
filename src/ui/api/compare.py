@@ -4,12 +4,14 @@ from enum import Enum
 from typing import Optional
 import os, math
 import re
+import numpy as np
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic.alias_generators import to_camel
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from typing import Optional, Any, Dict, List
 from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
+from src.core.glm_model import get_predictor as _get_glm_predictor
 
 load_dotenv()
 
@@ -592,6 +594,101 @@ def _poisson_pmf(lam: float, k: int) -> float:
     return (lam ** k * math.exp(-lam)) / math.factorial(k)
 
 
+def _neg_bin_pmf(mu: float, r: float, k: int) -> float:
+    if mu <= 0:
+        return 1.0 if k == 0 else 0.0
+    p = r / (r + mu)
+    try:
+        log_pmf = (math.lgamma(k + r) - math.lgamma(r) - math.lgamma(k + 1) + 
+                   r * math.log(p) + k * math.log(1.0 - p))
+        return math.exp(log_pmf)
+    except (ValueError, OverflowError):
+        return 0.0
+
+
+def _estimate_league_variance(competition_name: str, metric: str, mean_val: float, db: Any = None) -> float:
+    fano_factors = {
+        "goals": 1.15,
+        "corners": 1.40,
+        "cards": 1.80,
+        "shots": 2.50,
+        "shots_target": 2.00,
+        "fouls": 1.50,
+        "offsides": 1.30,
+    }
+    fallback_fano = fano_factors.get(metric, 1.20)
+    
+    if db is not None:
+        try:
+            from src.core.domain import Competition, Match, StatLineTeam
+            comp = db.query(Competition).filter(Competition.name == competition_name).first()
+            if comp:
+                stats = db.query(StatLineTeam).join(Match).filter(Match.competition_id == comp.id).all()
+                if len(stats) >= 10:
+                    vals = []
+                    if metric == "goals":
+                        matches = db.query(Match).filter(Match.competition_id == comp.id, Match.status == "finished").all()
+                        for m in matches:
+                            if m.home_score is not None: vals.append(m.home_score)
+                            if m.away_score is not None: vals.append(m.away_score)
+                    elif metric == "corners":
+                        vals = [s.corners for s in stats if s.corners is not None]
+                    elif metric == "cards":
+                        vals = [(s.yellow_cards or 0) + (s.red_cards or 0) * 2.0 for s in stats if s.yellow_cards is not None or s.red_cards is not None]
+                    elif metric == "shots":
+                        vals = [s.shots for s in stats if s.shots is not None]
+                    elif metric == "shots_target":
+                        vals = [s.shots_on_target for s in stats if s.shots_on_target is not None]
+                    elif metric == "fouls":
+                        vals = [s.fouls for s in stats if s.fouls is not None]
+                    elif metric == "offsides":
+                        vals = [s.offsides for s in stats if s.offsides is not None]
+                        
+                    if len(vals) >= 10:
+                        avg = sum(vals) / len(vals)
+                        var = sum((x - avg) ** 2 for x in vals) / (len(vals) - 1)
+                        if var > 0.05:
+                            return var
+        except Exception as e:
+            pass
+            
+    return mean_val * fallback_fano
+
+
+def _nbinom_pmf(k: int, mu: float, r: float) -> float:
+    if mu <= 0 or r <= 0:
+        return 1.0 if k == 0 else 0.0
+    p = r / (r + mu)
+    try:
+        log_pmf = (math.lgamma(k + r) - math.lgamma(r) - math.lgamma(k + 1) + 
+                   r * math.log(p) + k * math.log(1.0 - p))
+        return math.exp(log_pmf)
+    except (ValueError, OverflowError):
+        return 0.0
+
+def get_nbinom_under_over_prob(line: float, h_mu: float, h_r: float, a_mu: float, a_r: float, num_sim: int = 10000) -> tuple[float, float, float]:
+    h_p = h_r / (h_r + h_mu)
+    h_sims = np.random.negative_binomial(h_r, h_p, num_sim)
+    
+    a_p = a_r / (a_r + a_mu)
+    a_sims = np.random.negative_binomial(a_r, a_p, num_sim)
+    
+    total_sims = h_sims + a_sims
+    
+    p_under = np.mean(total_sims < line)
+    p_push = np.mean(total_sims == line) if line.is_integer() else 0.0
+    p_over = 1.0 - float(p_under) - float(p_push)
+    
+    return float(p_under) * 100.0, float(p_over) * 100.0, float(p_push) * 100.0
+
+def get_dispersion_r(mu: float, variance: float) -> float:
+    if variance <= mu * 1.01:
+        return 100.0
+    r = (mu ** 2) / (variance - mu)
+    return max(0.1, min(r, 100.0))
+
+
+
 def _fair_probabilities_from_odds(*odds_list: float | None) -> list[float]:
     valid_odds = [o for o in odds_list if o and o > 1.0]
     if not valid_odds:
@@ -722,49 +819,27 @@ MARKET_REF_ACCURACY = {
 
 def apply_calibration(raw_prob: float, odds: float, market_family: str,
                        league: "LeagueStats | None" = None) -> float:
-    p = raw_prob / 100.0
+    """
+    Calibración isotónica del modelo GLM (sklearn.IsotonicRegression).
 
-    b = 0.85
-    if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
-        b = 0.75
-    elif market_family == "double_chance":
-        if p >= 0.80:
-            b = 0.78
-        elif p >= 0.70:
-            b = 0.74
-        else:
-            b = 0.70
+    Cuando el calibrador isotónico está entrenado (>= 20 muestras por mercado),
+    ajusta la probabilidad cruda del modelo para alinearla con la frecuencia
+    real histórica. Sin entrenamiento suficiente, devuelve raw_prob sin cambios
+    (fallback transparente).
 
-    # ── NUEVO: corrección empírica de b usando el historial real de la liga ──
-    if league is not None and getattr(league, "market_hit_rates", None):
-        rate = league.market_hit_rates.get(market_family)
-        picks = getattr(league, "historical_picks", 0)
-        if rate is not None and picks >= MIN_PICKS_FOR_EMPIRICAL:
-            ref_rate = MARKET_REF_ACCURACY.get(market_family, 0.53)
-            deviation = rate - ref_rate  # negativo => el modelo acierta menos de lo esperado
-            bayes_weight = min(1.0, picks / FULL_WEIGHT_PICKS)
-            # Si acierta menos que la referencia -> subimos b (más conservador, más cerca de 0.5)
-            # Si acierta más -> bajamos b (confiamos más en la probabilidad cruda del modelo)
-            b_adjustment = -deviation * 0.6 * bayes_weight
-            b = max(0.55, min(0.95, b + b_adjustment))
-
-    calibrated = (p ** b) / (p ** b + (1 - p) ** b)
-
-    if market_family == "double_chance":
-        if p >= 0.80:
-            shrinkage = 0.07
-        elif p >= 0.70:
-            shrinkage = 0.09
-        else:
-            shrinkage = 0.12
-        calibrated = (1.0 - shrinkage) * calibrated + shrinkage * 0.50
-
-    if odds > 3.0:
-        calibrated *= 0.90
-    elif odds > 2.0:
-        calibrated *= 0.94
-
-    return calibrated * 100.0
+    IMPORTANTE: esta función NUNCA modifica la probabilidad por LRS ni por
+    confianza de liga. La probabilidad debe permanecer pura e inmutable;
+    el ajuste por LRS se aplica únicamente al kelly_multiplier en _value_indicator.
+    """
+    try:
+        predictor = _get_glm_predictor()
+        # Convertir prob 0-100 a 0-1 para el calibrador, luego de vuelta
+        p_unit = raw_prob / 100.0 if raw_prob > 1.0 else raw_prob
+        p_calibrated = predictor.calibrate(p_unit, market_family)
+        # Devolver en la misma escala que entró
+        return p_calibrated * 100.0 if raw_prob > 1.0 else p_calibrated
+    except Exception:
+        return raw_prob
 
 def get_market_confidence_tier(selection: str) -> str:
     family = _market_family(selection)
@@ -896,85 +971,25 @@ def _calculate_stake_units(
     lrs: float | None,
 ) -> float:
     """
-    Sistema de stake multi-capa con protección de bankroll.
-    Devuelve unidades de 0.5 a 5.0. 0.0 = no jugable.
+    Stake puro basado en Kelly fraccional con caps de seguridad.
+    Devuelve unidades de 0.5 a 3.0. 0.0 = no jugable.
     """
     if edge_ev <= 0.03 or kelly_fraction <= 0:
         return 0.0
 
-    # 1. Base desde Kelly fraccional (convertido a unidades aproximadas)
-    base = kelly_fraction * 100.0  # ej: 0.125 Kelly ~ 12.5% -> 1.25u base
+    # Kelly fraccional directo: 0.25 Kelly -> 1u por cada 4% del bankroll
+    raw_stake = kelly_fraction * 100.0
 
-    # 2. Factor de Mercado (varianza inherente)
-    MARKET_FACTOR = {
-        "result": 1.00,
-        "btts": 1.00,
-        "goals": 0.90,
-        "double_chance": 0.85,
-        "corners": 0.60,
-        "cards": 0.55,
-        "shots": 0.60,
-        "shots_target": 0.60,
-        "fouls": 0.50,
-    }
-    mkt_factor = MARKET_FACTOR.get(market_family, 0.70)
-
-    # 3. Factor de Odds (volatilidad implícita)
-    if odds < 1.60: odds_factor = 1.00
-    elif odds < 2.00: odds_factor = 0.95
-    elif odds < 2.50: odds_factor = 0.88
-    elif odds < 3.50: odds_factor = 0.75
-    else: odds_factor = 0.60
-
-    # 4. Factor de Liga (LRS gradual, no binario)
-    league_factor = 1.0
-    if lrs is not None:
-        if lrs >= 0.85:
-            league_factor = 1.00
-        elif lrs >= 0.70:
-            league_factor = 0.85
-        elif lrs >= 0.60:
-            league_factor = 0.70
-        elif lrs >= 0.45:
-            league_factor = 0.50
-        else:
-            league_factor = 0.30
-
-    # 5. Factor de Edge (calidad del valor detectado)
-    if edge_ev >= 0.12:
-        edge_factor = 1.00
-    elif edge_ev >= 0.08:
-        edge_factor = 0.90
-    elif edge_ev >= 0.05:
-        edge_factor = 0.80
-    elif edge_ev >= 0.03:
-        edge_factor = 0.65
-    else:
-        edge_factor = 0.00
-
-    if edge_ev > 0.20:
-        edge_factor *= 0.60  
-
-    # 6. (Opcional) Reducción progresiva si la liga está en racha negativa
-    # Si tienes acceso a league.historical_profit:
-    # if league_stats.historical_profit < -5.0:
-    #     stake *= 0.7
-    # elif league_stats.historical_profit < -10.0:
-    #     stake *= 0.5
-
-    # Combinación multiplicativa
-    raw_stake = base * mkt_factor * odds_factor * league_factor * edge_factor
-
-    # Límites duros de seguridad
+    # Cap según calidad de la liga
     hard_max = 3.0
     if (lrs or 0.5) < 0.50:
         hard_max = 2.0
     if odds >= 3.0:
         hard_max = min(hard_max, 2.0)
     if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
-        hard_max = min(hard_max, 3.0)
+        hard_max = min(hard_max, 2.5)
 
-    # Redondeo inteligente: 0.5 en 0.5
+    # Redondeo inteligente: múltiplos de 0.5
     stake = round(max(0.5, min(hard_max, raw_stake)) * 2) / 2
 
     return stake if stake >= 1.0 else 0.0
@@ -1049,44 +1064,19 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         ev = ev * p_resolve
         edge_prob = edge_prob * p_resolve
 
-    # ── League Reliability Score ──────────────────────────────────
-    # Calcula o reutiliza el LRS y aplica una penalización al EV efectivo.
-    # Ligas con baja confiabilidad (score < 0.6) comprimen el EV hacia cero.
+    # ── League Reliability Score ──────────────────────────────────────────
+    # El LRS mide la confiabilidad histórica de la liga.
+    # PRINCIPIO CLAVE (planning.txt): el modelo estadístico es inmutable.
+    # Su única misión es dar la probabilidad del evento. El LRS NO debe
+    # contaminar la calibrated_prob; solo ajusta el kelly_multiplier (staking).
     if league is not None:
         lrs = league.league_reliability_score if league.league_reliability_score > 0.0 else _compute_league_reliability_score(league)
     else:
-        lrs = 0.2  # sin datos de liga = sin penalización
+        lrs = 0.7  # sin datos de liga = confianza moderada
 
-    # ── Penalización por mercado específico (market-level LRS) ────
-    # Si la liga tiene historial de acierto por tipo de mercado, aplicar ajuste
-    # adicional para los mercados que peor se comportan en esa liga.
-    market_lrs_factor = 1.0
-    if league is not None and league.market_hit_rates:
-        market_rate = league.market_hit_rates.get(family)
-        if market_rate is not None and league.historical_picks >= 5:
-            # Tasa de acierto de referencia por familia de mercado
-            # (Tasas razonables de referencia cuando el modelo funciona bien)
-            MARKET_REF = {
-                "corners": 0.52, "cards": 0.52, "shots": 0.52, "shots_target": 0.52, "fouls": 0.52,
-                "goals": 0.55,   "btts": 0.54,  "result": 0.55,
-                "double_chance": 0.57, "generic": 0.53,
-            }
-            ref_rate = MARKET_REF.get(family, 0.53)
-            # Penalizar mercados que rinden peor que la referencia en esta liga
-            # Peso Bayesiano: solo aplica con suficientes picks en esa familia
-            market_dev = market_rate - ref_rate   # negativo → peor que ref
-            market_lrs_factor = 1.0 + max(-0.35, min(0.15, market_dev * 1.5))
-
-    # Penalización: ev_adj = ev * lrs  (lrs=1 → sin cambio; lrs=0.5 → EV a la mitad)
-    # La penalización es más agresiva para mercados secundarios (corners, cards, shots)
-    if family in {"corners", "cards", "shots", "shots_target", "fouls"}:
-        lrs_factor = lrs ** 1.5  # penalización extra en mercados de alta varianza
-    else:
-        lrs_factor = lrs
-    lrs_factor *= market_lrs_factor
-    ev_adj = ev * lrs_factor
-    lrs_penalty = round(ev - ev_adj, 4)  # cuánto se descontó
-    ev = ev_adj
+    # Calcular EV con la probabilidad PURA (sin distorsión de LRS)
+    # El EV es informativo: (prob * odds) - 1. No se ajusta por LRS.
+    lrs_penalty = 0.0  # guardado para display, pero no afecta la prob
     p = calibrated_p / 100.0
 
 
@@ -1101,18 +1091,45 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     elif ev > 0.02:  rating = "⚖️ MARGINAL"
     else:            rating = "❌ NO VALUE"
 
-    # Aplicar fracción conservadora según confianza
-    kelly_fraction = _calculate_kelly_fraction(
-       calibrated_prob=calibrated_p,   # ya está en escala 0-100 en ese punto
-       odds=odds,
-    )
+    # ── Stake Manager: ajuste por LRS ──────────────────────────────────────
+    # El LRS afecta SOLO al kelly_multiplier, nunca a la probabilidad.
+    # Liga baja confianza (LRS < 0.5) → pasar de 1/4 Kelly a 1/8 Kelly.
+    # Liga muy baja confianza (LRS < 0.35) → 1/16 Kelly.
+    market_lrs_factor = 1.0
+    if league is not None and league.market_hit_rates:
+        market_rate = league.market_hit_rates.get(family)
+        if market_rate is not None and league.historical_picks >= 5:
+            MARKET_REF = {
+                "corners": 0.52, "cards": 0.52, "shots": 0.52, "shots_target": 0.52, "fouls": 0.52,
+                "goals": 0.55,   "btts": 0.54,  "result": 0.55,
+                "double_chance": 0.57, "generic": 0.53,
+            }
+            ref_rate = MARKET_REF.get(family, 0.53)
+            market_dev = market_rate - ref_rate
+            market_lrs_factor = 1.0 + max(-0.35, min(0.15, market_dev * 1.5))
 
-    # Aplicar límite de Kelly/Stake si la liga tiene rendimiento pobre (beneficio negativo o acierto < 40%)
+    if lrs >= 0.65:
+        kelly_multiplier = 0.25          # 1/4 Kelly (confianza normal)
+    elif lrs >= 0.50:
+        kelly_multiplier = 0.125         # 1/8 Kelly (liga baja confianza)
+    elif lrs >= 0.35:
+        kelly_multiplier = 0.0625        # 1/16 Kelly (liga muy baja confianza)
+    else:
+        kelly_multiplier = 0.03125       # 1/32 Kelly (liga sin datos reales)
+    kelly_multiplier *= market_lrs_factor
+
+    # Aplicar límite adicional si la liga tiene rendimiento histórico pobre
     if league is not None and getattr(league, "historical_picks", 0) >= 5:
         hist_profit = getattr(league, "historical_profit", 0.0)
         hist_accuracy = getattr(league, "accuracy", 100.0)
         if hist_profit < 0.0 or hist_accuracy < 40.0:
-            kelly_fraction = min(kelly_fraction, 0.01)
+            kelly_multiplier = min(kelly_multiplier, 0.03125)
+
+    kelly_fraction = _calculate_kelly_fraction(
+        calibrated_prob=calibrated_p,   # probabilidad PURA, sin distorsión LRS
+        odds=odds,
+        kelly_multiplier=kelly_multiplier,
+    )
 
     family = _market_family(sel)
     stake = _calculate_stake_units(
@@ -1206,6 +1223,7 @@ def _compute_team_goals_lambda(
     league: LeagueStats,
     is_home: bool,
     general: bool = False,
+    db: Any = None,
 ) -> float:
     avg_team_goals = league.avg_goals_per_game / 2.0
 
@@ -1226,40 +1244,10 @@ def _compute_team_goals_lambda(
             att_n = max(attacker.matches_away, 1)
             def_n = max(defender.matches_home, 1)
 
-    # ── 1b. Corrección de xga por "suerte defensiva" (Big Chances Concedidas vs Falladas) ──
-    bc_conceded = defender.big_chances_against_per_game
-    bc_missed = defender.big_chances_missed_against_per_game
-    if bc_conceded > 0.1:
-        bc_scored_against = max(0.0, bc_conceded - bc_missed)
-        bc_conv_against = bc_scored_against / bc_conceded
-        # Tasa de conversión promedio típica de big chances es ~0.45.
-        # Si la tasa es > 0.45, es mala suerte defensiva (goles inflados). Si es < 0.45, es buena suerte.
-        luck_adjustment = (bc_conv_against - 0.45) * 0.15
-        luck_adjustment = max(-0.10, min(0.10, luck_adjustment))
-        # Ajustamos el prior xGa (si hubo mala suerte, restamos para corregir a la media)
-        prior_def_xga = prior_def_xga * (1.0 - luck_adjustment)
-
-    # ── 1c. Corrección xga por tiros al palo del rival (hit_woodwork_against)
-    # Muchos tiros al palo = mala suerte defensiva real → la defensa es más frágil de lo que muestran los goles
-    hw_against = defender.hit_woodwork_against  # totales en el período
-    if hw_against > 0:
-        hw_per_game = hw_against / def_n
-        # Referencia: ~0.5 tiros/palo por juego es normal. Más = defensa con mala suerte real.
-        hw_boost = min((hw_per_game - 0.5) * 0.08, 0.10)  # hasta +10% xga
-        if hw_boost > 0:
-            prior_def_xga = prior_def_xga * (1.0 + hw_boost)
-
-    # ── 1d. Factor de pases clave del rival contra esta defensa (key_passes_against)
-    # Muchos pases clave concedidos → defensa que permite creación de juego → más goles esperados
-    kp_against = defender.key_passes_against  # totales en el período
-    kp_factor = 1.0
-    if kp_against > 0:
-        kp_per_game = kp_against / def_n
-        # Referencia: ~4-5 pases clave concedidos/juego es promedio
-        kp_dev = (kp_per_game - 4.5) / 4.5
-        kp_factor = 1.0 + max(-0.08, min(0.10, kp_dev * 0.18))
-
-    beta_prior = 5.0 
+    # Dynamic prior_n estimation using Empirical Bayes
+    goals_mean = league.avg_goals_per_game
+    goals_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "goals", goals_mean, db=db)
+    beta_prior = estimate_empirical_bayes_prior_n(goals_var, goals_mean, baseline_prior_n=5.0)
 
     # ── 2. Fuerza de Ataque Bayesiana ──
     S_att = actual_att_g * att_n
@@ -1307,32 +1295,21 @@ def _compute_team_goals_lambda(
     if attacker.avg_rating > 0:
         # Rating típico 6.5-7.5. Normalizar alrededor de 7.0
         rating_factor = 1.0 + (attacker.avg_rating - 7.0) * 0.03  # ±3% por punto de rating
-        rating_factor = max(0.90, min(1.10, rating_factor))
+        rating_factor = max(0.70, min(1.30, rating_factor))
 
     # 5g. Eficiencia del portero rival (save_pct) reduce goles esperados
     keeper_factor = 1.0
     if defender.save_pct > 0:
         # save_pct típico ~70%. >75% es bueno, <65% es malo
         keeper_factor = 1.0 - (defender.save_pct - 0.70) * 0.20
-        keeper_factor = max(0.85, min(1.15, keeper_factor))
+        keeper_factor = max(0.70, min(1.30, keeper_factor))
 
     # 5h. Presión defensiva del rival (interceptions + tackles)
     def_pressure = defender.interceptions_per_game + defender.tackles_per_game
     pressure_factor = 1.0 - (def_pressure - 28.0) * 0.01  # ±1% por cada tackle/intercepción de diferencia
-    pressure_factor = max(0.88, min(1.12, pressure_factor))
+    pressure_factor = max(0.70, min(1.30, pressure_factor))
 
-    # 5i. Perfil colectivo del atacante (assists): más asistencias = juego más predecible y fluido
-    # Un equipo con muchas asistencias genera situaciones más construidas → +% conversión esperado
-    att_assists = attacker.assists  # totales en el período
-    assists_factor = 1.0
-    if att_assists > 0 and att_n > 0:
-        assists_per_game = att_assists / att_n
-        assists_ref = attacker.goals_per_game * 0.75  # ~75% de goles deberían tener asistencia
-        if assists_per_game > assists_ref:
-            assists_factor = 1.0 + min((assists_per_game - assists_ref) / max(assists_ref, 0.5) * 0.06, 0.06)
-        assists_factor = max(0.96, min(1.06, assists_factor))
-
-    lam_adjusted = lam_base * tactical_mult * poss_lost_factor * error_boost * rating_factor * keeper_factor * pressure_factor * kp_factor * assists_factor
+    lam_adjusted = lam_base * tactical_mult * poss_lost_factor * error_boost * rating_factor * keeper_factor * pressure_factor
 
     # ── 6. Shrinkage Global a la Liga ──
     total_n = min(att_n, def_n)
@@ -1345,107 +1322,84 @@ def _compute_team_goals_lambda(
 
 
 
+
 def _compute_team_corners_lambda(
     team: FootballTeamStats,
     opponent: FootballTeamStats,
     league: LeagueStats,
     is_home: bool,
     general: bool = False,
-) -> float:
+    db: Any = None,
+) -> tuple[float, float]:
+    """Retorna (mu, r) de la distribución Binomial Negativa para corners del equipo.
+
+    La sobredispersión es intrínseca a corners (Var > Media), por lo que se usa
+    Binomial Negativa en lugar de Poisson. El parámetro r = mu / (fano - 1).
+    """
     avg_team_corners = league.avg_corners_per_game / 2.0
 
     # ── 1. Señal de centros: ratio de completud ──
     cross_total = max(team.crosses_total_per_game, 0.1)
     cross_ratio = team.crosses_per_game / cross_total
     CROSS_REF = 0.45
-    cross_mult = 1.0 + 0.80 * (cross_ratio - CROSS_REF)  # reducido de 1.20 a 0.80
-    cross_mult = max(0.70, min(1.30, cross_mult))  # rango más ajustado
+    cross_mult = 1.0 + 0.80 * (cross_ratio - CROSS_REF)
+    cross_mult = max(0.65, min(1.35, cross_mult))
 
     # ── 2. Base de generación: corners históricos ajustados por cross_mult
     gen_base = team.corners_per_game * cross_mult
 
     # ── 3. Capacidad del rival de conceder corners ──
-    # Centrado: si rival concede avg_team_corners → ratio ~1.0; escalamos por 0.87 igual que shots
     opp_def_weakness = (opponent.corners_conceded_per_game / max(avg_team_corners, 1.0)) * 0.87
-    opp_def_weakness = max(0.55, min(1.15, opp_def_weakness))
+    opp_def_weakness = max(0.50, min(1.50, opp_def_weakness))
 
     # ── 4. Lambda base cruzada ──
     lam = gen_base * opp_def_weakness
 
-    # ── Determinar conteo de partidos para cálculos por juego ──
-    if general:
-        att_n_c = max(team.matches_played, 1)
-        opp_n_c = max(opponent.matches_played, 1)
-    else:
-        att_n_c = max(team.matches_home if is_home else team.matches_away, 1)
-        opp_n_c = max(opponent.matches_away if is_home else opponent.matches_home, 1)
-
-    # ── Factores avanzados de corners (con caps reducidos) ──
+    # ── Factores avanzados de corners (con caps ensanchados para outliers) ──
     # 4a. Duelos aéreos
     aerial_factor = 1.0
     if team.aerial_duels_won_per_game > 12:
-        aerial_factor = 1.05
+        aerial_factor = 1.08
     elif team.aerial_duels_won_per_game > 8:
-        aerial_factor = 1.02
+        aerial_factor = 1.03
 
-    # 4b. Posesión
-    possession_factor = 1.0 + (team.possession_pct - 50.0) * 0.0010  # +1% por cada 10%
-    possession_factor = max(0.93, min(1.07, possession_factor))
+    # 4b. Posesión (Single dominance factor to avoid double counting)
+    possession_factor = 1.0 + (team.possession_pct - 50.0) * 0.0020
+    possession_factor = max(0.80, min(1.20, possession_factor))
 
     # 4c. Contraataques
-    fastbreak_factor = 1.0 + min(team.fast_breaks / 20.0, 0.04)
+    fastbreak_factor = 1.0 + min(team.fast_breaks / 20.0, 0.08)
 
     # 4d. Tiros bloqueados del rival
-    blocked_factor = 1.0 + min(opponent.shots_blocked / 30.0, 0.03)
+    blocked_factor = 1.0 + min(opponent.shots_blocked / 30.0, 0.06)
 
-    # 4e. Despejes en línea del rival
-    if opponent.clearances_off_line > 0.3:
-        opp_def_weakness *= 0.95
-
-    # 4f. Despejes totales del rival (clearances): proxy de presión sufrida
-    # Un rival que despeja mucho → recibe mucho ataque → genera corners para este equipo
-    opp_clearances = opponent.clearances  # totales en el período
-    if opp_clearances > 0:
-        opp_clear_per_game = opp_clearances / opp_n_c
-        # Referencia: ~25 despejes/juego es promedio bajo presión
-        clear_boost = 1.0 + max(0.0, min((opp_clear_per_game - 22.0) / 22.0 * 0.10, 0.10))
-        lam = lam * clear_boost
-
-    # 4g. Despejes concedidos del equipo atacante (clearances_against en la defensa del rival)
-    # Si el equipo atacante tiene muchos despejes contra (el rival despeja mucho ante él)
-    # → el equipo genera mucho ataque → más corners.
-    team_clearances_against = team.clearances_against  # totales del rival despejando ante este equipo
-    if team_clearances_against > 0:
-        tca_per_game = team_clearances_against / att_n_c
-        # Más despejes del rival ante este equipo → más presión ejercida → más corners
-        tca_boost = 1.0 + max(0.0, min((tca_per_game - 20.0) / 20.0 * 0.08, 0.08))
-        lam = lam * tca_boost
-
-    # 4h. Pases precisos del rival: rival con muchos pases exitosos → más posesión → menos corners
-    # (un rival que domina la posesión mediante pases genera menos situaciones de corner)
-    opp_acc_passes = opponent.accurate_passes_against  # pases completados del rival en partidos vs este equipo
-    if opp_acc_passes > 0:
-        opp_acc_per_game = opp_acc_passes / opp_n_c
-        # >400 pases precisos del rival/juego → domina posesión → menos corners para el atacante
-        pass_penalty = 1.0 - max(0.0, min((opp_acc_per_game - 350.0) / 350.0 * 0.07, 0.07))
-        lam = lam * pass_penalty
-
-    # Cap global de boosts avanzados: máximo +12%
+    # Cap global de boosts avanzados
     raw_boost = aerial_factor * possession_factor * fastbreak_factor * blocked_factor
-    capped_boost = max(0.90, min(1.12, raw_boost))
+    capped_boost = max(0.70, min(1.30, raw_boost))
     lam = lam * capped_boost
 
-    # ── 5. Shrinkage bayesiana fortalecida ──
+    # ── 5. Shrinkage bayesiana fortalecida con Empirical Bayes ──
     if general:
         m_count = team.matches_played
     else:
         m_count = team.matches_home if is_home else team.matches_away
-    prior_n = 5.0
+
+    corners_mean = league.avg_corners_per_game
+    corners_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "corners", corners_mean, db=db)
+    prior_n = estimate_empirical_bayes_prior_n(corners_var, corners_mean, baseline_prior_n=5.0)
+
     n = max(m_count, 1)
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_corners * shrink_w
+    mu = max(lam, 0.5)
 
-    return max(lam, 0.5)
+    # ── Parámetro de dispersión r (Binomial Negativa) por equipo ──
+    # Fano factor del equipo: usa la varianza de liga escalada a nivel por equipo
+    team_var = corners_var / 4.0  # la varianza total se distribuye entre los dos equipos
+    r = get_dispersion_r(mu, max(team_var, corners_mean / 2.0 + 0.01))
+
+    return mu, r
+
 
 
 def _compute_team_cards_lambda(
@@ -1454,6 +1408,7 @@ def _compute_team_cards_lambda(
     league: LeagueStats,
     is_home: bool,
     general: bool = False,
+    db: Any = None,
 ) -> float:
     if general:
         actual_matches = max(team.matches_played, 1)
@@ -1469,6 +1424,11 @@ def _compute_team_cards_lambda(
         league_cards_avg = league.avg_cards_per_game
     avg_team_cards = league_cards_avg / 2.0
 
+    # Dynamic prior_n estimation using Empirical Bayes
+    cards_mean = league_cards_avg
+    cards_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "cards", cards_mean, db=db)
+    prior_n = estimate_empirical_bayes_prior_n(cards_var, cards_mean, baseline_prior_n=10.0)
+
     # 1. Promedio base del equipo (amarillas + rojas ponderadas)
     red_card_weight = 2.0
     team_reds_per_game = (team.red_cards_total / actual_matches) * red_card_weight
@@ -1476,72 +1436,77 @@ def _compute_team_cards_lambda(
 
     # Anclaje fuerte al promedio de liga si el equipo tiene pocas observaciones
     # Shrinkage bayesiana ANTES de aplicar modificadores
-    prior_n = 10.0  # aumentado de 5 → 10 para anclar mejor al promedio
     shrink_w_pre = prior_n / (prior_n + actual_matches)
     own_cards_avg = own_cards_avg * (1.0 - shrink_w_pre) + avg_team_cards * shrink_w_pre
 
-    # 2. Modificador por agresividad (Faltas) — cap reducido
-    foul_deviation = (team.fouls_per_game - 12.5) / 12.5
-    foul_modifier = 1.0 + (foul_deviation * 0.10)  # reducido de 0.15 → 0.10
-    foul_modifier = max(0.88, min(1.12, foul_modifier))
+    # 2. Modificador por agresividad (Faltas) — usando promedio adaptable de liga
+    avg_league_fouls = getattr(league, "avg_fouls_per_game", 22.0)
+    avg_team_fouls = avg_league_fouls / 2.0
+    foul_deviation = (team.fouls_per_game - avg_team_fouls) / max(avg_team_fouls, 1.0)
+    foul_modifier = 1.0 + (foul_deviation * 0.15)
+    foul_modifier = max(0.70, min(1.30, foul_modifier))
 
-    # 3. Modificador por inducción del rival — efectos reducidos
+    # 3. Modificador por inducción del rival
     poss_deviation = (opponent.possession_pct - 50.0) / 50.0
     duel_deviation = (opponent.ground_duels_won_per_game - 10.0) / 10.0
-    rival_modifier = 1.0 + (poss_deviation * 0.04) + (duel_deviation * 0.06)  # reducidos
-    rival_modifier = max(0.90, min(1.10, rival_modifier))
+    rival_modifier = 1.0 + (poss_deviation * 0.08) + (duel_deviation * 0.12)
+    rival_modifier = max(0.70, min(1.30, rival_modifier))
 
-    # Modificador combinado: cap total máx ±15%
-    total_modifier = max(0.85, min(1.15, foul_modifier * rival_modifier))
+    # Modificador combinado
+    total_modifier = max(0.65, min(1.35, foul_modifier * rival_modifier))
     lam = own_cards_avg * total_modifier
 
-    # ── Factores avanzados secundarios (agrupados y con cap global) ──
+    # ── Factores avanzados secundarios (agrupados y con cap global ensanchado) ──
     secondary_mult = 1.0
 
     # Penales concedidos (indisciplina defensiva)
     if team.penalties_conceded > 0.15:
-        secondary_mult *= 1.04  # reducido de 1.08
+        secondary_mult *= 1.08
     if team.penalty_goals_conceded > 0.1:
-        secondary_mult *= 1.03  # reducido de 1.05
+        secondary_mult *= 1.05
 
     # Errores que llevan a tiro
-    error_card_boost = 1.0 + min(team.errors_leading_to_shot / 5.0, 0.04)  # reducido
+    error_card_boost = 1.0 + min(team.errors_leading_to_shot / 5.0, 0.08)
     secondary_mult *= error_card_boost
 
     # Duelos totales
     duel_intensity = team.duels_total_per_game / 50.0
     if duel_intensity > 1.2:
-        secondary_mult *= 1.03  # reducido de 1.06
+        secondary_mult *= 1.06
     elif duel_intensity > 1.0:
-        secondary_mult *= 1.015  # reducido de 1.03
+        secondary_mult *= 1.03
 
     # Contraataques del rival
     if opponent.fast_breaks > 4:
-        secondary_mult *= 1.03  # reducido de 1.05
+        secondary_mult *= 1.05
 
     # Tarjetas provocadas por el estilo del rival
     rival_draw_cards_avg = (opponent.yellow_cards_against + (opponent.red_cards_against * 2.0)) / opp_matches
     if rival_draw_cards_avg > 0:
-        rival_card_modifier = 1.0 + ((rival_draw_cards_avg - avg_team_cards) / max(avg_team_cards, 1.0)) * 0.10  # reducido de 0.15
-        secondary_mult *= max(0.90, min(1.10, rival_card_modifier))
+        rival_card_modifier = 1.0 + ((rival_draw_cards_avg - avg_team_cards) / max(avg_team_cards, 1.0)) * 0.15
+        secondary_mult *= max(0.70, min(1.30, rival_card_modifier))
 
-    # Cap global del bloque secundario: máximo ±12%
-    secondary_mult = max(0.88, min(1.12, secondary_mult))
+    # Cap global del bloque secundario: máximo ±30%
+    secondary_mult = max(0.70, min(1.30, secondary_mult))
     lam *= secondary_mult
 
-    # 4. Integración del Árbitro (peso limitado)
+    # 4. Integración del Árbitro
     if league.referee_avg_yellow > 0:
         ref_baseline = league.referee_avg_yellow + (league.referee_avg_red * 2.0)
         ref_dev_ratio = ref_baseline / max(league_cards_avg, 1.0)
-        ref_modifier = 1.0 + (ref_dev_ratio - 1.0) * 0.35  # reducido de 0.50
-        ref_modifier = max(0.88, min(1.20, ref_modifier))
+        ref_modifier = 1.0 + (ref_dev_ratio - 1.0) * 0.50
+        ref_modifier = max(0.70, min(1.30, ref_modifier))
         lam *= ref_modifier
 
     # 5. Shrinkage final al promedio de liga (post-modificadores)
     shrink_w = prior_n / (prior_n + actual_matches)
     lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
 
-    return max(lam, 0.4)
+    mu = max(lam, 0.4)
+    team_var = cards_var / 4.0
+    r = get_dispersion_r(mu, max(team_var, cards_mean / 2.0 + 0.01))
+    return mu, r
+
 
 
 def _compute_team_shots_lambda(
@@ -1550,7 +1515,13 @@ def _compute_team_shots_lambda(
     league: LeagueStats,
     is_home: bool,
     general: bool = False,
-) -> float:
+    db: Any = None,
+) -> tuple[float, float]:
+    """Retorna (mu, r) de la distribución Binomial Negativa para tiros del equipo.
+
+    La sobredispersión es intrínseca a los tiros (Var >> Media, Fano ~2.5), por lo
+    que se usa Binomial Negativa en lugar de Poisson para modelar las colas correctamente.
+    """
     avg_team_shots = league.avg_shots_per_game / 2.0
 
     # Base: tiros propios
@@ -1558,32 +1529,31 @@ def _compute_team_shots_lambda(
 
     # Ajuste por calidad de tiros (tiros dentro del área)
     inside_ratio = team.shots_inside_box / max(team.shots_per_game, 0.1)
-    quality_mult = 1.0 + (inside_ratio - 0.55) * 0.10  # ±5%
+    quality_mult = 1.0 + (inside_ratio - 0.55) * 0.15
 
     # Big chances created indica alta generación
-    chance_boost = 1.0 + min(team.big_chances_created / 5.0, 0.06)
+    chance_boost = 1.0 + min(team.big_chances_created / 5.0, 0.12)
 
     # Dribbles exitosos crean espacios
-    dribble_boost = 1.0 + min(team.dribble_success_pct / 200.0, 0.04)
+    dribble_boost = 1.0 + min(team.dribble_success_pct / 200.0, 0.08)
 
     # Tiros al palo (regresión a la media)
-    woodwork_boost = 1.0 + min(team.hit_woodwork / 3.0, 0.03)
+    woodwork_boost = 1.0 + min(team.hit_woodwork / 3.0, 0.06)
 
     # Contraataques generan tiros rápidos
-    fastbreak_boost = 1.0 + min(team.fast_break_shots / 5.0, 0.04)
+    fastbreak_boost = 1.0 + min(team.fast_break_shots / 5.0, 0.08)
 
-    # Aplicar boosts con cap global: máximo +12% sobre gen_str
+    # Aplicar boosts con cap global: máximo +30% sobre gen_str
     raw_boost = quality_mult * chance_boost * dribble_boost * woodwork_boost * fastbreak_boost
-    capped_boost = max(0.90, min(1.12, raw_boost))
+    capped_boost = max(0.70, min(1.30, raw_boost))
     gen_str = gen_str * capped_boost
 
     # Factor defensivo del rival (re-centrado: 1.0 = rival promedio → factor ~0.87)
-    # poss_factor: rival con 50% posesión → 1.0; defensas con más posesión reducen tiros rivales
-    poss_factor = (100.0 - opponent.possession_pct) / 50.0  # sin clamp inferior agresivo
-    poss_factor = max(0.50, min(1.30, poss_factor))
+    poss_factor = (100.0 - opponent.possession_pct) / 50.0
+    poss_factor = max(0.50, min(1.50, poss_factor))
 
     xga_factor = opponent.xga_per_game / max(league.avg_goals_per_game / 2.0, 0.5)
-    xga_factor = max(0.60, min(1.40, xga_factor))
+    xga_factor = max(0.50, min(1.50, xga_factor))
 
     # Factor de tiros concedidos por el rival (centrado en 1.0, ponderando dentro/fuera del área)
     opp_shots_conceded = opponent.shots_inside_box_against_per_game * 1.3 + opponent.shots_outside_box_against_per_game * 0.7
@@ -1591,30 +1561,41 @@ def _compute_team_shots_lambda(
         opp_shots_conceded = opponent.shots_against_per_game
 
     shots_against_factor = opp_shots_conceded / max(avg_team_shots, 1.0)
-    shots_against_factor = max(0.50, min(1.50, shots_against_factor))
+    shots_against_factor = max(0.40, min(1.60, shots_against_factor))
 
     # Ajuste por defensas proactivas (bloquean muchos tiros) vs pasivas
     opp_blocks = max(opponent.shots_blocked_against_per_game, opponent.blocked_scoring_attempt_against_per_game)
     block_ratio = opp_blocks / max(opponent.shots_against_per_game, 1.0)
-    block_mult = 1.0 - (block_ratio - 0.22) * 0.20  # ajuste de hasta ±8%
-    block_mult = max(0.92, min(1.08, block_mult))
+    block_mult = 1.0 - (block_ratio - 0.22) * 0.30
+    block_mult = max(0.80, min(1.20, block_mult))
 
     # Factor compuesto centrado en ~0.87 para rival promedio (reduce tiros esperados)
     opp_def_factor = (0.30 * poss_factor + 0.30 * xga_factor + 0.40 * shots_against_factor) * 0.87 * block_mult
-    opp_def_factor = max(0.50, min(1.15, opp_def_factor))
+    opp_def_factor = max(0.40, min(1.60, opp_def_factor))
 
     lam = gen_str * opp_def_factor
 
-    # Shrinkage bayesiana: aumentamos prior_n para anclar mejor al promedio de liga
+    # Shrinkage bayesiana con Empirical Bayes
     if general:
         m_count = team.matches_played
     else:
         m_count = team.matches_home if is_home else team.matches_away
+
+    shots_mean = league.avg_shots_per_game
+    shots_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "shots", shots_mean, db=db)
+    prior_n = estimate_empirical_bayes_prior_n(shots_var, shots_mean, baseline_prior_n=5.0)
+
     n = max(m_count, 1)
-    prior_n = 5.0
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_shots * shrink_w
-    return max(lam, 1.0)
+    mu = max(lam, 1.0)
+
+    # ── Parámetro de dispersión r (Binomial Negativa) por equipo ──
+    # Tiros tienen alta sobredispersión (Fano ~2.5 a nivel total → ~2.5 por equipo también)
+    team_var = shots_var / 4.0  # la varianza total se distribuye entre los dos equipos
+    r = get_dispersion_r(mu, max(team_var, shots_mean / 2.0 + 0.01))
+
+    return mu, r
 
 
 def _compute_team_shots_target_lambda(
@@ -1623,51 +1604,60 @@ def _compute_team_shots_target_lambda(
     league: LeagueStats,
     is_home: bool,
     general: bool = False,
+    db: Any = None,
 ) -> float:
     avg_team_sot = league.avg_shots_target_per_game / 2.0
     gen_str = team.shots_on_target_per_game
 
     # Precisión de tiros basada en ubicación
     inside_ratio = team.shots_inside_box / max(team.shots_per_game, 0.1)
-    accuracy_mult = 1.0 + (inside_ratio - 0.55) * 0.12
+    accuracy_mult = 1.0 + (inside_ratio - 0.55) * 0.18
 
     # Big chances created = tiros de alta calidad
-    chance_boost = 1.0 + min(team.big_chances_created / 5.0, 0.07)
+    chance_boost = 1.0 + min(team.big_chances_created / 5.0, 0.12)
 
     # Dribbles exitosos = tiros más claros
-    dribble_boost = 1.0 + min(team.dribble_success_pct / 200.0, 0.04)
+    dribble_boost = 1.0 + min(team.dribble_success_pct / 200.0, 0.08)
 
-    # Cap global: máximo +10% sobre gen_str
+    # Cap global: máximo +30% sobre gen_str
     raw_boost = accuracy_mult * chance_boost * dribble_boost
-    capped_boost = max(0.90, min(1.10, raw_boost))
+    capped_boost = max(0.70, min(1.30, raw_boost))
     gen_str = gen_str * capped_boost
 
-    # Factor defensivo del rival (mismo re-centrado que en shots)
+    # Factor defensivo del rival
     poss_factor = (100.0 - opponent.possession_pct) / 50.0
-    poss_factor = max(0.50, min(1.30, poss_factor))
+    poss_factor = max(0.50, min(1.50, poss_factor))
 
     xga_factor = opponent.xga_per_game / max(league.avg_goals_per_game / 2.0, 0.5)
-    xga_factor = max(0.60, min(1.40, xga_factor))
+    xga_factor = max(0.50, min(1.50, xga_factor))
 
     # Factor de tiros a puerta concedidos por el rival (centrado en 1.0)
     sot_against_factor = opponent.shots_on_target_against_per_game / max(avg_team_sot, 0.5)
-    sot_against_factor = max(0.50, min(1.50, sot_against_factor))
+    sot_against_factor = max(0.40, min(1.60, sot_against_factor))
 
     opp_def_factor = (0.30 * poss_factor + 0.30 * xga_factor + 0.40 * sot_against_factor) * 0.87
-    opp_def_factor = max(0.50, min(1.15, opp_def_factor))
+    opp_def_factor = max(0.40, min(1.60, opp_def_factor))
 
     lam = gen_str * opp_def_factor
 
-    # Shrinkage bayesiana fortalecida
+    # Shrinkage bayesiana con Empirical Bayes
     if general:
         m_count = team.matches_played
     else:
         m_count = team.matches_home if is_home else team.matches_away
+
+    sot_mean = league.avg_shots_target_per_game
+    sot_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "shots_target", sot_mean, db=db)
+    prior_n = estimate_empirical_bayes_prior_n(sot_var, sot_mean, baseline_prior_n=5.0)
+
     n = max(m_count, 1)
-    prior_n = 5.0
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_sot * shrink_w
-    return max(lam, 0.5)
+    mu = max(lam, 0.5)
+    team_var = sot_var / 4.0
+    r = get_dispersion_r(mu, max(team_var, sot_mean / 2.0 + 0.01))
+    return mu, r
+
 
 
 def split_asian_line(line: float) -> list[float]:
@@ -1691,11 +1681,6 @@ def _dc_tau(x: int, y: int, lam: float, mu: float, rho: float) -> float:
     elif x == 1 and y == 1:
         return 1.0 - rho
     return 1.0
-
-
-def _poisson_pmf(lam: float, k: int) -> float:
-    return (lam ** k * math.exp(-lam)) / math.factorial(k)
-
 
 def _default_dc_rho(h_lam: float, a_lam: float) -> float:
     """Heurística original — se mantiene como fallback."""
@@ -1761,6 +1746,12 @@ def _dc_score_matrix(
 ) -> tuple[list[list[float]], float]:
     rho_used = _default_dc_rho(h_lam, a_lam) if rho is None else rho
 
+    min_lam = min(h_lam, a_lam)
+    if min_lam > 0:
+        rho_used = max(rho_used, -1.0 / min_lam)
+    else:
+        rho_used = 0.0
+
     home_probs = [_poisson_pmf(h_lam, i) for i in range(max_goals + 1)]
     away_probs = [_poisson_pmf(a_lam, j) for j in range(max_goals + 1)]
 
@@ -1770,7 +1761,7 @@ def _dc_score_matrix(
         for j in range(max_goals + 1):
             p = home_probs[i] * away_probs[j]
             p *= _dc_tau(i, j, h_lam, a_lam, rho_used)
-            row.append(max(p, 0.0))
+            row.append(p)
         matrix.append(row)
 
     total = sum(sum(row) for row in matrix)
@@ -1870,40 +1861,85 @@ def _dc_match_probs(
     }
 
 
-def _compute_corners_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False) -> float:
-    h_lam_c = _compute_team_corners_lambda(h, a, league, is_home=True, general=general)
-    a_lam_c = _compute_team_corners_lambda(a, h, league, is_home=False, general=general)
-    lam_corners = h_lam_c + a_lam_c
+def _combine_nb_params(mu1: float, r1: float, mu2: float, r2: float) -> tuple[float, float]:
+    """Combina dos distribuciones Binomial Negativa independientes.
 
-    if lam_corners < 2.0:
-        lam_corners = league.avg_corners_per_game
-    return lam_corners
+    Para X1 ~ NB(mu1, r1) y X2 ~ NB(mu2, r2) independientes:
+      mu_total  = mu1 + mu2
+      Var_total = Var1 + Var2  donde Var_i = mu_i + mu_i²/r_i
+      r_total   = mu_total² / (Var_total - mu_total)
 
-
-def _compute_cards_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False) -> float:
-    h_lam_cards = _compute_team_cards_lambda(h, a, league, is_home=True, general=general)
-    a_lam_cards = _compute_team_cards_lambda(a, h, league, is_home=False, general=general)
-
-    lam_cards = h_lam_cards + a_lam_cards
-
-    if lam_cards < 1.0:
-        lam_cards = league.avg_cards_per_game
-
-    return lam_cards
-
-
-def _compute_shots_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False) -> float:
-    h_s_exp = _compute_team_shots_lambda(h, a, league, is_home=True, general=general)
-    a_s_exp = _compute_team_shots_lambda(a, h, league, is_home=False, general=general)
-    lam_shots = h_s_exp + a_s_exp
-    return max(lam_shots, league.avg_shots_per_game * 0.5)
+    Si la varianza combinada no excede la media (i.e. Var ≤ mu), se usa r → ∞
+    (equivalente Poisson) como fallback.
+    """
+    var1 = mu1 + mu1 ** 2 / r1 if r1 > 0 else mu1
+    var2 = mu2 + mu2 ** 2 / r2 if r2 > 0 else mu2
+    mu_total = mu1 + mu2
+    var_total = var1 + var2
+    if var_total <= mu_total or mu_total <= 0:
+        return mu_total, 50.0  # r grande ≈ Poisson como fallback seguro
+    r_total = mu_total ** 2 / (var_total - mu_total)
+    return mu_total, max(r_total, 0.5)
 
 
-def _compute_shots_target_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False) -> float:
-    h_st_exp = _compute_team_shots_target_lambda(h, a, league, is_home=True, general=general)
-    a_st_exp = _compute_team_shots_target_lambda(a, h, league, is_home=False, general=general)
-    lam_shots_target = h_st_exp + a_st_exp
-    return max(lam_shots_target, league.avg_shots_target_per_game * 0.5)
+def _compute_corners_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False, db: Any = None) -> tuple[float, float, float, float]:
+    """Retorna (h_mu, h_r, a_mu, a_r) para corners de cada equipo (Binomial Negativa)."""
+    h_mu, h_r = _compute_team_corners_lambda(h, a, league, is_home=True, general=general, db=db)
+    a_mu, a_r = _compute_team_corners_lambda(a, h, league, is_home=False, general=general, db=db)
+
+    # Fallback si la suma total es demasiado baja
+    if (h_mu + a_mu) < 2.0:
+        avg = league.avg_corners_per_game / 2.0
+        corners_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "corners", avg)
+        fallback_r = get_dispersion_r(avg, max(corners_var, avg + 0.01))
+        h_mu = avg
+        h_r = fallback_r
+        a_mu = avg
+        a_r = fallback_r
+
+    return h_mu, h_r, a_mu, a_r
+
+
+def _compute_cards_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False, db: Any = None) -> tuple[float, float, float, float]:
+    h_mu, h_r = _compute_team_cards_lambda(h, a, league, is_home=True, general=general, db=db)
+    a_mu, a_r = _compute_team_cards_lambda(a, h, league, is_home=False, general=general, db=db)
+
+    h_r = max(4.0, h_r)
+    a_r = max(4.0, a_r)
+
+    if (h_mu + a_mu) < 1.0:
+        factor = league.avg_cards_per_game / max(h_mu + a_mu, 0.1)
+        h_mu *= factor
+        a_mu *= factor
+
+    return h_mu, h_r, a_mu, a_r
+
+
+def _compute_shots_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False, db: Any = None) -> tuple[float, float, float, float]:
+    h_mu, h_r = _compute_team_shots_lambda(h, a, league, is_home=True, general=general, db=db)
+    a_mu, a_r = _compute_team_shots_lambda(a, h, league, is_home=False, general=general, db=db)
+    
+    min_total = league.avg_shots_per_game * 0.5
+    if (h_mu + a_mu) < min_total:
+        factor = min_total / max(h_mu + a_mu, 0.1)
+        h_mu *= factor
+        a_mu *= factor
+
+    return h_mu, h_r, a_mu, a_r
+
+
+def _compute_shots_target_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False, db: Any = None) -> tuple[float, float, float, float]:
+    h_mu, h_r = _compute_team_shots_target_lambda(h, a, league, is_home=True, general=general, db=db)
+    a_mu, a_r = _compute_team_shots_target_lambda(a, h, league, is_home=False, general=general, db=db)
+    
+    min_total = league.avg_shots_target_per_game * 0.5
+    if (h_mu + a_mu) < min_total:
+        factor = min_total / max(h_mu + a_mu, 0.1)
+        h_mu *= factor
+        a_mu *= factor
+
+    return h_mu, h_r, a_mu, a_r
+
 
 
 # ── Faltas y Offsides MEJORADOS ─────────────────────────────
@@ -1914,6 +1950,7 @@ def _compute_team_fouls_lambda(
     league: LeagueStats,
     is_home: bool,
     general: bool = False,
+    db: Any = None,
 ) -> float:
     avg_league_fouls = getattr(league, "avg_fouls_per_game", 22.0)
     avg_team_fouls = avg_league_fouls / 2.0
@@ -1941,15 +1978,24 @@ def _compute_team_fouls_lambda(
         m_count = team.matches_played
     else:
         m_count = team.matches_home if is_home else team.matches_away
+
+    # Dynamic prior_n from Negative Binomial dispersion: r = mu² / (var - mu)
+    fouls_mean = avg_team_fouls
+    fouls_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "fouls", fouls_mean, db=db)
+    if fouls_var > fouls_mean:
+        prior_n = max(1.0, min(8.0, fouls_mean ** 2 / (fouls_var - fouls_mean)))
+    else:
+        prior_n = 2.0
+
     n = max(m_count, 1)
-    shrink_w = 2.0 / (2.0 + n)
+    shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_fouls * shrink_w
     return max(lam, 1.0)
 
 
-def _compute_fouls_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False) -> float:
-    h_f_exp = _compute_team_fouls_lambda(h, a, league, is_home=True, general=general)
-    a_f_exp = _compute_team_fouls_lambda(a, h, league, is_home=False, general=general)
+def _compute_fouls_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False, db: Any = None) -> float:
+    h_f_exp = _compute_team_fouls_lambda(h, a, league, is_home=True, general=general, db=db)
+    a_f_exp = _compute_team_fouls_lambda(a, h, league, is_home=False, general=general, db=db)
     lam_fouls = h_f_exp + a_f_exp
     avg_league_fouls = getattr(league, "avg_fouls_per_game", 22.0)
     return max(lam_fouls, avg_league_fouls * 0.5)
@@ -1961,6 +2007,7 @@ def _compute_team_offsides_lambda(
     league: LeagueStats,
     is_home: bool,
     general: bool = False,
+    db: Any = None,
 ) -> float:
     avg_league_offsides = getattr(league, "avg_offsides_per_game", 3.5)
     avg_team_offsides = avg_league_offsides / 2.0
@@ -1980,18 +2027,28 @@ def _compute_team_offsides_lambda(
         m_count = team.matches_played
     else:
         m_count = team.matches_home if is_home else team.matches_away
+
+    # Dynamic prior_n from Negative Binomial dispersion: r = mu² / (var - mu)
+    offsides_mean = avg_team_offsides
+    offsides_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "offsides", offsides_mean, db=db)
+    if offsides_var > offsides_mean:
+        prior_n = max(1.0, min(8.0, offsides_mean ** 2 / (offsides_var - offsides_mean)))
+    else:
+        prior_n = 2.0
+
     n = max(m_count, 1)
-    shrink_w = 2.0 / (2.0 + n)
+    shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_offsides * shrink_w
     return max(lam, 0.1)
 
 
-def _compute_offsides_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False) -> float:
-    h_o_exp = _compute_team_offsides_lambda(h, a, league, is_home=True, general=general)
-    a_o_exp = _compute_team_offsides_lambda(a, h, league, is_home=False, general=general)
+def _compute_offsides_lambda(h: FootballTeamStats, a: FootballTeamStats, league: LeagueStats, general: bool = False, db: Any = None) -> float:
+    h_o_exp = _compute_team_offsides_lambda(h, a, league, is_home=True, general=general, db=db)
+    a_o_exp = _compute_team_offsides_lambda(a, h, league, is_home=False, general=general, db=db)
     lam_offsides = h_o_exp + a_o_exp
     avg_league_offsides = getattr(league, "avg_offsides_per_game", 3.5)
     return max(lam_offsides, avg_league_offsides * 0.5)
+
 
 
 def _poisson_over_under(lam: float, line: float, max_k: int = 40) -> tuple[float, float, float]:
@@ -2012,6 +2069,27 @@ def _poisson_over_under(lam: float, line: float, max_k: int = 40) -> tuple[float
     avg_under = sum(r[2] for r in results) / len(results)
 
     return avg_over * 100.0, avg_push * 100.0, avg_under * 100.0
+
+
+def _neg_binomial_over_under(mu: float, line: float, r: float, max_k: int = 60) -> tuple[float, float, float]:
+    def _get_single_line_probs(l: float):
+        p_u, p_p, p_o = 0.0, 0.0, 0.0
+        for k in range(max_k + 1):
+            p = _neg_bin_pmf(mu, r, k)
+            if k < l: p_u += p
+            elif k > l: p_o += p
+            else: p_p += p
+        return p_o, p_p, p_u
+
+    lines = split_asian_line(line)
+    results = [_get_single_line_probs(l) for l in lines]
+
+    avg_over = sum(r[0] for r in results) / len(results)
+    avg_push = sum(r[1] for r in results) / len(results)
+    avg_under = sum(r[2] for r in results) / len(results)
+
+    return avg_over * 100.0, avg_push * 100.0, avg_under * 100.0
+
 
 
 # ───────────────────────────────────────────────────────────────
@@ -2139,7 +2217,10 @@ def is_market_blacklisted_for_league(league_name: str, selection: str, category:
             return False
         import json
         with open(data_path, "r", encoding="utf-8") as f:
-            penalties = json.load(f)
+            content = f.read().strip()
+            if not content:
+                return False
+            penalties = json.loads(content)
 
         if not isinstance(penalties, list):
             return False
@@ -3355,23 +3436,27 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
 
     use_general = _use_general_stats(req)  # True para partidos >= 2026-07-01
 
-    h_lam = _compute_team_goals_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
-    a_lam = _compute_team_goals_lambda(a, h, req.league_stats, is_home=False, general=use_general)
-    lam_corners      = _compute_corners_lambda(h, a, req.league_stats, general=use_general)
-    lam_cards        = _compute_cards_lambda(h, a, req.league_stats, general=use_general)
-    lam_shots        = _compute_shots_lambda(h, a, req.league_stats, general=use_general)
-    lam_shots_target = _compute_shots_target_lambda(h, a, req.league_stats, general=use_general)
+    h_lam = _compute_team_goals_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
+    a_lam = _compute_team_goals_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
+    h_lam_corners, h_r_corners, a_lam_corners, a_r_corners = _compute_corners_lambda(h, a, req.league_stats, general=use_general, db=db)
+    lam_corners = h_lam_corners + a_lam_corners
+    h_lam_cards, h_r_cards, a_lam_cards, a_r_cards = _compute_cards_lambda(h, a, req.league_stats, general=use_general, db=db)
+    lam_cards = h_lam_cards + a_lam_cards
+    h_lam_shots, h_r_shots, a_lam_shots, a_r_shots = _compute_shots_lambda(h, a, req.league_stats, general=use_general, db=db)
+    lam_shots = h_lam_shots + a_lam_shots
+    h_lam_shots_target, h_r_shots_target, a_lam_shots_target, a_r_shots_target = _compute_shots_target_lambda(h, a, req.league_stats, general=use_general, db=db)
+    lam_shots_target = h_lam_shots_target + a_lam_shots_target
 
     h_goals_lam   = h_lam
     a_goals_lam   = a_lam
-    h_corners_lam = _compute_team_corners_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
-    a_corners_lam = _compute_team_corners_lambda(a, h, req.league_stats, is_home=False, general=use_general)
-    h_cards_lam   = _compute_team_cards_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
-    a_cards_lam   = _compute_team_cards_lambda(a, h, req.league_stats, is_home=False, general=use_general)
-    h_shots_lam   = _compute_team_shots_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
-    a_shots_lam   = _compute_team_shots_lambda(a, h, req.league_stats, is_home=False, general=use_general)
-    h_shots_target_lam = _compute_team_shots_target_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
-    a_shots_target_lam = _compute_team_shots_target_lambda(a, h, req.league_stats, is_home=False, general=use_general)
+    h_corners_lam, _h_corners_r = _compute_team_corners_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
+    a_corners_lam, _a_corners_r = _compute_team_corners_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
+    h_cards_lam, _h_cards_r   = _compute_team_cards_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
+    a_cards_lam, _a_cards_r   = _compute_team_cards_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
+    h_shots_lam, _h_shots_r = _compute_team_shots_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
+    a_shots_lam, _a_shots_r = _compute_team_shots_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
+    h_shots_target_lam, _h_shots_target_r = _compute_team_shots_target_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
+    a_shots_target_lam, _a_shots_target_r = _compute_team_shots_target_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
 
     matrix, _ = _dc_score_matrix(h_lam, a_lam)
     markets = _sum_score_matrix_1x2_and_markets(matrix)
@@ -3469,13 +3554,13 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
             type="goals", prob=round(p_over, 1)
         ))
 
-    # ── Over/Under CORNERS ───────────────────
+    # ── Over/Under CORNERS (Binomial Negativa con r combinado por equipo) ───────────────────
     projected_lines.append(ProjectedLine(
         label="Corners Totales (λ)", value=round(lam_corners, 1),
         type="corners", prob=None
     ))
     for line in req.odds.corners_lines:
-        p_over, p_push, p_under = _poisson_over_under(lam_corners, line)
+        p_under, p_over, p_push = get_nbinom_under_over_prob(line, h_lam_corners, h_r_corners, a_lam_corners, a_r_corners)
         key        = str(line)
         over_odds  = req.odds.corners_over_odds.get(key)
         under_odds = req.odds.corners_under_odds.get(key)
@@ -3490,7 +3575,7 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         type="cards", prob=None
     ))
     for line in req.odds.cards_lines:
-        p_over, p_push, p_under = _poisson_over_under(lam_cards, line)
+        p_under, p_over, p_push = get_nbinom_under_over_prob(line, h_lam_cards, h_r_cards, a_lam_cards, a_r_cards)
         key        = str(line)
         over_odds  = req.odds.cards_over_odds.get(key)
         under_odds = req.odds.cards_under_odds.get(key)
@@ -3499,13 +3584,13 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         market_configs.append((f"Over {line} Tarjetas",  over_odds,  p_over,  _or_cards, p_push))
         market_configs.append((f"Under {line} Tarjetas", under_odds, p_under, _or_cards, p_push))
 
-    # ── Over/Under TIROS TOTALES ──────────────────
+    # ── Over/Under TIROS TOTALES (Binomial Negativa con r combinado por equipo) ──────────────────
     projected_lines.append(ProjectedLine(
         label="Tiros Totales (λ)", value=round(lam_shots, 1),
         type="shots", prob=None
     ))
     for line in req.odds.shots_lines:
-        p_over, p_push, p_under = _poisson_over_under(lam_shots, line)
+        p_under, p_over, p_push = get_nbinom_under_over_prob(line, h_lam_shots, h_r_shots, a_lam_shots, a_r_shots)
         key        = str(line)
         over_odds  = req.odds.shots_over_odds.get(key)
         under_odds = req.odds.shots_under_odds.get(key)
@@ -3520,7 +3605,7 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         type="shots_target", prob=None
     ))
     for line in req.odds.shots_target_lines:
-        p_over, p_push, p_under = _poisson_over_under(lam_shots_target, line)
+        p_under, p_over, p_push = get_nbinom_under_over_prob(line, h_lam_shots_target, h_r_shots_target, a_lam_shots_target, a_r_shots_target)
         key        = str(line)
         over_odds  = req.odds.shots_target_over_odds.get(key)
         under_odds = req.odds.shots_target_under_odds.get(key)
@@ -3528,6 +3613,7 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
 
         market_configs.append((f"Over {line} Tiros a Pta",  over_odds,  p_over,  _or_shots_t, p_push))
         market_configs.append((f"Under {line} Tiros a Pta", under_odds, p_under, _or_shots_t, p_push))
+
 
     # ── Values: Cálculo masivo ─────────────
     values = [_vi(sel, odds, mp, ornd, pushp) for sel, odds, mp, ornd, pushp in market_configs]
@@ -3552,13 +3638,13 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
     vp    = [v for v in values if v.is_value]
 
     # ── Faltas y Offsides Lambdas ─────────────────────────────
-    lam_fouls = _compute_fouls_lambda(h, a, req.league_stats, general=use_general)
-    h_fouls_lam = _compute_team_fouls_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
-    a_fouls_lam = _compute_team_fouls_lambda(a, h, req.league_stats, is_home=False, general=use_general)
+    lam_fouls = _compute_fouls_lambda(h, a, req.league_stats, general=use_general, db=db)
+    h_fouls_lam = _compute_team_fouls_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
+    a_fouls_lam = _compute_team_fouls_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
 
-    lam_offsides = _compute_offsides_lambda(h, a, req.league_stats, general=use_general)
-    h_offsides_lam = _compute_team_offsides_lambda(h, a, req.league_stats, is_home=True,  general=use_general)
-    a_offsides_lam = _compute_team_offsides_lambda(a, h, req.league_stats, is_home=False, general=use_general)
+    lam_offsides = _compute_offsides_lambda(h, a, req.league_stats, general=use_general, db=db)
+    h_offsides_lam = _compute_team_offsides_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
+    a_offsides_lam = _compute_team_offsides_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
 
     # ── Most Probable Score (mejorado) ──
     # Se elige el marcador con mayor probabilidad puntual de la distribución Dixon-Coles.

@@ -518,7 +518,9 @@ function buildSherlockPayload(extractedData) {
 
   // Fix: Asegurar la correcta extracción de competition desde el evento
   const competition =
-    match.tournament?.name || match.event?.tournament?.name || "Desconocida";
+    match.tournament?.uniqueTournament?.name ||
+    match.event?.tournament?.uniqueTournament?.name ||
+    "Desconocida";
 
   const homeTeamId = match.homeTeam?.id;
   const awayTeamId = match.awayTeam?.id;

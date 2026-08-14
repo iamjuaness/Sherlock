@@ -137,7 +137,52 @@ function selectLeague(name) {
   profitEl.style.color =
     leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
 
+  const chkProf = document.getElementById("chk-league-profitability");
+  if (chkProf) {
+    chkProf.checked = leagueInfo.is_profitable !== false;
+  }
+
   fetchMatchesForLeague(name);
+}
+
+async function toggleActiveLeagueProfitability(isProfitable) {
+  if (!activeLeague) return;
+  try {
+    const res = await fetch(
+      `/api/v1/leagues/${encodeURIComponent(activeLeague)}/profitability?count_in_profitability=${isProfitable}`,
+      { method: "POST" }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    await fetchLeagues();
+  } catch (err) {
+    console.error("Error al actualizar rentabilidad de liga:", err);
+    alert("Error al actualizar rentabilidad de liga: " + err.message);
+  }
+}
+
+async function deleteCurrentLeague() {
+  if (!activeLeague) return;
+  if (
+    !confirm(
+      `¿Estás seguro de eliminar completamente la competición "${activeLeague}" y todos sus partidos asociados? Esta acción no se puede deshacer.`
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await fetch(
+      `/api/v1/analysis/competition/${encodeURIComponent(activeLeague)}`,
+      { method: "DELETE" }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    alert(data.message || "Competición eliminada.");
+    activeLeague = null;
+    await fetchLeagues();
+  } catch (err) {
+    console.error("Error al eliminar competición:", err);
+    alert("Error al eliminar la competición: " + err.message);
+  }
 }
 
 async function fetchMatchesForLeague(name) {
@@ -604,8 +649,11 @@ function renderMarketsView(filtered, matchesContainer) {
 
     return `
       <div class="match-card">
-        <div class="match-card__header" style="border-bottom: none; padding-bottom: 0.5rem;">
-          <span class="match-card__title" style="font-size: 1.15rem; font-weight: 700; color: #fff;">📊 ${escapeHtml(m.name)}</span>
+        <div class="match-card__header" style="border-bottom: none; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <span class="match-card__title" style="font-size: 1.15rem; font-weight: 700; color: #fff;">📊 ${escapeHtml(m.name)}</span>
+            <button onclick="addMarketToBlacklist('${escapeAttr(m.name)}')" style="background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'" title="Agregar este mercado a la blacklist de ${escapeAttr(activeLeague || '')}">🚫 Blacklist</button>
+          </div>
           <span style="font-weight: 800; color: ${profitColor}; font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">
             ${profitSign}${m.profit.toFixed(2)} u
           </span>
@@ -799,3 +847,32 @@ async function toggleMatchProfitability(matchId, countInProfitability) {
     alert("Error al actualizar la rentabilidad: " + error.message);
   }
 }
+
+async function addMarketToBlacklist(marketName) {
+  if (!activeLeague) return;
+  if (
+    !confirm(
+      `¿Deseas agregar el mercado "${marketName}" a la blacklist de la competición "${activeLeague}" y aplicar a todos los picks del historial?`
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await fetch("/api/v1/leagues/blacklist-market", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        league: activeLeague,
+        market_name: marketName,
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    alert(data.message || "Mercado añadido a blacklist.");
+    await fetchLeagues();
+  } catch (err) {
+    console.error("Error al agregar mercado a blacklist:", err);
+    alert("Error al agregar a blacklist: " + err.message);
+  }
+}
+
