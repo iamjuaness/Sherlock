@@ -27,7 +27,7 @@ from __future__ import annotations
 import logging
 import re
 from dataclasses import dataclass
-from typing import Any, Callable, Optional
+from typing import Any, Callable, Optional, Union
 
 logger = logging.getLogger("sherlock.pick_rules")
 
@@ -345,13 +345,14 @@ def resolve_match_picks_correlation(
     if len(valid_picks) <= 1 and max_picks >= 1:
         return candidates
 
-    # 2. Ordenar por mérito (Display Score, Edge EV, Edge, Quality Score descendente)
-    def pick_merit_score(x: Any) -> tuple[float, float, float, float]:
+    # 2. Ordenar por mérito (Display Score, Edge EV, Edge, Quality Score descendente + Desempate por Selección)
+    def pick_merit_score(x: Any) -> tuple[float, float, float, float, str]:
         ds = get_attr(x, "display_score") or 0.0
         ev = get_attr(x, "edge_ev") or 0.0
         edge = get_attr(x, "edge") or 0.0
         qs = get_attr(x, "quality_score") or 0.0
-        return (float(ds), float(ev), float(edge), float(qs))
+        sel = str(get_attr(x, "selection", ""))
+        return (float(ds), float(ev), float(edge), float(qs), sel)
 
     valid_picks.sort(key=pick_merit_score, reverse=True)
 
@@ -414,30 +415,57 @@ def resolve_match_picks_correlation(
 # ─────────────────────────────────────────────────────────────
 
 def evaluate_pick_rules(
-    selection: str,
-    stats: StatSource,
-    rules: list[dict],
-) -> tuple[bool, Optional[str]]:
+    selection: str | list[Any],
+    stats: Optional[StatSource] = None,
+    rules: Union[list[dict], dict, None] = None,
+) -> Any:
     """
-    Devuelve (is_blocked, reason).
+    Devuelve (is_blocked, reason) si selection es una string.
+    Si selection es una lista de picks de un partido, evalúa cada pick contra reglas
+    y luego aplica resolve_match_picks_correlation.
 
-    is_blocked = True si existe una regla ENABLED cuyo market_family/market_side
-    coincide con la selección y AL MENOS UNA de sus condiciones no se cumple.
-
-    A diferencia de la implementación anterior:
-      - Nunca traga excepciones en silencio: cada fallo se loggea con detalle.
-      - Si una condición no se puede evaluar (stat=None), la condición se
-        considera NO cumplida -> bloquea el pick (fail-safe, no fail-open).
-        Esto es intencional: preferimos un falso bloqueo detectable en logs
-        a un pick "de valor" publicado que en realidad no cumple la regla.
+    rules: puede ser una lista de reglas o un dict con {"rules": [...], "correlation_rules": {...}}.
     """
-    if not isinstance(rules, list):
+    rules_list: list[dict] = []
+    correlation_rules: dict = dict(DEFAULT_CORRELATION_RULES)
+
+    if isinstance(rules, dict):
+        rules_list = rules.get("rules", [])
+        corr = rules.get("correlation_rules")
+        if isinstance(corr, dict):
+            correlation_rules.update(corr)
+    elif isinstance(rules, list):
+        rules_list = rules
+
+    # Caso 1: Se proporciona una lista completa de picks del partido
+    if isinstance(selection, list):
+        if stats is not None:
+            # Evaluar reglas estadísticas a nivel individual
+            for pick in selection:
+                sel_text = getattr(pick, "selection", None) if not isinstance(pick, dict) else pick.get("selection")
+                if sel_text:
+                    blocked, reason = evaluate_pick_rules(sel_text, stats, rules_list)
+                    if blocked:
+                        if isinstance(pick, dict):
+                            pick["is_rule_blocked"] = True
+                            pick["is_publishable"] = False
+                            pick["is_value"] = False
+                            pick["rule_blocked_reason"] = reason
+                        else:
+                            pick.is_rule_blocked = True
+                            pick.is_publishable = False
+                            pick.is_value = False
+        # Aplicar resolución de correlaciones entre picks del partido
+        return resolve_match_picks_correlation(selection, correlation_rules=correlation_rules)
+
+    # Caso 2: Evaluación individual de una string de selección
+    if not isinstance(rules_list, list) or not stats:
         return False, None
 
     family = market_family(selection)
     side = market_side(selection)
 
-    for rule in rules:
+    for rule in rules_list:
         if not rule.get("enabled", False):
             continue
 
@@ -490,3 +518,4 @@ def evaluate_pick_rules(
                 return True, f"Regla '{rule.get('name')}': {reason} (valor real: {actual})"
 
     return False, None
+

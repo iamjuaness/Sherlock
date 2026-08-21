@@ -14,13 +14,14 @@
       .leagues-container {
         max-width: 1400px;
         margin: 0 auto;
-        padding: 2rem 1.5rem 4rem 1.5rem;
+        padding: 1.5rem 1.5rem 2rem 1.5rem;
       }
       .leagues-layout {
         display: grid;
         grid-template-columns: 320px 1fr;
-        gap: 2rem;
-        margin-top: 1.5rem;
+        gap: 1.5rem;
+        margin-top: 1rem;
+        align-items: start;
       }
       @media (max-width: 900px) {
         .leagues-layout {
@@ -33,8 +34,16 @@
         border-radius: var(--radius);
         padding: 1.25rem;
         box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        max-height: 80vh;
+        max-height: calc(100vh - 120px);
         overflow-y: auto;
+        position: sticky;
+        top: 1rem;
+        z-index: 10;
+      }
+      #matches-list {
+        max-height: calc(100vh - 280px);
+        overflow-y: auto;
+        padding-right: 6px;
       }
       .sidebar-title {
         font-size: 1.05rem;

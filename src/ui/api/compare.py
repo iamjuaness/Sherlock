@@ -10,8 +10,13 @@ from pydantic.alias_generators import to_camel
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
 from typing import Optional, Any, Dict, List
-from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
-from src.core.glm_model import get_predictor as _get_glm_predictor
+from src.core.pick_rules_engine import (
+    evaluate_pick_rules,
+    resolve_match_picks_correlation as engine_resolve_match_picks_correlation,
+    load_pick_rules_data,
+    StatSource,
+)
+from datetime import datetime
 
 load_dotenv()
 
@@ -37,9 +42,9 @@ class FootballTeamStats(BaseModel):
     losses:         int = Field(0,  description="Perdidos")
 
     # Goles
-    goals_per_game:          float = Field(..., description="Goles por juego")
-    goals_conceded_per_game: float = Field(..., description="Goles concedidos por juego")
-    goal_conversion_pct:     float = Field(..., description="Conversión de gol %")
+    goals_per_game:          float = Field(0.0, description="Goles por juego")
+    goals_conceded_per_game: float = Field(0.0, description="Goles concedidos por juego")
+    goal_conversion_pct:     float = Field(0.0, description="Conversión de gol %")
 
     # Goles Detallados (NUEVO)
     goals_inside_box:        float = Field(0.0, description="Goles dentro del área por juego")
@@ -51,11 +56,11 @@ class FootballTeamStats(BaseModel):
     own_goals:               float = Field(0.0, description="Autogoles por juego")
 
     # Ataque
-    big_chances_per_game:         float = Field(..., description="Grandes chances por juego")
-    big_chances_missed_per_game:  float = Field(..., description="Grandes chances falladas por juego")
+    big_chances_per_game:         float = Field(0.0, description="Grandes chances por juego")
+    big_chances_missed_per_game:  float = Field(0.0, description="Grandes chances falladas por juego")
     big_chances_created:          float = Field(0.0, description="Grandes chances creadas por juego")
-    shots_per_game:               float = Field(..., description="Tiros totales por juego")
-    shots_on_target_per_game:     float = Field(..., description="Tiros al arco por juego")
+    shots_per_game:               float = Field(0.0, description="Tiros totales por juego")
+    shots_on_target_per_game:     float = Field(0.0, description="Tiros al arco por juego")
 
     # Tiros Detallados (NUEVO)
     shots_blocked:                float = Field(0.0, description="Tiros bloqueados por juego")
@@ -72,14 +77,14 @@ class FootballTeamStats(BaseModel):
     throw_ins:                    float = Field(0.0, description="Saques de banda por juego")
 
     # Posesión / Pases
-    possession_pct:         float = Field(..., description="Posesión %")
+    possession_pct:         float = Field(50.0, description="Posesión %")
     passes_completed:       float = Field(0,   description="Pases acertados")
     pass_accuracy:          float = Field(0,   description="Precisión pases %")
     passes_opp_half:        float = Field(0,   description="Pases acertados campo rival")
     pass_accuracy_opp_half: float = Field(0,   description="Precisión pases campo rival %")
     crosses_per_game:       float = Field(0,   description="Centros completos por juego")
     cross_accuracy:         float = Field(0,   description="Precisión de centros %")
-    corners_per_game:       float = Field(..., description="Corners por juego")
+    corners_per_game:       float = Field(4.5, description="Corners por juego")
 
     # Posesión Avanzada (NUEVO)
     possession_lost:        float = Field(0.0, description="Pérdidas de posesión por juego")
@@ -87,9 +92,9 @@ class FootballTeamStats(BaseModel):
     # Defensa
     clean_sheets_home:        int   = Field(0,   description="Vallas invictas como local")
     clean_sheets_away:        int   = Field(0,   description="Vallas invictas como visitante")
-    clean_sheets:             float = Field(..., description="Vallas invictas totales")
+    clean_sheets:             float = Field(0.0, description="Vallas invictas totales")
     saves_per_game:           float = Field(0,   description="Saves por juego")
-    balls_recovered_per_game: float = Field(..., description="Recuperaciones por juego")
+    balls_recovered_per_game: float = Field(0.0, description="Recuperaciones por juego")
 
     # Defensa Avanzada (NUEVO)
     clearances_off_line:      float = Field(0.0, description="Despejes en línea por juego")
@@ -111,8 +116,9 @@ class FootballTeamStats(BaseModel):
     penalty_goals_conceded: float = Field(0.0, description="Penales convertidos en contra por juego")
 
     # Disciplina
-    fouls_per_game:        float = Field(..., description="Faltas por juego")
-    yellow_cards_per_game: float = Field(..., description="Amarillas promedio por juego")
+    fouls_per_game:        float = Field(0.0, description="Faltas por juego")
+    yellow_cards_per_game: float = Field(0.0, description="Amarillas promedio por juego")
+
     red_cards_total:       float = Field(0.0, description="Rojas totales")
     errors_leading_to_goal: float = Field(0, description="Errores que llevan a gol")
     offside_per_game:       float = Field(0, description="Fuera de juego por juego")
@@ -346,7 +352,12 @@ class FootballCompareRequest(BaseModel):
     model_config = ConfigDict(
         alias_generator=to_camel,
         populate_by_name=True,
+        extra="allow",
     )
+
+    id: Optional[str] = None          
+    analysis_id: Optional[str] = None 
+    date: Optional[str] = None        
 
     home: FootballTeamStats
     away: FootballTeamStats
@@ -530,8 +541,19 @@ class ValueIndicator(BaseModel):
     # ── NUEVO: line shopping — casa que ofrece la mejor cuota para este pick ──
     bookmaker: Optional[str] = None
 
-    # ── Reglas de pick: True si fue bloqueado por una regla estadística ──
+    # ── Frecuencia real / Hit Rate empírico (% de partidos donde se dio el pick) ──
+    home_hit_rate: Optional[float] = None
+    away_hit_rate: Optional[float] = None
+    empirical_hit_rate: Optional[float] = None
+    h2h_hit_rate: Optional[float] = None
+    hit_rate_samples: Optional[int] = None
+    h2h_samples: Optional[int] = None
+    h2h_matches: Optional[List[Dict[str, Any]]] = None
+
+    # ── Reglas de pick: True si fue bloqueado por una regla estadística o de correlación ──
     is_rule_blocked: bool = False
+    correlation_blocked: bool = False
+    rule_blocked_reason: Optional[str] = None
 
 
 class StatComparison(BaseModel):
@@ -820,26 +842,13 @@ MARKET_REF_ACCURACY = {
 def apply_calibration(raw_prob: float, odds: float, market_family: str,
                        league: "LeagueStats | None" = None) -> float:
     """
-    Calibración isotónica del modelo GLM (sklearn.IsotonicRegression).
+    Retorna la probabilidad del modelo determinista Dixon-Coles / Poisson / Binomial Negativa
+    ponderado con los datos de cada liga.
 
-    Cuando el calibrador isotónico está entrenado (>= 20 muestras por mercado),
-    ajusta la probabilidad cruda del modelo para alinearla con la frecuencia
-    real histórica. Sin entrenamiento suficiente, devuelve raw_prob sin cambios
-    (fallback transparente).
-
-    IMPORTANTE: esta función NUNCA modifica la probabilidad por LRS ni por
-    confianza de liga. La probabilidad debe permanecer pura e inmutable;
-    el ajuste por LRS se aplica únicamente al kelly_multiplier en _value_indicator.
+    Se elimina el ajuste con GLM/IsotonicRegression redundante para mantener la probabilidad
+    calibrada fiel al modelo determinista segmentado por liga.
     """
-    try:
-        predictor = _get_glm_predictor()
-        # Convertir prob 0-100 a 0-1 para el calibrador, luego de vuelta
-        p_unit = raw_prob / 100.0 if raw_prob > 1.0 else raw_prob
-        p_calibrated = predictor.calibrate(p_unit, market_family)
-        # Devolver en la misma escala que entró
-        return p_calibrated * 100.0 if raw_prob > 1.0 else p_calibrated
-    except Exception:
-        return raw_prob
+    return raw_prob
 
 def get_market_confidence_tier(selection: str) -> str:
     family = _market_family(selection)
@@ -908,6 +917,12 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
     if v.odds is None or v.odds < 1.4 or v.odds > 2.50:
         return False
 
+    # Filtro Crítico H2H: Si se evaluaron partidos H2H y el resultado fue 0.0%, no publicar.
+    h2h_hr = getattr(v, "h2h_hit_rate", None)
+    h2h_samp = getattr(v, "h2h_samples", 0) or 0
+    if h2h_hr is not None and h2h_hr == 0.0 and h2h_samp > 0:
+        return False
+
     prob = v.calibrated_prob if v.calibrated_prob is not None else v.model_prob
     # Mercados binarios (resultado claro): umbral alto
     is_binary = family in {"result", "btts", "goals"}
@@ -932,7 +947,6 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
     return True
 
 
-
 def score_pick_quality(v: ValueIndicator) -> int:
     if not v.edge_ev: return 0
 
@@ -946,19 +960,60 @@ def score_pick_quality(v: ValueIndicator) -> int:
     return min(max(total, 0), 100)
 
 
-def is_underdog_pick(v) -> bool:
-    family = _market_family(v.selection)
-
-    if v.odds is None or v.odds <= 2.5 or v.odds > 5.80:
+def is_value_pick(v: Any) -> bool:
+    is_blk = v.get("is_blacklisted", False) if isinstance(v, dict) else getattr(v, "is_blacklisted", False)
+    is_blk_rule = v.get("is_rule_blocked", False) if isinstance(v, dict) else getattr(v, "is_rule_blocked", False)
+    if is_blk or is_blk_rule:
+        return False
+    # Filtro Crítico H2H: Si se evaluaron partidos H2H y el resultado fue 0.0%, no publicar/no considerar valor.
+    h2h_hr = v.get("h2h_hit_rate") if isinstance(v, dict) else getattr(v, "h2h_hit_rate", None)
+    h2h_samp = (v.get("h2h_samples", 0) or 0) if isinstance(v, dict) else (getattr(v, "h2h_samples", 0) or 0)
+    if h2h_hr is not None and h2h_hr == 0.0 and h2h_samp > 0:
         return False
 
-    if v.edge < 5:
+    odds = v.get("odds") if isinstance(v, dict) else getattr(v, "odds", None)
+    if odds is None or odds < 1.30 or odds > 3.50:
+        return False
+    ev = v.get("edge_ev") if isinstance(v, dict) else getattr(v, "edge_ev", None)
+    ev_val = ev if ev is not None else 0.0
+    stake = v.get("stake_units") if isinstance(v, dict) else getattr(v, "stake_units", None)
+    stake_val = stake if stake is not None else 0.0
+    # Umbral EV 0.020 (en lugar de 0.025) para estabilidad entre recálculos:
+    # las cuotas de Betano/Betplay pueden variar mínimamente entre fetches,
+    # lo que hacía que picks near-threshold aparecieran y desaparecieran.
+    return ev_val >= 0.020 and stake_val >= 1.0
+
+
+def is_underdog_pick(v: Any) -> bool:
+    if isinstance(v, dict):
+        odds = v.get("odds")
+        edge = v.get("edge", 0)
+        dq = v.get("data_quality_score")
+        stake = v.get("stake_units")
+        h2h_hr = v.get("h2h_hit_rate")
+        h2h_samp = v.get("h2h_samples", 0) or 0
+    else:
+        odds = getattr(v, "odds", None)
+        edge = getattr(v, "edge", 0)
+        dq = getattr(v, "data_quality_score", None)
+        stake = getattr(v, "stake_units", None)
+        h2h_hr = getattr(v, "h2h_hit_rate", None)
+        h2h_samp = getattr(v, "h2h_samples", 0) or 0
+
+    # Filtro Crítico H2H: Si se evaluaron partidos H2H y el resultado fue 0.0%, descartar
+    if h2h_hr is not None and h2h_hr == 0.0 and h2h_samp > 0:
         return False
 
-    if v.data_quality_score is not None and v.data_quality_score < 50:
+    if odds is None or odds <= 2.50 or odds > 4.50:
         return False
 
-    if v.stake_units is not None and v.stake_units < 1.0:
+    if (edge or 0) < 5:
+        return False
+
+    if dq is not None and dq < 50:
+        return False
+
+    if stake is not None and stake < 1.0:
         return False
 
     return True
@@ -974,7 +1029,7 @@ def _calculate_stake_units(
     Stake puro basado en Kelly fraccional con caps de seguridad.
     Devuelve unidades de 0.5 a 3.0. 0.0 = no jugable.
     """
-    if edge_ev <= 0.03 or kelly_fraction <= 0:
+    if edge_ev < 0.025 or kelly_fraction <= 0:
         return 0.0
 
     # Kelly fraccional directo: 0.25 Kelly -> 1u por cada 4% del bankroll
@@ -1152,7 +1207,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         edge=round(edge_prob, 1),
         edge_ev=round(ev, 3),
         push_prob=round(push_p, 1),
-        is_value=ev > 0.03 and stake >= 1.0,
+        is_value=ev >= 0.020 and stake >= 1.0 and odds <= 3.50,
         rating=rating,
         data_quality_score=dq_score,
         market_confidence_tier=conf_tier,
@@ -1173,6 +1228,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         v.strategic_score = -1
     else:
         v.is_publishable = is_publishable_pick(v)
+        v.is_value = is_value_pick(v)
         v.quality_score = score_pick_quality(v)
         v.display_score = _calculate_display_score(v)
         v.is_underdog = is_underdog_pick(v)
@@ -1264,52 +1320,31 @@ def _compute_team_goals_lambda(
     # ── 4. Lambda Base ──
     lam_base = att_str * def_weakness * avg_team_goals
 
-    # ── 5. Señales Tácticas Adicionales (MEJORADAS) ──
-    # 5a. Eficiencia de chances (penaliza ineficiencia)
-    bc_signal = attacker.big_chances_per_game / max(attacker.big_chances_missed_per_game + 0.5, 0.5)
-    tactical_mult = 1.0 + (min(bc_signal, 2.0) - 1.0) * 0.08
+    # ── 5. Ajuste por forma reciente (ventanas 5 / 10 / 15) ──
+    # Si el attacker tiene stats de forma reciente, las usamos para ajustar
+    # el factor de ataque; de lo contrario caemos a 1.0 (sin ajuste extra).
+    form_factor_att = 1.0
+    form_factor_def = 1.0
 
-    # 5b. Perfil de goles: equipos que marcan de fuera son más impredecibles y peligrosos
-    outside_ratio = attacker.goals_outside_box / max(attacker.goals_per_game, 0.1)
-    if outside_ratio > 0.25:
-        tactical_mult *= 1.04  # +4% si >25% de goles son de fuera
+    att_recent = getattr(attacker, "recent_form", None)
+    if att_recent and isinstance(att_recent, dict):
+        w5  = att_recent.get("last_5",  {}).get("goals_scored", avg_team_goals)
+        w10 = att_recent.get("last_10", {}).get("goals_scored", avg_team_goals)
+        w15 = att_recent.get("last_15", {}).get("goals_scored", avg_team_goals)
+        form_avg_att = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
+        form_factor_att = form_avg_att / max(avg_team_goals, 0.10)
+        form_factor_att = max(0.70, min(1.30, form_factor_att))
 
-    # 5c. Goles en contraataque = mayor peligro en transiciones
-    fb_ratio = attacker.fast_break_goals / max(attacker.goals_per_game, 0.1)
-    if fb_ratio > 0.15:
-        tactical_mult *= 1.05  # +5% si >15% son en contraataque
+    def_recent = getattr(defender, "recent_form", None)
+    if def_recent and isinstance(def_recent, dict):
+        w5  = def_recent.get("last_5",  {}).get("goals_conceded", avg_team_goals)
+        w10 = def_recent.get("last_10", {}).get("goals_conceded", avg_team_goals)
+        w15 = def_recent.get("last_15", {}).get("goals_conceded", avg_team_goals)
+        form_avg_def = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
+        form_factor_def = form_avg_def / max(avg_team_goals, 0.10)
+        form_factor_def = max(0.70, min(1.30, form_factor_def))
 
-    # 5d. Penaliza posesión perdida excesiva (menos oportunidades de gol)
-    poss_lost_factor = 1.0
-    if attacker.possession_lost > 120:
-        poss_lost_factor = 0.94
-    elif attacker.possession_lost > 90:
-        poss_lost_factor = 0.97
-
-    # 5e. Fragilidad defensiva rival: errores que llevan a gol/tiro aumentan expectativa
-    rival_errors = defender.errors_leading_to_goal_per_game + (defender.errors_leading_to_shot_per_game * 0.3)
-    error_boost = 1.0 + min(rival_errors / 5.0, 0.08)  # hasta +8%
-
-    # 5f. Calidad del equipo (rating) como factor de ajuste
-    rating_factor = 1.0
-    if attacker.avg_rating > 0:
-        # Rating típico 6.5-7.5. Normalizar alrededor de 7.0
-        rating_factor = 1.0 + (attacker.avg_rating - 7.0) * 0.03  # ±3% por punto de rating
-        rating_factor = max(0.70, min(1.30, rating_factor))
-
-    # 5g. Eficiencia del portero rival (save_pct) reduce goles esperados
-    keeper_factor = 1.0
-    if defender.save_pct > 0:
-        # save_pct típico ~70%. >75% es bueno, <65% es malo
-        keeper_factor = 1.0 - (defender.save_pct - 0.70) * 0.20
-        keeper_factor = max(0.70, min(1.30, keeper_factor))
-
-    # 5h. Presión defensiva del rival (interceptions + tackles)
-    def_pressure = defender.interceptions_per_game + defender.tackles_per_game
-    pressure_factor = 1.0 - (def_pressure - 28.0) * 0.01  # ±1% por cada tackle/intercepción de diferencia
-    pressure_factor = max(0.70, min(1.30, pressure_factor))
-
-    lam_adjusted = lam_base * tactical_mult * poss_lost_factor * error_boost * rating_factor * keeper_factor * pressure_factor
+    lam_adjusted = lam_base * form_factor_att * form_factor_def
 
     # ── 6. Shrinkage Global a la Liga ──
     total_n = min(att_n, def_n)
@@ -1319,6 +1354,7 @@ def _compute_team_goals_lambda(
     lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team_goals * shrink_w
 
     return max(lam_final, 0.10)
+
 
 
 
@@ -1338,47 +1374,31 @@ def _compute_team_corners_lambda(
     """
     avg_team_corners = league.avg_corners_per_game / 2.0
 
-    # ── 1. Señal de centros: ratio de completud ──
-    cross_total = max(team.crosses_total_per_game, 0.1)
-    cross_ratio = team.crosses_per_game / cross_total
-    CROSS_REF = 0.45
-    cross_mult = 1.0 + 0.80 * (cross_ratio - CROSS_REF)
-    cross_mult = max(0.65, min(1.35, cross_mult))
+    # ── 1. Fuerza de generación de corners: normalizada contra media de liga ──
+    att_str = team.corners_per_game / max(avg_team_corners, 0.5)
+    att_str = max(0.40, min(2.0, att_str))
 
-    # ── 2. Base de generación: corners históricos ajustados por cross_mult
-    gen_base = team.corners_per_game * cross_mult
+    # ── 2. Capacidad del rival de conceder corners: normalizada contra media ──
+    opp_conceded = opponent.corners_conceded_per_game / max(avg_team_corners, 0.5)
+    opp_conceded = max(0.40, min(2.0, opp_conceded))
 
-    # ── 3. Capacidad del rival de conceder corners ──
-    opp_def_weakness = (opponent.corners_conceded_per_game / max(avg_team_corners, 1.0)) * 0.87
-    opp_def_weakness = max(0.50, min(1.50, opp_def_weakness))
+    # ── 3. Lambda base: ataque x debilidad rival, anclado a media de liga ──
+    lam = att_str * opp_conceded * avg_team_corners
 
-    # ── 4. Lambda base cruzada ──
-    lam = gen_base * opp_def_weakness
+    # ── 4. Ajuste por forma reciente de corners (ventanas 5 / 10 / 15) ──
+    form_factor = 1.0
+    team_recent = getattr(team, "recent_form", None)
+    if team_recent and isinstance(team_recent, dict):
+        w5  = team_recent.get("last_5",  {}).get("corners", avg_team_corners)
+        w10 = team_recent.get("last_10", {}).get("corners", avg_team_corners)
+        w15 = team_recent.get("last_15", {}).get("corners", avg_team_corners)
+        form_avg = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
+        form_factor = form_avg / max(avg_team_corners, 0.5)
+        form_factor = max(0.70, min(1.30, form_factor))
 
-    # ── Factores avanzados de corners (con caps ensanchados para outliers) ──
-    # 4a. Duelos aéreos
-    aerial_factor = 1.0
-    if team.aerial_duels_won_per_game > 12:
-        aerial_factor = 1.08
-    elif team.aerial_duels_won_per_game > 8:
-        aerial_factor = 1.03
+    lam = lam * form_factor
 
-    # 4b. Posesión (Single dominance factor to avoid double counting)
-    possession_factor = 1.0 + (team.possession_pct - 50.0) * 0.0020
-    possession_factor = max(0.80, min(1.20, possession_factor))
-
-    # 4c. Contraataques
-    fastbreak_factor = 1.0 + min(team.fast_breaks / 20.0, 0.08)
-
-    # 4d. Tiros bloqueados del rival
-    blocked_factor = 1.0 + min(opponent.shots_blocked / 30.0, 0.06)
-
-    # Cap global de boosts avanzados
-    raw_boost = aerial_factor * possession_factor * fastbreak_factor * blocked_factor
-    capped_boost = max(0.70, min(1.30, raw_boost))
-    lam = lam * capped_boost
-
-    # ── 5. Shrinkage bayesiana fortalecida con Empirical Bayes ──
+    # ── 5. Shrinkage bayesiana con Empirical Bayes ──
     if general:
         m_count = team.matches_played
     else:
@@ -1394,11 +1414,12 @@ def _compute_team_corners_lambda(
     mu = max(lam, 0.5)
 
     # ── Parámetro de dispersión r (Binomial Negativa) por equipo ──
-    # Fano factor del equipo: usa la varianza de liga escalada a nivel por equipo
-    team_var = corners_var / 4.0  # la varianza total se distribuye entre los dos equipos
+    team_var = corners_var / 4.0
     r = get_dispersion_r(mu, max(team_var, corners_mean / 2.0 + 0.01))
 
     return mu, r
+
+
 
 
 
@@ -1429,68 +1450,40 @@ def _compute_team_cards_lambda(
     cards_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "cards", cards_mean, db=db)
     prior_n = estimate_empirical_bayes_prior_n(cards_var, cards_mean, baseline_prior_n=10.0)
 
-    # 1. Promedio base del equipo (amarillas + rojas ponderadas)
+    # 1. Fuerza de disciplina del equipo normalizada contra la media de liga
     red_card_weight = 2.0
     team_reds_per_game = (team.red_cards_total / actual_matches) * red_card_weight
     own_cards_avg = team.yellow_cards_per_game + team_reds_per_game
 
-    # Anclaje fuerte al promedio de liga si el equipo tiene pocas observaciones
-    # Shrinkage bayesiana ANTES de aplicar modificadores
+    # Shrinkage bayesiana al promedio de liga (primer paso)
     shrink_w_pre = prior_n / (prior_n + actual_matches)
     own_cards_avg = own_cards_avg * (1.0 - shrink_w_pre) + avg_team_cards * shrink_w_pre
 
-    # 2. Modificador por agresividad (Faltas) — usando promedio adaptable de liga
-    avg_league_fouls = getattr(league, "avg_fouls_per_game", 22.0)
-    avg_team_fouls = avg_league_fouls / 2.0
-    foul_deviation = (team.fouls_per_game - avg_team_fouls) / max(avg_team_fouls, 1.0)
-    foul_modifier = 1.0 + (foul_deviation * 0.15)
-    foul_modifier = max(0.70, min(1.30, foul_modifier))
+    # 2. Ratio de disciplina del equipo vs media de liga (continuo, sin escalones)
+    team_card_ratio = own_cards_avg / max(avg_team_cards, 0.5)
+    team_card_ratio = max(0.50, min(1.50, team_card_ratio))
 
-    # 3. Modificador por inducción del rival
-    poss_deviation = (opponent.possession_pct - 50.0) / 50.0
-    duel_deviation = (opponent.ground_duels_won_per_game - 10.0) / 10.0
-    rival_modifier = 1.0 + (poss_deviation * 0.08) + (duel_deviation * 0.12)
-    rival_modifier = max(0.70, min(1.30, rival_modifier))
-
-    # Modificador combinado
-    total_modifier = max(0.65, min(1.35, foul_modifier * rival_modifier))
-    lam = own_cards_avg * total_modifier
-
-    # ── Factores avanzados secundarios (agrupados y con cap global ensanchado) ──
-    secondary_mult = 1.0
-
-    # Penales concedidos (indisciplina defensiva)
-    if team.penalties_conceded > 0.15:
-        secondary_mult *= 1.08
-    if team.penalty_goals_conceded > 0.1:
-        secondary_mult *= 1.05
-
-    # Errores que llevan a tiro
-    error_card_boost = 1.0 + min(team.errors_leading_to_shot / 5.0, 0.08)
-    secondary_mult *= error_card_boost
-
-    # Duelos totales
-    duel_intensity = team.duels_total_per_game / 50.0
-    if duel_intensity > 1.2:
-        secondary_mult *= 1.06
-    elif duel_intensity > 1.0:
-        secondary_mult *= 1.03
-
-    # Contraataques del rival
-    if opponent.fast_breaks > 4:
-        secondary_mult *= 1.05
-
-    # Tarjetas provocadas por el estilo del rival
+    # 3. Ratio de tarjetas provocadas del rival (cuánto genera el rival)
     rival_draw_cards_avg = (opponent.yellow_cards_against + (opponent.red_cards_against * 2.0)) / opp_matches
-    if rival_draw_cards_avg > 0:
-        rival_card_modifier = 1.0 + ((rival_draw_cards_avg - avg_team_cards) / max(avg_team_cards, 1.0)) * 0.15
-        secondary_mult *= max(0.70, min(1.30, rival_card_modifier))
+    rival_ratio = rival_draw_cards_avg / max(avg_team_cards, 0.5)
+    rival_ratio = max(0.50, min(1.50, rival_ratio))
 
-    # Cap global del bloque secundario: máximo ±30%
-    secondary_mult = max(0.70, min(1.30, secondary_mult))
-    lam *= secondary_mult
+    lam = own_cards_avg * rival_ratio
 
-    # 4. Integración del Árbitro
+    # 4. Ajuste por forma reciente de tarjetas (ventanas 5 / 10 / 15)
+    form_factor = 1.0
+    team_recent = getattr(team, "recent_form", None)
+    if team_recent and isinstance(team_recent, dict):
+        w5  = team_recent.get("last_5",  {}).get("yellow_cards", avg_team_cards)
+        w10 = team_recent.get("last_10", {}).get("yellow_cards", avg_team_cards)
+        w15 = team_recent.get("last_15", {}).get("yellow_cards", avg_team_cards)
+        form_avg = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
+        form_factor = form_avg / max(avg_team_cards, 0.5)
+        form_factor = max(0.70, min(1.30, form_factor))
+
+    lam = lam * form_factor
+
+    # 5. Integración del Árbitro (dato real — conservar)
     if league.referee_avg_yellow > 0:
         ref_baseline = league.referee_avg_yellow + (league.referee_avg_red * 2.0)
         ref_dev_ratio = ref_baseline / max(league_cards_avg, 1.0)
@@ -1498,7 +1491,7 @@ def _compute_team_cards_lambda(
         ref_modifier = max(0.70, min(1.30, ref_modifier))
         lam *= ref_modifier
 
-    # 5. Shrinkage final al promedio de liga (post-modificadores)
+    # 6. Shrinkage final al promedio de liga
     shrink_w = prior_n / (prior_n + actual_matches)
     lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
 
@@ -1506,6 +1499,7 @@ def _compute_team_cards_lambda(
     team_var = cards_var / 4.0
     r = get_dispersion_r(mu, max(team_var, cards_mean / 2.0 + 0.01))
     return mu, r
+
 
 
 
@@ -1524,58 +1518,32 @@ def _compute_team_shots_lambda(
     """
     avg_team_shots = league.avg_shots_per_game / 2.0
 
-    # Base: tiros propios
-    gen_str = team.shots_per_game
+    # ── 1. Fuerza de tiros del equipo normalizada contra media de liga ──
+    att_str = team.shots_per_game / max(avg_team_shots, 1.0)
+    att_str = max(0.40, min(2.0, att_str))
 
-    # Ajuste por calidad de tiros (tiros dentro del área)
-    inside_ratio = team.shots_inside_box / max(team.shots_per_game, 0.1)
-    quality_mult = 1.0 + (inside_ratio - 0.55) * 0.15
+    # ── 2. Debilidad defensiva del rival: tiros concedidos vs media de liga ──
+    opp_shots_conceded = opponent.shots_against_per_game
+    def_weakness = opp_shots_conceded / max(avg_team_shots, 1.0)
+    def_weakness = max(0.40, min(2.0, def_weakness))
 
-    # Big chances created indica alta generación
-    chance_boost = 1.0 + min(team.big_chances_created / 5.0, 0.12)
+    # ── 3. Lambda base ──
+    lam = att_str * def_weakness * avg_team_shots
 
-    # Dribbles exitosos crean espacios
-    dribble_boost = 1.0 + min(team.dribble_success_pct / 200.0, 0.08)
+    # ── 4. Ajuste por forma reciente de tiros (ventanas 5 / 10 / 15) ──
+    form_factor = 1.0
+    team_recent = getattr(team, "recent_form", None)
+    if team_recent and isinstance(team_recent, dict):
+        w5  = team_recent.get("last_5",  {}).get("shots", avg_team_shots)
+        w10 = team_recent.get("last_10", {}).get("shots", avg_team_shots)
+        w15 = team_recent.get("last_15", {}).get("shots", avg_team_shots)
+        form_avg = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
+        form_factor = form_avg / max(avg_team_shots, 1.0)
+        form_factor = max(0.70, min(1.30, form_factor))
 
-    # Tiros al palo (regresión a la media)
-    woodwork_boost = 1.0 + min(team.hit_woodwork / 3.0, 0.06)
+    lam = lam * form_factor
 
-    # Contraataques generan tiros rápidos
-    fastbreak_boost = 1.0 + min(team.fast_break_shots / 5.0, 0.08)
-
-    # Aplicar boosts con cap global: máximo +30% sobre gen_str
-    raw_boost = quality_mult * chance_boost * dribble_boost * woodwork_boost * fastbreak_boost
-    capped_boost = max(0.70, min(1.30, raw_boost))
-    gen_str = gen_str * capped_boost
-
-    # Factor defensivo del rival (re-centrado: 1.0 = rival promedio → factor ~0.87)
-    poss_factor = (100.0 - opponent.possession_pct) / 50.0
-    poss_factor = max(0.50, min(1.50, poss_factor))
-
-    xga_factor = opponent.xga_per_game / max(league.avg_goals_per_game / 2.0, 0.5)
-    xga_factor = max(0.50, min(1.50, xga_factor))
-
-    # Factor de tiros concedidos por el rival (centrado en 1.0, ponderando dentro/fuera del área)
-    opp_shots_conceded = opponent.shots_inside_box_against_per_game * 1.3 + opponent.shots_outside_box_against_per_game * 0.7
-    if opp_shots_conceded <= 0:
-        opp_shots_conceded = opponent.shots_against_per_game
-
-    shots_against_factor = opp_shots_conceded / max(avg_team_shots, 1.0)
-    shots_against_factor = max(0.40, min(1.60, shots_against_factor))
-
-    # Ajuste por defensas proactivas (bloquean muchos tiros) vs pasivas
-    opp_blocks = max(opponent.shots_blocked_against_per_game, opponent.blocked_scoring_attempt_against_per_game)
-    block_ratio = opp_blocks / max(opponent.shots_against_per_game, 1.0)
-    block_mult = 1.0 - (block_ratio - 0.22) * 0.30
-    block_mult = max(0.80, min(1.20, block_mult))
-
-    # Factor compuesto centrado en ~0.87 para rival promedio (reduce tiros esperados)
-    opp_def_factor = (0.30 * poss_factor + 0.30 * xga_factor + 0.40 * shots_against_factor) * 0.87 * block_mult
-    opp_def_factor = max(0.40, min(1.60, opp_def_factor))
-
-    lam = gen_str * opp_def_factor
-
-    # Shrinkage bayesiana con Empirical Bayes
+    # ── 5. Shrinkage bayesiana con Empirical Bayes ──
     if general:
         m_count = team.matches_played
     else:
@@ -1590,9 +1558,7 @@ def _compute_team_shots_lambda(
     lam = lam * (1.0 - shrink_w) + avg_team_shots * shrink_w
     mu = max(lam, 1.0)
 
-    # ── Parámetro de dispersión r (Binomial Negativa) por equipo ──
-    # Tiros tienen alta sobredispersión (Fano ~2.5 a nivel total → ~2.5 por equipo también)
-    team_var = shots_var / 4.0  # la varianza total se distribuye entre los dos equipos
+    team_var = shots_var / 4.0
     r = get_dispersion_r(mu, max(team_var, shots_mean / 2.0 + 0.01))
 
     return mu, r
@@ -1605,42 +1571,34 @@ def _compute_team_shots_target_lambda(
     is_home: bool,
     general: bool = False,
     db: Any = None,
-) -> float:
+) -> tuple[float, float]:
     avg_team_sot = league.avg_shots_target_per_game / 2.0
-    gen_str = team.shots_on_target_per_game
 
-    # Precisión de tiros basada en ubicación
-    inside_ratio = team.shots_inside_box / max(team.shots_per_game, 0.1)
-    accuracy_mult = 1.0 + (inside_ratio - 0.55) * 0.18
+    # ── 1. Fuerza de tiros a puerta normalizada ──
+    att_str = team.shots_on_target_per_game / max(avg_team_sot, 0.5)
+    att_str = max(0.40, min(2.0, att_str))
 
-    # Big chances created = tiros de alta calidad
-    chance_boost = 1.0 + min(team.big_chances_created / 5.0, 0.12)
+    # ── 2. Debilidad defensiva del rival en tiros a puerta ──
+    def_weakness = opponent.shots_on_target_against_per_game / max(avg_team_sot, 0.5)
+    def_weakness = max(0.40, min(2.0, def_weakness))
 
-    # Dribbles exitosos = tiros más claros
-    dribble_boost = 1.0 + min(team.dribble_success_pct / 200.0, 0.08)
+    # ── 3. Lambda base ──
+    lam = att_str * def_weakness * avg_team_sot
 
-    # Cap global: máximo +30% sobre gen_str
-    raw_boost = accuracy_mult * chance_boost * dribble_boost
-    capped_boost = max(0.70, min(1.30, raw_boost))
-    gen_str = gen_str * capped_boost
+    # ── 4. Ajuste por forma reciente (ventanas 5 / 10 / 15) ──
+    form_factor = 1.0
+    team_recent = getattr(team, "recent_form", None)
+    if team_recent and isinstance(team_recent, dict):
+        w5  = team_recent.get("last_5",  {}).get("shots", avg_team_sot)
+        w10 = team_recent.get("last_10", {}).get("shots", avg_team_sot)
+        w15 = team_recent.get("last_15", {}).get("shots", avg_team_sot)
+        form_avg = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
+        form_factor = form_avg / max(avg_team_sot, 0.5)
+        form_factor = max(0.70, min(1.30, form_factor))
 
-    # Factor defensivo del rival
-    poss_factor = (100.0 - opponent.possession_pct) / 50.0
-    poss_factor = max(0.50, min(1.50, poss_factor))
+    lam = lam * form_factor
 
-    xga_factor = opponent.xga_per_game / max(league.avg_goals_per_game / 2.0, 0.5)
-    xga_factor = max(0.50, min(1.50, xga_factor))
-
-    # Factor de tiros a puerta concedidos por el rival (centrado en 1.0)
-    sot_against_factor = opponent.shots_on_target_against_per_game / max(avg_team_sot, 0.5)
-    sot_against_factor = max(0.40, min(1.60, sot_against_factor))
-
-    opp_def_factor = (0.30 * poss_factor + 0.30 * xga_factor + 0.40 * sot_against_factor) * 0.87
-    opp_def_factor = max(0.40, min(1.60, opp_def_factor))
-
-    lam = gen_str * opp_def_factor
-
-    # Shrinkage bayesiana con Empirical Bayes
+    # ── 5. Shrinkage bayesiana con Empirical Bayes ──
     if general:
         m_count = team.matches_played
     else:
@@ -2187,22 +2145,40 @@ def is_pick_blocked_by_rules(selection: str, home: "FootballTeamStats", away: "F
     """
     try:
         rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "pick_rules.json")
-        if not os.path.exists(rules_path):
-            return False
-        import json
-        with open(rules_path, "r", encoding="utf-8") as f:
-            rules = json.load(f)
-        if not isinstance(rules, list):
+        rules_list, _ = load_pick_rules_data(rules_path)
+        if not rules_list:
             return False
 
         stat_source = StatSource.from_team_stats(home, away, odds_obj)
-        blocked, _ = evaluate_pick_rules(selection, stat_source, rules)
+        blocked, _ = evaluate_pick_rules(selection, stat_source, rules_list)
         return blocked
     except Exception as e:
         import logging
         logging.getLogger("sherlock.pick_rules").error(f"Error evaluating pick rules in compare: {e}")
         return False
 
+
+def resolve_match_picks_correlation(
+    candidates: list[ValueIndicator],
+    max_picks_per_match: Optional[int] = None,
+    max_total_stake: Optional[float] = None,
+    correlation_rules: Optional[dict] = None
+) -> list[ValueIndicator]:
+    """
+    Filtra picks correlacionados en un mismo evento garantizando
+    la máxima expectativa matemática sin sobreexposición de varianza.
+    Utiliza el motor de reglas centralizado pick_rules_engine.
+    """
+    if correlation_rules is None:
+        rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "pick_rules.json")
+        _, correlation_rules = load_pick_rules_data(rules_path)
+
+    return engine_resolve_match_picks_correlation(
+        candidates,
+        correlation_rules=correlation_rules,
+        max_picks_per_match=max_picks_per_match,
+        max_total_stake=max_total_stake
+    )
 
 def is_market_blacklisted_for_league(league_name: str, selection: str, category: str | None = None) -> bool:
     """
@@ -2394,103 +2370,63 @@ def _team_strength_score(team) -> float:
     return base + advanced
 
 
-# ── Support Over/Under Goals MEJORADO ──
-def _support_over_goals(line: float, h, a, proj: list) -> tuple[float, float]:
-    h_g = _safe_num(h.goals_per_game)
-    a_g = _safe_num(a.goals_per_game)
-    h_c = _safe_num(h.goals_conceded_per_game)
-    a_c = _safe_num(a.goals_conceded_per_game)
-    h_xg = _safe_num(h.xg_per_game)
-    a_xg = _safe_num(a.xg_per_game)
-    h_xga = _safe_num(h.xga_per_game)
-    a_xga = _safe_num(a.xga_per_game)
-    h_big = _safe_num(h.big_chances_per_game)
-    a_big = _safe_num(a.big_chances_per_game)
-    h_sot = _safe_num(h.shots_on_target_per_game)
-    a_sot = _safe_num(a.shots_on_target_per_game)
-
-    # NUEVO: Factores avanzados
-    h_fb = _safe_num(h.fast_break_goals)
-    a_fb = _safe_num(a.fast_break_goals)
-    h_out = _safe_num(h.goals_outside_box)
-    a_out = _safe_num(a.goals_outside_box)
-    h_poss_lost = _safe_num(h.possession_lost)
-    a_poss_lost = _safe_num(a.possession_lost)
-    h_errors = _safe_num(h.errors_leading_to_goal) + _safe_num(h.errors_leading_to_shot) * 0.3
-    a_errors = _safe_num(a.errors_leading_to_goal) + _safe_num(a.errors_leading_to_shot) * 0.3
-
-    base_total = (h_g + a_g + h_c + a_c + h_xg + a_xg + h_xga + a_xga) / 4
-    attack_bonus = (h_big + a_big) * 1.8 + (h_sot + a_sot) * 0.9
-
-    # NUEVO: Bonus por transiciones y errores
-    transition_bonus = (h_fb + a_fb) * 2.5 + (h_out + a_out) * 1.5
-    error_bonus = (h_errors + a_errors) * 1.2
-
-    # NUEVO: Pérdidas de posesión altas = más transiciones = más goles
-    turnover_bonus = 0
-    if h_poss_lost > 100 and a_poss_lost > 100:
-        turnover_bonus = 3.0
-
-    stat = 56 + (base_total - line) * 18 + attack_bonus + transition_bonus + error_bonus + turnover_bonus
-    stat = _clip_0_100(stat)
-
+# ── Support Over/Under Goals — Determinista ──
+def _support_over_goals(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    """stat_support = 0.60 * P_modelo_Poisson(over line) + 0.40 * HitRate_empírico."""
+    # Probabilidad del modelo (Poisson/DC) desde ProjectedLines
     pval, pprob, _ = _projected_value_by_keywords(proj, ["goles"])
     if pval is None:
         pval, pprob, _ = _projected_value_by_keywords(proj, ["goals"])
 
-    proj_score = 55.0
-    if pval is not None:
-        margin = pval - line
-        proj_score += margin * 20
+    # P_modelo desde la proyección o estimación por stats si no hay proyección
     if pprob is not None:
-        proj_score += (pprob - 50) * 0.5
+        model_prob = float(pprob)  # ya viene en 0-100
+    elif pval is not None:
+        model_prob = _clip_0_100(55.0 + (pval - line) * 20)
+    else:
+        # Fallback: estimación rápida desde stats del equipo
+        h_exp = (_safe_num(h.goals_per_game) + _safe_num(h.xg_per_game)) / 2.0
+        a_exp = (_safe_num(a.goals_per_game) + _safe_num(a.xg_per_game)) / 2.0
+        total_exp = h_exp + a_exp
+        model_over, _, _ = _poisson_over_under(total_exp, line)
+        model_prob = model_over
 
+    # Hit rate empírico del ValueIndicator
+    empirical = None
+    if vi is not None:
+        empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+        if empirical is None:
+            h_hr = _safe_num(getattr(vi, "home_hit_rate", None), None)
+            a_hr = _safe_num(getattr(vi, "away_hit_rate", None), None)
+            if h_hr is not None and a_hr is not None:
+                empirical = (h_hr + a_hr) / 2.0
+
+    if empirical is not None:
+        stat = _clip_0_100(0.60 * model_prob + 0.40 * empirical)
+    else:
+        stat = _clip_0_100(model_prob)
+
+    proj_score = model_prob if pprob is not None else _clip_0_100(55.0 + (pval - line) * 20 if pval else model_prob)
     return stat, _clip_0_100(proj_score)
 
 
-def _support_under_goals(line: float, h, a, proj: list) -> tuple[float, float]:
-    stat_over, proj_over = _support_over_goals(line, h, a, proj)
-    return _clip_0_100(110 - stat_over), _clip_0_100(110 - proj_over)
+def _support_under_goals(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    stat_over, proj_over = _support_over_goals(line, h, a, proj, vi)
+    return _clip_0_100(100 - stat_over), _clip_0_100(100 - proj_over)
+
+
 
 
 # ── Support BTTS MEJORADO ──
-def _support_btts_yes(h, a, proj: list) -> tuple[float, float]:
-    h_g = _safe_num(h.goals_per_game)
-    a_g = _safe_num(a.goals_per_game)
-    h_xg = _safe_num(h.xg_per_game)
-    a_xg = _safe_num(a.xg_per_game)
-    h_c = _safe_num(h.goals_conceded_per_game)
-    a_c = _safe_num(a.goals_conceded_per_game)
-    h_xga = _safe_num(h.xga_per_game)
-    a_xga = _safe_num(a.xga_per_game)
+def _support_btts_yes(h, a, proj: list, vi=None) -> tuple[float, float]:
+    h_attack = _safe_num(h.goals_per_game) + _safe_num(h.xg_per_game) * 0.4
+    a_attack = _safe_num(a.goals_per_game) + _safe_num(a.xg_per_game) * 0.4
+    h_defense = _safe_num(h.goals_conceded_per_game) + _safe_num(h.xga_per_game) * 0.4
+    a_defense = _safe_num(a.goals_conceded_per_game) + _safe_num(a.xga_per_game) * 0.4
 
-    # Nota: _support_btts_yes no recibe `general` directamente, pero puede inferirlo
-    # comparando si matches_home/away tienen valor útil. Se usa matches_played como fallback.
-    _h_mp = max(_safe_num(h.matches_home, 1), 1)
-    _a_ma = max(_safe_num(a.matches_away, 1), 1)
-    _h_mp_total = max(_safe_num(h.matches_played, 1), 1)
-    _a_mp_total = max(_safe_num(a.matches_played, 1), 1)
-    # Si matches_home/away son 1 (valor por defecto) pero matches_played > 1, usar el total
-    if _safe_num(h.matches_home, 1) <= 1 and _h_mp_total > 1:
-        h_cs_rate = _safe_num(h.clean_sheets) / _h_mp_total
-    else:
-        h_cs_rate = _safe_num(h.clean_sheets_home) / _h_mp
-    if _safe_num(a.matches_away, 1) <= 1 and _a_mp_total > 1:
-        a_cs_rate = _safe_num(a.clean_sheets) / _a_mp_total
-    else:
-        a_cs_rate = _safe_num(a.clean_sheets_away) / _a_ma
+    base = (h_attack * a_defense + a_attack * h_defense) / 2.0
+    stat = 50.0 + (base - 1.5) * 14.0
 
-    h_attack = (h_g + h_xg) / 2.0
-    a_attack = (a_g + a_xg) / 2.0
-    h_def_weakness = (a_c + a_xga) / 2.0
-    a_def_weakness = (h_c + h_xga) / 2.0
-
-    h_score = h_attack * 8.0 + h_def_weakness * 5.0 - h_cs_rate * 20.0
-    a_score = a_attack * 8.0 + a_def_weakness * 5.0 - a_cs_rate * 20.0
-
-    stat = 45.0 + (h_score + a_score) / 2.0
-
-    # NUEVO: Ajustes BTTS avanzados
     # Pérdidas de posesión altas en ambos = más transiciones = más probabilidad de BTTS
     h_turnover = _safe_num(h.possession_lost)
     a_turnover = _safe_num(a.possession_lost)
@@ -2517,15 +2453,27 @@ def _support_btts_yes(h, a, proj: list) -> tuple[float, float]:
     if pprob is not None:
         proj_score = pprob
 
+    empirical = None
+    if vi is not None:
+        empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+        if empirical is None:
+            h_hr = _safe_num(getattr(vi, "home_hit_rate", None), None)
+            a_hr = _safe_num(getattr(vi, "away_hit_rate", None), None)
+            if h_hr is not None and a_hr is not None:
+                empirical = (h_hr + a_hr) / 2.0
+
+    if empirical is not None:
+        stat = _clip_0_100(0.60 * stat + 0.40 * empirical)
+
     return stat, _clip_0_100(proj_score)
 
 
-def _support_btts_no(h, a, proj: list) -> tuple[float, float]:
-    stat_yes, proj_yes = _support_btts_yes(h, a, proj)
+def _support_btts_no(h, a, proj: list, vi=None) -> tuple[float, float]:
+    stat_yes, proj_yes = _support_btts_yes(h, a, proj, vi)
     return _clip_0_100(110 - stat_yes), _clip_0_100(110 - proj_yes)
 
 
-def _support_home_win(h, a, proj: list) -> tuple[float, float]:
+def _support_home_win(h, a, proj: list, vi=None) -> tuple[float, float]:
     diff = _team_strength_score(h) - _team_strength_score(a)
     stat = _clip_0_100(54 + diff * 0.9)
 
@@ -2541,10 +2489,17 @@ def _support_home_win(h, a, proj: list) -> tuple[float, float]:
     elif label and ("local" in label or "home" in label):
         proj_score += 8
 
+    empirical = None
+    if vi is not None:
+        empirical = _safe_num(getattr(vi, "home_hit_rate", None), None) or _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+
+    if empirical is not None:
+        stat = _clip_0_100(0.60 * stat + 0.40 * empirical)
+
     return stat, _clip_0_100(proj_score)
 
 
-def _support_away_win(h, a, proj: list) -> tuple[float, float]:
+def _support_away_win(h, a, proj: list, vi=None) -> tuple[float, float]:
     diff = _team_strength_score(a) - _team_strength_score(h)
     stat = _clip_0_100(54 + diff * 0.9)
 
@@ -2563,7 +2518,7 @@ def _support_away_win(h, a, proj: list) -> tuple[float, float]:
     return stat, _clip_0_100(proj_score)
 
 
-def _support_draw(h, a, proj: list) -> tuple[float, float]:
+def _support_draw(h, a, proj: list, vi=None) -> tuple[float, float]:
     diff = abs(_team_strength_score(h) - _team_strength_score(a))
     stat = _clip_0_100(62 - diff * 0.7)
 
@@ -2575,11 +2530,18 @@ def _support_draw(h, a, proj: list) -> tuple[float, float]:
     if pprob is not None:
         proj_score += (pprob - 50) * 0.7
 
+    empirical = None
+    if vi is not None:
+        empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+
+    if empirical is not None:
+        stat = _clip_0_100(0.60 * stat + 0.40 * empirical)
+
     return stat, _clip_0_100(proj_score)
 
 
 # ── Support Shots MEJORADO ──
-def _support_under_shots(line: float, h, a, proj: list) -> tuple[float, float]:
+def _support_under_shots(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
     total_shots = _safe_num(h.shots_per_game) + _safe_num(a.shots_per_game)
     total_sot = _safe_num(h.shots_on_target_per_game) + _safe_num(a.shots_on_target_per_game)
     tempo = _safe_num(h.possession_pct) + _safe_num(a.possession_pct)
@@ -2608,112 +2570,91 @@ def _support_under_shots(line: float, h, a, proj: list) -> tuple[float, float]:
     if pprob is not None:
         proj_score += (pprob - 50) * 0.45
 
+    empirical = None
+    if vi is not None:
+        empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+
+    if empirical is not None:
+        stat = _clip_0_100(0.60 * stat + 0.40 * empirical)
+
     return stat, _clip_0_100(proj_score)
 
 
-def _support_over_shots(line: float, h, a, proj: list) -> tuple[float, float]:
-    stat_u, proj_u = _support_under_shots(line, h, a, proj)
+def _support_over_shots(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    stat_u, proj_u = _support_under_shots(line, h, a, proj, vi)
     return _clip_0_100(110 - stat_u), _clip_0_100(110 - proj_u)
 
 
-# ── Support Cards MEJORADO ──
-def _support_over_cards(line: float, h, a, proj: list) -> tuple[float, float]:
-    total_y = _safe_num(h.yellow_cards_per_game) + _safe_num(a.yellow_cards_per_game)
-    total_f = _safe_num(h.fouls_per_game) + _safe_num(a.fouls_per_game)
-    total_r = (_safe_num(h.red_cards_total) + _safe_num(a.red_cards_total)) / max(
-        _safe_num(h.matches_played, 1) + _safe_num(a.matches_played, 1), 2
-    )
-
-    # NUEVO: Factores avanzados de tarjetas
-    h_pen = _safe_num(h.penalties_conceded)
-    a_pen = _safe_num(a.penalties_conceded)
-    h_err = _safe_num(h.errors_leading_to_shot)
-    a_err = _safe_num(a.errors_leading_to_shot)
-    h_duels = _safe_num(h.duels_total_per_game)
-    a_duels = _safe_num(a.duels_total_per_game)
-    h_km = _safe_num(h.kilometers_covered)
-    a_km = _safe_num(a.kilometers_covered)
-
-    base = total_y + total_f * 0.10 + total_r * 2.0
-
-    # Ajustes avanzados
-    discipline_penalty = (h_pen + a_pen) * 3.0 + (h_err + a_err) * 0.8
-    physical_factor = (h_duels + a_duels - 90) * 0.02  # 90 duelos totales = referencia
-    intensity_factor = 0
-    if h_km > 105 or a_km > 105:
-        intensity_factor = 1.5
-
-    base += discipline_penalty + physical_factor + intensity_factor
-
+# ── Support Cards — Determinista ──
+def _support_over_cards(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    """stat_support = 0.60 * P_modelo_NB(over line) + 0.40 * HitRate_empírico."""
     lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["tarjetas totales"])
     if lam_val is None:
-         lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["tarjetas"])
+        lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["tarjetas"])
 
-    if lam_val is not None:
-        stat = _clip_0_100(58 + (lam_val - line) * 12)
-    else:
-        stat = _clip_0_100(58 + (base - line) * 11)
-
-    proj_score = 55.0
     if lam_prob is not None:
-        proj_score = lam_prob
+        model_prob = float(lam_prob)
     elif lam_val is not None:
-        proj_score = _clip_0_100(55 + (lam_val - line) * 10)
+        model_prob = _clip_0_100(55.0 + (lam_val - line) * 12)
+    else:
+        # Estimación por stats
+        total_y = _safe_num(h.yellow_cards_per_game) + _safe_num(a.yellow_cards_per_game)
+        model_prob = _clip_0_100(55.0 + (total_y - line) * 10)
 
+    empirical = None
+    if vi is not None:
+        empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+        if empirical is None:
+            h_hr = _safe_num(getattr(vi, "home_hit_rate", None), None)
+            a_hr = _safe_num(getattr(vi, "away_hit_rate", None), None)
+            if h_hr is not None and a_hr is not None:
+                empirical = (h_hr + a_hr) / 2.0
+
+    stat = _clip_0_100(0.60 * model_prob + 0.40 * empirical) if empirical is not None else _clip_0_100(model_prob)
+    proj_score = model_prob
     return stat, _clip_0_100(proj_score)
 
 
-def _support_under_cards(line: float, h, a, proj: list) -> tuple[float, float]:
-    stat_o, proj_o = _support_over_cards(line, h, a, proj)
-    return _clip_0_100(110 - stat_o), _clip_0_100(110 - proj_o)
+def _support_under_cards(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    stat_o, proj_o = _support_over_cards(line, h, a, proj, vi)
+    return _clip_0_100(100 - stat_o), _clip_0_100(100 - proj_o)
 
 
-# ── Support Corners MEJORADO ──
-def _support_over_corners(line: float, h, a, proj: list) -> tuple[float, float]:
+# ── Support Corners — Determinista ──
+def _support_over_corners(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    """stat_support = 0.60 * P_modelo_NB(over line) + 0.40 * HitRate_empírico."""
     lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["corners totales"])
     if lam_val is None:
         lam_val, lam_prob, _ = _projected_value_by_keywords(proj, ["corners"])
 
-    if lam_val is not None:
-        stat = _clip_0_100(58 + (lam_val - line) * 12)
+    if lam_prob is not None:
+        model_prob = float(lam_prob)
+    elif lam_val is not None:
+        model_prob = _clip_0_100(55.0 + (lam_val - line) * 12)
     else:
         base = (
             _safe_num(h.corners_per_game) + _safe_num(a.corners_per_game) +
             _safe_num(h.corners_conceded_per_game) + _safe_num(a.corners_conceded_per_game)
         ) / 2
-        stat = _clip_0_100(57 + (base - line) * 10)
+        model_prob = _clip_0_100(55.0 + (base - line) * 10)
 
-    # Ajuste por efectividad en centros
-    h_cross_ratio = _safe_num(h.crosses_per_game) / max(_safe_num(h.crosses_total_per_game, 20), 1)
-    a_cross_ratio = _safe_num(a.crosses_per_game) / max(_safe_num(a.crosses_total_per_game, 20), 1)
-    cross_signal = (h_cross_ratio + a_cross_ratio) / 2.0
-    stat += (cross_signal - 0.45) * 8
+    empirical = None
+    if vi is not None:
+        empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+        if empirical is None:
+            h_hr = _safe_num(getattr(vi, "home_hit_rate", None), None)
+            a_hr = _safe_num(getattr(vi, "away_hit_rate", None), None)
+            if h_hr is not None and a_hr is not None:
+                empirical = (h_hr + a_hr) / 2.0
 
-    # NUEVO: Duelos aéreos
-    h_aerial = _safe_num(h.aerial_duels_won_per_game)
-    a_aerial = _safe_num(a.aerial_duels_won_per_game)
-    stat += (h_aerial + a_aerial - 20) * 0.3  # 20 duelos aéreos = referencia
-
-    # NUEVO: Posesión
-    h_poss = _safe_num(h.possession_pct)
-    a_poss = _safe_num(a.possession_pct)
-    stat += ((h_poss + a_poss) / 2.0 - 50) * 0.08
-
-    stat = _clip_0_100(stat)
-
-    proj_score = 55.0
-    if lam_prob is not None:
-        proj_score = lam_prob
-    elif lam_val is not None:
-        proj_score = _clip_0_100(55 + (lam_val - line) * 10)
-
+    stat = _clip_0_100(0.60 * model_prob + 0.40 * empirical) if empirical is not None else _clip_0_100(model_prob)
+    proj_score = model_prob
     return stat, _clip_0_100(proj_score)
 
 
-def _support_under_corners(line: float, h, a, proj: list) -> tuple[float, float]:
-    stat_o, proj_o = _support_over_corners(line, h, a, proj)
-    return _clip_0_100(110 - stat_o), _clip_0_100(110 - proj_o)
-
+def _support_under_corners(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    stat_o, proj_o = _support_over_corners(line, h, a, proj, vi)
+    return _clip_0_100(100 - stat_o), _clip_0_100(100 - proj_o)
 
 
 def _dc_component_weights(h, a) -> tuple[float, float, float]:
@@ -2732,71 +2673,82 @@ def _dc_component_weights(h, a) -> tuple[float, float, float]:
     return h_w, d_w, a_w
 
 
-def _explicit_market_support(selection: str, h, a, proj: list) -> tuple[float, float]:
+def _explicit_market_support(selection: str, h, a, proj: list, vi=None) -> tuple[float, float]:
     s = _normalize_text(selection)
     line = _extract_line_number(selection)
     family = _market_family(selection)
     side = _market_side(selection)
 
     if family == "goals" and side == "over" and line is not None:
-        return _support_over_goals(line, h, a, proj)
+        return _support_over_goals(line, h, a, proj, vi)
     if family == "goals" and side == "under" and line is not None:
-        return _support_under_goals(line, h, a, proj)
+        return _support_under_goals(line, h, a, proj, vi)
 
     if family == "btts" and side == "yes":
-        return _support_btts_yes(h, a, proj)
+        return _support_btts_yes(h, a, proj, vi)
     if family == "btts" and side == "no":
-        return _support_btts_no(h, a, proj)
+        return _support_btts_no(h, a, proj, vi)
 
     if family == "result" and side == "home":
-        return _support_home_win(h, a, proj)
+        return _support_home_win(h, a, proj, vi)
     if family == "result" and side == "away":
-        return _support_away_win(h, a, proj)
+        return _support_away_win(h, a, proj, vi)
     if family == "result" and side == "draw":
-        return _support_draw(h, a, proj)
+        return _support_draw(h, a, proj, vi)
 
     if family == "shots" and side == "under" and line is not None:
-        return _support_under_shots(line, h, a, proj)
+        return _support_under_shots(line, h, a, proj, vi)
     if family == "shots" and side == "over" and line is not None:
-        return _support_over_shots(line, h, a, proj)
+        return _support_over_shots(line, h, a, proj, vi)
 
     if family == "cards" and side == "over" and line is not None:
-        return _support_over_cards(line, h, a, proj)
+        return _support_over_cards(line, h, a, proj, vi)
     if family == "cards" and side == "under" and line is not None:
-        return _support_under_cards(line, h, a, proj)
+        return _support_under_cards(line, h, a, proj, vi)
 
     if family == "corners" and side == "over" and line is not None:
-        return _support_over_corners(line, h, a, proj)
+        return _support_over_corners(line, h, a, proj, vi)
     if family == "corners" and side == "under" and line is not None:
-        return _support_under_corners(line, h, a, proj)
+        return _support_under_corners(line, h, a, proj, vi)
 
     if family == "double_chance":
         h_w, d_w, a_w = _dc_component_weights(h, a)
-        stat_h, proj_h = _support_home_win(h, a, proj)
-        stat_d, proj_d = _support_draw(h, a, proj)
-        stat_a, proj_a = _support_away_win(h, a, proj)
+        stat_h, proj_h = _support_home_win(h, a, proj, vi)
+        stat_d, proj_d = _support_draw(h, a, proj, vi)
+        stat_a, proj_a = _support_away_win(h, a, proj, vi)
+
+        base_stat = 55.0
+        base_proj = 55.0
 
         if "1x" in s:
             norm = h_w + d_w
             w_h, w_d = h_w / norm, d_w / norm
-            return (
-                _clip_0_100(w_h * stat_h + w_d * stat_d),
-                _clip_0_100(w_h * proj_h + w_d * proj_d),
-            )
-        if "x2" in s:
+            base_stat = _clip_0_100(w_h * stat_h + w_d * stat_d)
+            base_proj = _clip_0_100(w_h * proj_h + w_d * proj_d)
+        elif "x2" in s:
             norm = a_w + d_w
             w_a, w_d2 = a_w / norm, d_w / norm
-            return (
-                _clip_0_100(w_a * stat_a + w_d2 * stat_d),
-                _clip_0_100(w_a * proj_a + w_d2 * proj_d),
-            )
-        if "12" in s:
+            base_stat = _clip_0_100(w_a * stat_a + w_d2 * stat_d)
+            base_proj = _clip_0_100(w_a * proj_a + w_d2 * proj_d)
+        elif "12" in s:
             norm = h_w + a_w
             w_h2, w_a2 = h_w / norm, a_w / norm
-            return (
-                _clip_0_100(w_h2 * stat_h + w_a2 * stat_a),
-                _clip_0_100(w_h2 * proj_h + w_a2 * proj_a),
-            )
+            base_stat = _clip_0_100(w_h2 * stat_h + w_a2 * stat_a)
+            base_proj = _clip_0_100(w_h2 * proj_h + w_a2 * proj_a)
+
+        empirical = None
+        if vi is not None:
+            if "1x" in s:
+                empirical = _safe_num(getattr(vi, "home_hit_rate", None), None) or _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+            elif "x2" in s:
+                empirical = _safe_num(getattr(vi, "away_hit_rate", None), None) or _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+            else:
+                empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
+
+        if empirical is not None:
+            base_stat = _clip_0_100(0.60 * base_stat + 0.40 * empirical)
+
+        return base_stat, base_proj
 
     return 55.0, 55.0
 
@@ -2815,11 +2767,11 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
     
     # NUEVO: Límite máximo de picks por familia de mercado
     MAX_PICKS_PER_FAMILY = {
-        "goals": 2,
+        "goals": 1,
         "corners": 1,
-        "cards": 0,
-        "shots": 2,
-        "shots_target": 2
+        "cards": 1,
+        "shots": 1,
+        "shots_target": 1
     }
 
     groups: dict[tuple[str, str], list["ValueIndicator"]] = {}
@@ -2843,7 +2795,11 @@ def _deduplicate_correlated_picks(values: list["ValueIndicator"]) -> list["Value
             continue
         sorted_group = sorted(
             group,
-            key=lambda v: v.edge if v.edge is not None else -999.0,
+            key=lambda v: (
+                v.edge if v.edge is not None else -999.0,
+                v.display_score or 0.0,
+                v.selection or ""
+            ),
             reverse=True,
         )
         # Aplicar límite máximo por familia
@@ -2905,39 +2861,34 @@ def _is_secondary_market(selection: str) -> bool:
 
 
 def _frontend_style_strategic_score(v: ValueIndicator) -> int:
+    """Score estratégico basado únicamente en EV positivo y Kelly Fraccional.
+    No contiene saltos fijos por tipo de mercado.
+    """
     if v.is_blacklisted:
         return -1
     edge = _safe_num(v.edge)
     odds = _safe_num(v.odds, 0.0)
     prob = _safe_num(v.model_prob)
-    sel = (v.selection or "").lower()
 
     if edge < 2.0 or odds <= 1.01:
         return -1
 
-    score = 0
+    # Kelly Fraccional: f* = (p * b - (1-p)) / b, donde b = odds - 1
+    b = max(odds - 1.0, 0.01)
+    p = prob / 100.0
+    kelly_raw = (p * b - (1.0 - p)) / b
+    kelly = max(0.0, min(kelly_raw, 0.25))  # Fraccionado al 25% máximo
 
+    if kelly <= 0:
+        return -1
+
+    # Score base: Kelly * 200 (0 a 50 puntos) + contribución del edge
+    score = int(kelly * 200) + int(edge * 1.5)
+
+    # Banda de rentabilidad: refuerzo de cuotas óptimas (continuo)
     score += _profitability_band_score(odds)
 
-    if 45.0 <= prob <= 55.0:
-        if edge < 5.0:
-            return -1
-        score += 10
-
-    is_secondary = _is_secondary_market(sel)
-
-    if is_secondary:
-        if edge < 6.0:
-            score -= 40
-        else:
-            score += int(edge * 1.5)
-    else:
-        if edge > 20.0:
-            score -= 50
-        else:
-            score += int(edge * 2)
-
-    return score
+    return max(score, 0)
 
 
 def _rate_pick_quality(v: ValueIndicator, h, a, proj: list[ProjectedLine]) -> tuple[int, float, float, int]:
@@ -2951,7 +2902,9 @@ def _rate_pick_quality(v: ValueIndicator, h, a, proj: list[ProjectedLine]) -> tu
     if implied is None:
         implied = _implied_prob_from_odds(odds)
 
-    stat_support, proj_support = _explicit_market_support(selection, h, a, proj)
+    # Pasar el ValueIndicator completo para que las funciones de soporte
+    # puedan usar empirical_hit_rate y home/away_hit_rate
+    stat_support, proj_support = _explicit_market_support(selection, h, a, proj, vi=v)
     strategic_score = _frontend_style_strategic_score(v)
 
     # ── FILTROS DUROS DE SEGURIDAD (FASE 1) ──
@@ -2983,26 +2936,20 @@ def _rate_pick_quality(v: ValueIndicator, h, a, proj: list[ProjectedLine]) -> tu
     # ── SCORE DE RENTABILIDAD ESTRATÉGICA ──
     score += strategic_score
 
-    # Bonus por valor real sobre implícita
+    # Bonus continuo por EV Edge real sobre implícita (sin descuentos fijos)
     if implied is not None:
         delta = prob - implied
-        if delta >= 12:   score += 10
-        elif delta >= 8:  score += 7
-        elif delta >= 5:  score += 4
-        elif delta >= 3:  score += 2
+        ev_confidence = min(delta / 12.0, 1.0)  # 0..1 según magnitud del edge
+        score += int(ev_confidence * 10)  # hasta +10 pts proporcional
 
-    # Penalizaciones por inconsistencia
-    if family in {"result", "btts"} and odds >= 2.25 and prob < 64:
-        score -= 8
-
-    if family in {"goals", "cards", "corners", "shots"} and odds >= 2.60 and prob < 60:
-        score -= 8
-
-    # Castigo por falta de muestra segmentada en mercados secundarios
-    if family in {"cards", "corners", "shots"}:
-        conf = get_market_confidence_tier(selection)
-        if conf != "segmented":
-            score -= 3
+    # Confianza por tamaño de muestra: penalización continua si la liga tiene
+    # poca muestra (league_reliability va de 0 a 1)
+    league = getattr(v, "_league_ref", None)  # inyectado opcionalmente
+    if league is not None:
+        reliability = _compute_league_reliability_score(league)
+        # Reducir el score proporcionalmente a la falta de confiabilidad
+        if reliability < 0.5:
+            score = int(score * (0.5 + reliability))  # máx penalización del 50%
 
     # Castigo definitivo si el strategic_score salió negativo
     if strategic_score < 0:
@@ -3347,21 +3294,38 @@ async def _call_openrouter(prompt: str) -> str:
 # ───────────────────────────────────────────────────────────────
 # compare_football
 # ───────────────────────────────────────────────────────────────
-async def compare_football(req: FootballCompareRequest, db: Any = None) -> CompareResponse:
+async def compare_football(
+    req: FootballCompareRequest,
+    db: Any = None,
+    exclude_match_id: Optional[Any] = None,
+    current_match_date: Optional[Any] = None,
+) -> CompareResponse:
+    """
+    NOTA DE FIX:
+    Se agregaron los parámetros explícitos `exclude_match_id` y `current_match_date`.
+    Tienen PRIORIDAD sobre cualquier valor que venga dentro de `req` (req.id,
+    req.analysis_id, req.match_id, req.exclude_match_id, req.match_date, req.date).
+    Esto es necesario porque en el flujo de RE-ANÁLISIS (main.py) el `req` se
+    reconstruye desde el `payload` histórico guardado, el cual casi nunca trae
+    poblado el `id` real de la fila en `analysis_history` ni una fecha confiable.
+    Si el llamador pasa estos dos parámetros explícitamente (ej. exclude_match_id=history.id,
+    current_match_date=history.match_date), se garantiza que el propio partido
+    quede excluido del hit rate y del H2H, evitando el data leakage.
+    """
     # Enriquecer league_stats con estadísticas históricas de la BD
     try:
         from src.core.database import SessionLocal
         from src.core.domain import AnalysisHistory
         from src.ui.api.main import _check_pick_success, _calculate_pick_profit, _is_pick_hit
         import json
-        
+
         db_created = False
         if db is not None:
             db_session = db
         else:
             db_session = SessionLocal()
             db_created = True
-            
+
     except Exception as ex:
         print(f"Error enriching league stats: {ex}")
 
@@ -3384,18 +3348,18 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         _stat_comparison("Grandes chances",           "big_chances_per_game",         h.big_chances_per_game,         a.big_chances_per_game),
         _stat_comparison("G. Chances Creadas",        "big_chances_created",          h.big_chances_created,          a.big_chances_created),
         _stat_comparison("G. Chances Falladas",       "big_chances_missed_per_game",  h.big_chances_missed_per_game,  a.big_chances_missed_per_game, False),
-        
+
         # Tiros
         _stat_comparison("Tiros al arco",             "shots_on_target_per_game",     h.shots_on_target_per_game,     a.shots_on_target_per_game),
         _stat_comparison("Tiros dentro área",         "shots_inside_box",             h.shots_inside_box,             a.shots_inside_box),
         _stat_comparison("Tiros fuera área",          "shots_outside_box",            h.shots_outside_box,            a.shots_outside_box),
         _stat_comparison("Tiros al palo",             "hit_woodwork",                 h.hit_woodwork,                 a.hit_woodwork),
         _stat_comparison("Tiros bloqueados",          "shots_blocked",                h.shots_blocked,                a.shots_blocked),
-        
+
         # Calidad Individual
         _stat_comparison("Dribbles exitosos %",       "dribble_success_pct",          h.dribble_success_pct,          a.dribble_success_pct),
         _stat_comparison("Contraataques",             "fast_breaks",                  h.fast_breaks,                  a.fast_breaks),
-        
+
         # Posesión
         _stat_comparison("Posesión %",                "possession_pct",               h.possession_pct,               a.possession_pct),
         _stat_comparison("Pérdidas posesión",         "possession_lost",              h.possession_lost,              a.possession_lost, False),
@@ -3405,7 +3369,7 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         _stat_comparison("Centros completos",         "crosses_per_game",             h.crosses_per_game,             a.crosses_per_game),
         _stat_comparison("Precisión de centros %",   "cross_accuracy",               h.cross_accuracy,               a.cross_accuracy),
         _stat_comparison("Corners por juego",         "corners_per_game",             h.corners_per_game,             a.corners_per_game),
-        
+
         # Defensa
         _stat_comparison("Goles concedidos",          "goals_conceded_per_game",      h.goals_conceded_per_game,      a.goals_conceded_per_game, False),
         _stat_comparison("% Vallas Invictas",         "clean_sheets_pct",             (h.clean_sheets / h_matches) * 100, (a.clean_sheets / a_matches) * 100),
@@ -3415,21 +3379,21 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         _stat_comparison("Despejes línea",            "clearances_off_line",          h.clearances_off_line,          a.clearances_off_line),
         _stat_comparison("Entradas último hombre",    "last_man_tackles",             h.last_man_tackles,             a.last_man_tackles),
         _stat_comparison("Save %",                    "save_pct",                     h.save_pct * 100,               a.save_pct * 100),
-        
+
         # Duelos
         _stat_comparison("Duelos ganados",            "duels_won_per_game",           h.duels_won_per_game,           a.duels_won_per_game),
         _stat_comparison("Duelos aéreos ganados",     "aerial_duels_won_per_game",    h.aerial_duels_won_per_game,    a.aerial_duels_won_per_game),
         _stat_comparison("Duelos en piso",            "ground_duels_won_per_game",    h.ground_duels_won_per_game,    a.ground_duels_won_per_game),
-        
+
         # Disciplina
         _stat_comparison("Faltas/j",                  "fouls_per_game",               h.fouls_per_game,               a.fouls_per_game),
         _stat_comparison("Penales concedidos",        "penalties_conceded",           h.penalties_conceded,           a.penalties_conceded, False),
         _stat_comparison("Amarillas/j",               "yellow_cards_per_game",        h.yellow_cards_per_game,        a.yellow_cards_per_game, False),
-        
+
         # Físicas
         _stat_comparison("Kilómetros/j",              "kilometers_covered",           h.kilometers_covered,           a.kilometers_covered),
         _stat_comparison("Sprints/j",                 "number_of_sprints",            h.number_of_sprints,            a.number_of_sprints),
-        
+
         # Rating
         _stat_comparison("Rating equipo",             "avg_rating",                   h.avg_rating,                   a.avg_rating),
     ]
@@ -3614,7 +3578,6 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         market_configs.append((f"Over {line} Tiros a Pta",  over_odds,  p_over,  _or_shots_t, p_push))
         market_configs.append((f"Under {line} Tiros a Pta", under_odds, p_under, _or_shots_t, p_push))
 
-
     # ── Values: Cálculo masivo ─────────────
     values = [_vi(sel, odds, mp, ornd, pushp) for sel, odds, mp, ornd, pushp in market_configs]
 
@@ -3623,19 +3586,226 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
     # conservando únicamente la línea con mejor EV por dirección (over/under) y familia.
     values = _deduplicate_correlated_picks(values)
 
-    # ── Sincronización de Calidad y Publicabilidad ─────────────
+    # ── Sincronización de Calidad, Hit Rate Empírico y Publicabilidad ─────────────
+    # Obtener historial de partidos de la liga para calcular Hit Rates reales (Filtro temporal estricto sin data leakage)
+    # ── 1. Extraer ID del partido actual ──
+    # FIX: se prioriza el parámetro explícito exclude_match_id (pasado por el llamador,
+    # ej. history.id en el batch de re-análisis) sobre lo que venga dentro de req,
+    # porque req suele reconstruirse desde un payload histórico que NO trae el id real.
+    exclude_analysis_id = None
+    if exclude_match_id is not None:
+        exclude_analysis_id = exclude_match_id
+    elif hasattr(req, "id") and req.id:
+        exclude_analysis_id = req.id
+    elif hasattr(req, "analysis_id") and req.analysis_id:
+        exclude_analysis_id = req.analysis_id
+    elif hasattr(req, "match_id") and req.match_id:
+        exclude_analysis_id = req.match_id
+    elif hasattr(req, "exclude_match_id") and req.exclude_match_id:
+        exclude_analysis_id = req.exclude_match_id
+    elif isinstance(req, dict):
+        exclude_analysis_id = req.get("id") or req.get("analysis_id") or req.get("match_id") or req.get("exclude_match_id")
+
+    # ── 2. Extraer Fecha/Hora del partido actual ──
+    # FIX: mismo criterio de prioridad que arriba para current_match_date.
+    raw_date = None
+    if current_match_date is not None:
+        raw_date = current_match_date
+    elif hasattr(req, "match_date") and req.match_date:
+        raw_date = req.match_date
+    elif hasattr(req, "date") and req.date:
+        raw_date = req.date
+    elif isinstance(req, dict):
+        raw_date = req.get("match_date") or req.get("date")
+
+    current_match_time = None
+    if raw_date:
+        try:
+            if isinstance(raw_date, datetime):
+                current_match_time = raw_date
+            else:
+                date_str = str(raw_date).strip().replace("Z", "+00:00")
+                if "T" in date_str or " " in date_str:
+                    current_match_time = datetime.fromisoformat(date_str)
+                elif len(date_str) >= 10:
+                    current_match_time = datetime.strptime(date_str[:10], "%Y-%m-%d")
+        except Exception as e:
+            print(f"[DEBUG COMPARE] Error parseando raw_date: {e}")
+
+    curr_date_only = current_match_time.date() if current_match_time else None
+    historical_records = []
+    if db is not None:
+        try:
+            from sqlalchemy import text
+            comp_name = req.competition or ""
+            q_hist = text("""
+                SELECT id, match_title, match_date, payload,
+                       final_score_home, final_score_away,
+                       final_corners_home, final_corners_away,
+                       final_yellow_cards_home, final_yellow_cards_away,
+                       final_shots_home, final_shots_away,
+                       final_shots_on_target_home, final_shots_on_target_away,
+                       final_fouls_home, final_fouls_away
+                FROM analysis_history
+                WHERE final_score_home IS NOT NULL AND final_score_away IS NOT NULL
+                ORDER BY match_date DESC
+            """)
+            rows = db.execute(q_hist).mappings().all()
+            target_l = comp_name.strip().lower()
+            for r in rows:
+                r_dict = dict(r)
+                m_id = r_dict.get("id")
+
+                # 1) Exclusión por ID (el propio partido que se está recalculando)
+                if exclude_analysis_id and m_id and str(m_id).strip() == str(exclude_analysis_id).strip():
+                    continue
+
+                # 2) Parseo de la fecha de ESTA fila ANTES de usarla.
+                # FIX: antes este cálculo ocurría después del chequeo "current_match_time and m_dt",
+                # lo que hacía que m_dt fuera el de la fila ANTERIOR (o estuviera indefinido en la
+                # primera iteración), permitiendo que el propio partido u otros posteriores se
+                # filtraran incorrectamente. Ahora se calcula primero y se usa de inmediato.
+                m_date = r_dict.get("match_date")
+                m_dt = None
+                if m_date:
+                    try:
+                        if isinstance(m_date, datetime):
+                            m_dt = m_date
+                        else:
+                            m_s = str(m_date).replace("Z", "+00:00")
+                            if "T" in m_s or " " in m_s:
+                                m_dt = datetime.fromisoformat(m_s)
+                            elif len(m_s) >= 10:
+                                m_dt = datetime.strptime(m_s[:10], "%Y-%m-%d")
+                    except Exception:
+                        m_dt = None
+
+                # 3) Exclusión por fecha/hora exacta (data leakage a nivel de instante)
+                if current_match_time and m_dt and m_dt >= current_match_time:
+                    continue
+
+                # 4) Filtrado temporal estricto por día si se conoce la fecha del partido actual
+                if curr_date_only and m_dt and m_dt.date() >= curr_date_only:
+                    continue
+
+                # Incluir registros de la base de datos histórica para evaluación de hit rates
+                historical_records.append(r_dict)
+        except Exception:
+            pass
+
+    from src.core.math_engine import LeagueMathEngine
+
     for v in values:
+        # ── Hit Rate empírico (% de acierto real en partidos históricos para TODOS los mercados) ──
+        if historical_records:
+            fam = _market_family(v.selection)
+            side = _market_side(v.selection)
+            line = _extract_line_number(v.selection)
+            is_ov = (side == "over")
+
+            # Mapeo según familia de mercado
+            if fam in {"goals", "corners", "cards", "shots", "shots_target", "fouls"} and line is not None:
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, fam, line=line, is_over=is_ov, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+
+                v.home_hit_rate = hr_h.get("hit_rate_pct")
+                v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
+                v.h2h_samples = hr_h2h.get("sample_size")
+                v.h2h_matches = hr_h2h.get("h2h_matches", [])
+
+                tot_samples = hr_h.get("sample_size", 0) + hr_a.get("sample_size", 0)
+                v.hit_rate_samples = tot_samples
+                if tot_samples > 0:
+                    tot_hits = hr_h.get("hits", 0) + hr_a.get("hits", 0)
+                    v.empirical_hit_rate = round((tot_hits / tot_samples) * 100.0, 1)
+
+            elif fam in {"btts", "btts_yes", "btts_no"}:
+                btts_fam = "btts_no" if "no" in side or "no" in v.selection.lower() else "btts_yes"
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, btts_fam, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+
+                v.home_hit_rate = hr_h.get("hit_rate_pct")
+                v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
+                v.h2h_samples = hr_h2h.get("sample_size")
+                v.h2h_matches = hr_h2h.get("h2h_matches", [])
+
+                tot_samples = hr_h.get("sample_size", 0) + hr_a.get("sample_size", 0)
+                v.hit_rate_samples = tot_samples
+                if tot_samples > 0:
+                    tot_hits = hr_h.get("hits", 0) + hr_a.get("hits", 0)
+                    v.empirical_hit_rate = round((tot_hits / tot_samples) * 100.0, 1)
+
+            elif fam in {"result", "moneyline", "1x2"}:
+                t_side = "home" if side == "home" or "local" in v.selection.lower() else ("away" if side == "away" or "visitante" in v.selection.lower() else "draw")
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, "1x2", role_filter="home", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, "1x2", role_filter="away", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, "1x2", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+
+                v.home_hit_rate = hr_h.get("hit_rate_pct")
+                v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
+                v.h2h_samples = hr_h2h.get("sample_size")
+                v.h2h_matches = hr_h2h.get("h2h_matches", [])
+
+                # Si es gana local, el hit rate principal es el del local; si gana visitante, el del visitante
+                if t_side == "home":
+                    v.empirical_hit_rate = v.home_hit_rate
+                    v.hit_rate_samples = hr_h.get("sample_size", 0)
+                elif t_side == "away":
+                    v.empirical_hit_rate = v.away_hit_rate
+                    v.hit_rate_samples = hr_a.get("sample_size", 0)
+                else:
+                    tot_samples = hr_h.get("sample_size", 0) + hr_a.get("sample_size", 0)
+                    v.hit_rate_samples = tot_samples
+                    if tot_samples > 0:
+                        tot_hits = hr_h.get("hits", 0) + hr_a.get("hits", 0)
+                        v.empirical_hit_rate = round((tot_hits / tot_samples) * 100.0, 1)
+
+            elif fam == "double_chance":
+                t_side = "1x" if "1x" in v.selection.lower() or side == "home_draw" else ("x2" if "x2" in v.selection.lower() or side == "draw_away" else "12")
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, "double_chance", role_filter="home", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, "double_chance", role_filter="away", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, "double_chance", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+
+                v.home_hit_rate = hr_h.get("hit_rate_pct")
+                v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
+                v.h2h_samples = hr_h2h.get("sample_size")
+                v.h2h_matches = hr_h2h.get("h2h_matches", [])
+
+                # Para 1X el porcentaje clave es el del local (ganó o empató)
+                if t_side == "1x":
+                    v.empirical_hit_rate = v.home_hit_rate
+                    v.hit_rate_samples = hr_h.get("sample_size", 0)
+                elif t_side == "x2":
+                    v.empirical_hit_rate = v.away_hit_rate
+                    v.hit_rate_samples = hr_a.get("sample_size", 0)
+                else:
+                    tot_samples = hr_h.get("sample_size", 0) + hr_a.get("sample_size", 0)
+                    v.hit_rate_samples = tot_samples
+                    if tot_samples > 0:
+                        tot_hits = hr_h.get("hits", 0) + hr_a.get("hits", 0)
+                        v.empirical_hit_rate = round((tot_hits / tot_samples) * 100.0, 1)
+
         q_score, s_support, p_support, strat_score = _rate_pick_quality(v, h, a, projected_lines)
         v.quality_score   = q_score
         v.strategic_score = strat_score
         v.stat_support    = round(s_support, 1)
         v.proj_support    = round(p_support, 1)
-        v.is_publishable = is_publishable_pick(v)
-        v.is_value = v.is_publishable
+        v.is_publishable  = is_publishable_pick(v)
+        v.is_value        = is_value_pick(v) and v.is_publishable
+        v.is_underdog     = is_underdog_pick(v)
+
+    # ── Descorrelación de picks del mismo partido (reglas estructurales) ──
+    values = resolve_match_picks_correlation(values)
 
     h_adv = sum(1 for c in comparisons if c.advantage == "home")
     a_adv = sum(1 for c in comparisons if c.advantage == "away")
-    vp    = [v for v in values if v.is_value]
+    vp    = [v for v in values if v.is_value and v.is_publishable]
 
     # ── Faltas y Offsides Lambdas ─────────────────────────────
     lam_fouls = _compute_fouls_lambda(h, a, req.league_stats, general=use_general, db=db)
@@ -3722,7 +3892,7 @@ async def compare_football(req: FootballCompareRequest, db: Any = None) -> Compa
         projected_lines=projected_lines,
         summary=summary,
         llm_analysis=llm,
-    )    
+    )
 
 if __name__ == "__main__":
     casos = [

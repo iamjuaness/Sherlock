@@ -86,6 +86,9 @@ class AnalysisSave(BaseModel):
     needs_reanalysis: bool | None = False
     count_in_profitability: bool | None = True
     has_real_stats: bool | None = True
+    pre_match_stats: Any | None = None
+    recent_form_stats: Any | None = None
+    historical_pick_rates: Any | None = None
 
 
 class AnalysisResultsUpdate(BaseModel):
@@ -230,6 +233,9 @@ class AnalysisHistoryOut(BaseModel):
     picks_hits_summary: str | None = None # e.g. "2/3"
     profit: float | None = None
     has_real_stats: bool = True
+    pre_match_stats: Any | None = None
+    recent_form_stats: Any | None = None
+    historical_pick_rates: Any | None = None
 
     expected_goals_home: float | None = None
     expected_goals_away: float | None = None
@@ -319,7 +325,7 @@ class AnalysisHistoryOut(BaseModel):
     yellow_cards_home: int | None = None
     yellow_cards_away: int | None = None
 
-    @field_validator("payload", "picks_calculados", "compare_response_snapshot", mode="before")
+    @field_validator("payload", "picks_calculados", "compare_response_snapshot", "pre_match_stats", "recent_form_stats", "historical_pick_rates", mode="before")
     @classmethod
     def parse_json_fields(cls, v: Any) -> Any:
         if isinstance(v, str):

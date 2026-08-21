@@ -300,7 +300,7 @@ function renderMultiLineCards(values) {
   // ── 1. Evaluar picks (Sincronizado con Backend) ──
   const valuePicks = values
     .filter((v) => v.selection && v.odds != null)
-    .filter((v) => v.is_value === true && v.is_underdog !== true) // Profesional
+    .filter((v) => v.is_value === true && v.is_underdog !== true && Number(v.odds) <= 3.50) // Profesional
     .sort((a, b) => {
       const dqA = a.data_quality_score ?? 0;
       const dqB = b.data_quality_score ?? 0;
@@ -364,6 +364,28 @@ function renderMultiLineCards(values) {
             : "var(--color-error)";
     const lrsLabel = lrs == null ? "N/A" : `${Math.round(lrs * 100)}%`;
 
+    // Frecuencia / Hit Rate histórico real por equipo, combinado y H2H directo
+    const homeHr = v.home_hit_rate != null ? `${Number(v.home_hit_rate).toFixed(1)}%` : null;
+    const awayHr = v.away_hit_rate != null ? `${Number(v.away_hit_rate).toFixed(1)}%` : null;
+    const empHr = v.empirical_hit_rate != null ? `${Number(v.empirical_hit_rate).toFixed(1)}%` : null;
+    const h2hHr = v.h2h_hit_rate != null ? `${Number(v.h2h_hit_rate).toFixed(1)}%` : null;
+    const h2hCount = v.h2h_samples != null && v.h2h_samples > 0 ? ` (${v.h2h_samples} PJ)` : "";
+
+    let hitRateRow = "";
+    if (homeHr || awayHr || empHr || h2hHr) {
+      const parts = [];
+      if (homeHr) parts.push(`Loc: <b>${homeHr}</b>`);
+      if (awayHr) parts.push(`Vis: <b>${awayHr}</b>`);
+      if (empHr && (homeHr || awayHr) && empHr !== homeHr && empHr !== awayHr) parts.push(`Total: <b>${empHr}</b>`);
+      else if (empHr && !homeHr && !awayHr) parts.push(`Total: <b>${empHr}</b>`);
+      if (h2hHr) parts.push(`<span style="color:#a78bfa;" title="Hit rate en enfrentamientos directos previos">H2H: <b>${h2hHr}${h2hCount}</b></span>`);
+
+      hitRateRow = `<div class="value-line-card__row" style="background:rgba(255,255,255,0.03);padding:4px 8px;border-radius:6px;margin:4px 0;border:1px solid rgba(56,189,248,0.15);">
+        <span title="% de partidos históricos donde se cumplió este pick">🎯 Hit Rate Histórico</span>
+        <span style="font-size:0.8rem;color:#38bdf8;font-weight:500;">${parts.join(" | ")}</span>
+      </div>`;
+    }
+
     // Casa que ofrece la mejor cuota para este pick (line shopping)
     const bookmakerRow = v.bookmaker
       ? `<div class="value-line-card__row">
@@ -412,6 +434,7 @@ function renderMultiLineCards(values) {
         <span>${oddsText}</span>
       </div>
       ${bookmakerRow}
+      ${hitRateRow}
       <div class="value-line-card__row">
         <span>Stake Recomendado</span>
         <span style="font-weight:bold;color:var(--accent-light)">${
@@ -435,6 +458,63 @@ function renderMultiLineCards(values) {
 
   valuePicks.forEach((v) => renderItem(v, grid));
   underdogPicks.forEach((v) => renderItem(v, underdogGrid));
+
+  // ── Renderizar en apartado separado: Partidos H2H donde se dio cada Pick ──
+  const h2hCard = document.getElementById("h2h-picks-card");
+  const h2hContainer = document.getElementById("h2h-picks-container");
+  if (h2hContainer) h2hContainer.innerHTML = "";
+
+  const allPicks = [...valuePicks, ...underdogPicks];
+  const picksWithH2HMatches = allPicks.filter(
+    (v) => Array.isArray(v.h2h_matches) && v.h2h_matches.length > 0
+  );
+
+  if (h2hCard) {
+    if (picksWithH2HMatches.length > 0) {
+      h2hCard.style.display = "block";
+      picksWithH2HMatches.forEach((v) => {
+        const hitMatches = v.h2h_matches.filter((m) => m.hit === true);
+        const totalMatches = v.h2h_matches.length;
+        const h2hHrText = v.h2h_hit_rate != null ? `${Number(v.h2h_hit_rate).toFixed(1)}%` : `${Math.round((hitMatches.length / totalMatches) * 100)}%`;
+
+        let matchesListHtml = "";
+        if (hitMatches.length > 0) {
+          matchesListHtml = hitMatches
+            .map((m) => {
+              const score = (m.score_home != null && m.score_away != null) ? `${m.score_home} - ${m.score_away}` : "";
+              const date = m.date ? `[${m.date}] ` : "";
+              return `<div style="padding: 6px 12px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem;">
+                <span style="font-weight: 500; color: #f1f5f9;">${date}<b>${m.home_team}</b> <span style="color:#a78bfa; font-weight:bold; margin: 0 6px;">${score}</span> <b>${m.away_team}</b></span>
+                <span style="color: #10b981; font-weight: bold; font-size: 0.78rem; background: rgba(16, 185, 129, 0.15); padding: 3px 10px; border-radius: 12px; letter-spacing: 0.02em;">✓ Pick Cumplido</span>
+              </div>`;
+            })
+            .join("");
+        } else {
+          matchesListHtml = `<div style="font-size:0.8rem; color:var(--text-dim); padding:6px 0;">Sin partidos H2H previos en que se haya cumplido este pick (0 de ${totalMatches} partidos).</div>`;
+        }
+
+        const block = document.createElement("div");
+        block.style.cssText = "background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 8px; padding: 0.85rem;";
+        block.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.4rem;">
+            <div>
+              <span style="font-weight: bold; color: #f8fafc; font-size: 0.95rem;">🎯 ${v.selection}</span>
+              <span style="font-size: 0.8rem; color: #38bdf8; margin-left: 8px;">(Cuota: ${Number(v.odds).toFixed(2)})</span>
+            </div>
+            <div style="font-size: 0.8rem; color: #c084fc; font-weight: 600;">
+              Hit Rate H2H: ${h2hHrText} (${hitMatches.length}/${totalMatches} partidos)
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+            ${matchesListHtml}
+          </div>
+        `;
+        h2hContainer.appendChild(block);
+      });
+    } else {
+      h2hCard.style.display = "none";
+    }
+  }
 
   // High Confidence picks - disabled until implemented
   const hcPicks = values.filter((v) => v.is_high_confidence === true);
@@ -1193,7 +1273,8 @@ function renderHistoryList(entries) {
             p.is_publishable === true ||
             (p.is_value === true &&
               p.is_underdog !== true &&
-              p.is_high_confidence !== true),
+              p.is_high_confidence !== true &&
+              Number(p.odds || 0) <= 3.50),
         );
         const hasUnderdog = picks.some((p) => p.is_underdog === true);
 

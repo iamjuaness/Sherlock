@@ -33,6 +33,8 @@ chrome.runtime.onInstalled.addListener((details) => {
 // ═══════════════════════════════════════════════════════════════
 // Flag para cancelar extracción histórica
 let _historicalCancelled = false;
+// Flag para cancelar extracción masiva (bulk)
+let _bulkCancelled = false;
 
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   if (request.action === "extractStats") {
@@ -85,6 +87,34 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
       .catch((err) => {
         sendResponse({ success: false, error: err.message });
       });
+    return true;
+  }
+
+  // NUEVO (Punto 1): Extracción masiva de partidos del día siguiente
+  if (request.action === "bulkExtractStats") {
+    _bulkCancelled = false;
+    handleBulkExtractStats(request.data)
+      .then(sendResponse)
+      .catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+    return true;
+  }
+
+  // NUEVO (Punto 2): Extracción masiva de resultados del día actual/anterior
+  if (request.action === "bulkExtractResults") {
+    _bulkCancelled = false;
+    handleBulkExtractResults(request.data)
+      .then(sendResponse)
+      .catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+    return true;
+  }
+
+  if (request.action === "cancelBulkExtraction") {
+    _bulkCancelled = true;
+    sendResponse({ success: true });
     return true;
   }
 });
@@ -489,7 +519,6 @@ async function handleSendToEndpoint(data) {
   let endpointUrl = settings.endpointUrl;
   if (endpointUrl && !endpointUrl.includes("/api/v1/prefill")) {
     endpointUrl = endpointUrl.replace(/\/+$/, "") + "/api/v1/prefill";
-  }
 
   let payload;
   try {
@@ -798,7 +827,7 @@ function sendProgress(progressData) {
 }
 
 async function handleExtractHistoricalData(data) {
-  const { tournamentId, tournamentName, baseUrl } = data;
+  const { tournamentId, tournamentName, targetSeasonId, baseUrl } = data;
 
   if (!baseUrl) throw new Error("Endpoint de Sherlock no configurado");
   if (!tournamentId) throw new Error("ID de competición no encontrado");
@@ -820,17 +849,22 @@ async function handleExtractHistoricalData(data) {
     throw new Error("No se pudieron obtener las temporadas");
 
   // Las temporadas vienen de más reciente (índice 0) a más antigua.
-  // Detectar la temporada actual (la primera de la lista) para tratarla
-  // distinto si no tiene partidos finalizados aún.
-  const seasons = seasonsData.seasons;
-  const currentSeasonId = seasons.length > 0 ? String(seasons[0].id) : null;
+  let seasons = seasonsData.seasons;
+  if (targetSeasonId && targetSeasonId !== "all") {
+    seasons = seasons.filter((s) => String(s.id) === String(targetSeasonId));
+    if (seasons.length === 0) {
+      throw new Error(`Temporada especificada (ID: ${targetSeasonId}) no encontrada`);
+    }
+  }
+
+  const currentSeasonId = seasonsData.seasons.length > 0 ? String(seasonsData.seasons[0].id) : null;
   const pendingCount = seasons.filter(
     (s) => !completedSeasons.has(String(s.id)),
   ).length;
 
   sendProgress({
     phase: "seasons",
-    message: `${seasons.length} temporadas — ${completedCount} ya completadas, ${pendingCount} pendientes`,
+    message: `${seasons.length} temporada(s) a procesar — ${pendingCount} pendientes`,
     totalSeasons: seasons.length,
     completedSeasons: completedCount,
   });
@@ -857,7 +891,9 @@ async function handleExtractHistoricalData(data) {
     const season = seasons[si];
     const seasonKey = String(season.id);
 
-    if (completedSeasons.has(seasonKey)) {
+    const isSingleSeasonMode = Boolean(targetSeasonId && targetSeasonId !== "all");
+
+    if (!isSingleSeasonMode && completedSeasons.has(seasonKey)) {
       sendProgress({
         phase: "season_skipped",
         seasonIndex: si,
@@ -919,20 +955,18 @@ async function handleExtractHistoricalData(data) {
     if (seasonEvents.length === 0 && !_historicalCancelled) {
       const isCurrentSeason = String(season.id) === currentSeasonId;
 
-      if (isCurrentSeason) {
-        // La temporada en curso puede no tener partidos finalizados todavía.
-        // Se omite sin detener el proceso para continuar con el historial.
+      if (isCurrentSeason || isSingleSeasonMode) {
         sendProgress({
           phase: "season_skipped",
           seasonIndex: si,
           totalSeasons: seasons.length,
           seasonYear: season.year,
-          message: `⏭ T.${season.year} (temporada actual) sin partidos finalizados aún — continuando con historial`,
+          message: `⏭ T.${season.year} sin partidos finalizados encontrados`,
         });
         continue;
       }
 
-      // Para temporadas pasadas: sin datos = llegamos al límite del historial.
+      // Para temporadas pasadas en modo automático: sin datos = llegamos al límite del historial.
       const lastSavedSeason = si > 0 ? seasons[si - 1].year : null;
       const msg = lastSavedSeason
         ? `⛔ T.${season.year} sin datos — proceso detenido. Última temporada guardada: T.${lastSavedSeason}`
@@ -1168,4 +1202,333 @@ function extractEventIdFromUrl(url) {
 
 function safeDiv(a, b) {
   return b > 0 ? a / b : 0;
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ENVÍO DE PROGRESO BULK
+// ═══════════════════════════════════════════════════════════════
+function sendBulkProgress(data) {
+  chrome.runtime.sendMessage({ action: "bulkProgress", data }).catch(() => {});
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PUNTO 1: EXTRACCIÓN MASIVA DE STATS DEL DÍA SIGUIENTE
+// ═══════════════════════════════════════════════════════════════
+/**
+ * Recorre todas las competiciones activas en competitions.json (almacenado en el storage),
+ * busca los partidos del día siguiente (o del mismo día con status.type == "notstarted"),
+ * extrae stats + cuotas por cada partido (mismo flujo que handleExtractStats),
+ * y los envía al endpoint de Sherlock. Evita duplicados usando la BD via Sherlock.
+ * Delays: 5s entre ligas, 3s entre partidos.
+ */
+async function handleBulkExtractStats(data) {
+  const { baseUrl, competitions } = data;
+
+  if (!baseUrl) throw new Error("Endpoint de Sherlock no configurado");
+  if (!competitions || competitions.length === 0) {
+    throw new Error("No hay competiciones activas en competitions.json");
+  }
+
+  const activeComps = competitions.filter((c) => c.active && c.season);
+
+  sendBulkProgress({ phase: "start", message: `Procesando ${activeComps.length} competiciones activas...`, total: activeComps.length, done: 0 });
+
+  // Calcular timestamps del día siguiente (inicio y fin en UTC)
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+
+  const tomorrowStart = new Date(tomorrow);
+  tomorrowStart.setUTCHours(0, 0, 0, 0);
+  const tomorrowEnd = new Date(tomorrow);
+  tomorrowEnd.setUTCHours(23, 59, 59, 999);
+
+  // También incluir partidos de hoy que aún no empezaron
+  const todayStart = new Date(now);
+  todayStart.setUTCHours(0, 0, 0, 0);
+
+  let totalProcessed = 0;
+  let totalSaved = 0;
+  let totalErrors = 0;
+  let totalSkipped = 0;
+
+  for (let ci = 0; ci < activeComps.length; ci++) {
+    if (_bulkCancelled) {
+      sendBulkProgress({ phase: "cancelled", message: "Cancelado por el usuario", totalProcessed, totalSaved, totalErrors });
+      return { success: false, cancelled: true, totalProcessed, totalSaved, totalErrors };
+    }
+
+    const comp = activeComps[ci];
+    sendBulkProgress({
+      phase: "league_start",
+      message: `[${ci + 1}/${activeComps.length}] ${comp.name}...`,
+      total: activeComps.length,
+      done: ci,
+      leagueName: comp.name,
+    });
+
+    try {
+      // Obtener los próximos partidos de la competición (solo necesitamos page 0, son ~30)
+      const eventsData = await fetchSofaScore(
+        `/api/v1/unique-tournament/${comp.id}/season/${comp.season}/events/next/0`
+      );
+      const events = eventsData?.events || [];
+
+      // Filtrar: notstarted del día siguiente O notstarted de hoy que aún no empezaron
+      const targetEvents = events.filter((e) => {
+        if (e.status?.type !== "notstarted") return false;
+        const ts = e.startTimestamp * 1000;
+        // Día siguiente
+        if (ts >= tomorrowStart.getTime() && ts <= tomorrowEnd.getTime()) return true;
+        // Hoy (no empezados todavía)
+        if (ts >= now.getTime() && ts >= todayStart.getTime()) return true;
+        return false;
+      });
+
+      if (targetEvents.length === 0) {
+        sendBulkProgress({
+          phase: "league_skip",
+          message: `${comp.name}: Sin partidos para hoy/mañana`,
+          done: ci + 1,
+          total: activeComps.length,
+        });
+      } else {
+        sendBulkProgress({
+          phase: "league_found",
+          message: `${comp.name}: ${targetEvents.length} partido(s) encontrado(s)`,
+          done: ci + 1,
+          total: activeComps.length,
+        });
+
+        for (let ei = 0; ei < targetEvents.length; ei++) {
+          if (_bulkCancelled) break;
+
+          const event = targetEvents[ei];
+          const homeName = event.homeTeam?.shortName || event.homeTeam?.name || "";
+          const awayName = event.awayTeam?.shortName || event.awayTeam?.name || "";
+
+          sendBulkProgress({
+            phase: "event_processing",
+            message: `  → ${homeName} vs ${awayName}`,
+            totalProcessed,
+            totalSaved,
+            totalErrors,
+          });
+
+          try {
+            // Extraer stats completas (igual que handleExtractStats pero sin guardar en storage local)
+            const result = await handleExtractStats({
+              eventId: String(event.id),
+              homeTeamId: event.homeTeam?.id,
+              awayTeamId: event.awayTeam?.id,
+              tournamentId: event.tournament?.id,
+              uniqueTournamentId: comp.id,
+              seasonId: comp.season,
+              url: `https://www.sofascore.com/event/${event.id}`,
+            });
+
+            if (result?.success && result.data) {
+              const statsData = result.data;
+
+              // Esperar a que se recuperen las cuotas (están en result.data.oddsByBookmaker)
+              // Luego enviar a Sherlock
+              const sendResult = await handleSendToEndpoint(statsData);
+
+              if (sendResult?.success) {
+                totalSaved++;
+                sendBulkProgress({ phase: "event_saved", message: `  ✅ ${homeName} vs ${awayName} guardado`, totalProcessed, totalSaved, totalErrors });
+              } else {
+                totalErrors++;
+                sendBulkProgress({ phase: "event_error", message: `  ❌ ${homeName} vs ${awayName}: ${sendResult?.error || "error"}`, totalProcessed, totalSaved, totalErrors });
+              }
+            } else {
+              totalErrors++;
+            }
+            totalProcessed++;
+          } catch (e) {
+            totalErrors++;
+            totalProcessed++;
+            console.warn(`[Bulk Stats] Error en evento ${event.id}:`, e.message);
+          }
+
+          // Espera entre partidos (mínimo 3 segundos)
+          if (ei < targetEvents.length - 1) {
+            await delay(3000);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[Bulk Stats] Error en liga ${comp.name}:`, e.message);
+      sendBulkProgress({ phase: "league_error", message: `${comp.name}: Error — ${e.message}`, done: ci + 1, total: activeComps.length });
+    }
+
+    // Espera entre ligas (5 segundos) para evitar bloqueos de IP
+    if (ci < activeComps.length - 1 && !_bulkCancelled) {
+      await delay(5000);
+    }
+  }
+
+  sendBulkProgress({
+    phase: "done",
+    message: `✅ Completado: ${totalSaved} guardados, ${totalErrors} errores`,
+    totalProcessed,
+    totalSaved,
+    totalErrors,
+  });
+
+  return { success: true, totalProcessed, totalSaved, totalErrors };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// PUNTO 2: EXTRACCIÓN MASIVA DE RESULTADOS DEL DÍA
+// ═══════════════════════════════════════════════════════════════
+/**
+ * Recorre las competiciones activas (filtrando por picks pendientes si baseUrl los expone),
+ * busca los partidos finalizados del día actual o anterior con el endpoint /events/last/0,
+ * y llama a handleExtractResults por cada uno.
+ * Delays: 5s entre ligas, 3s entre partidos.
+ */
+async function handleBulkExtractResults(data) {
+  const { baseUrl, competitions } = data;
+
+  if (!baseUrl) throw new Error("Endpoint de Sherlock no configurado");
+  if (!competitions || competitions.length === 0) {
+    throw new Error("No hay competiciones activas");
+  }
+
+  let activeComps = competitions.filter((c) => c.active && c.season);
+
+  // Optimización Punto 2: Intentar consultar competiciones con picks pendientes desde Sherlock
+  try {
+    const resPending = await fetch(`${baseUrl}/api/v1/competitions/pending-picks`);
+    if (resPending.ok) {
+      const pendingData = await resPending.json();
+      const pendingList = pendingData.pending_competitions || [];
+      if (Array.isArray(pendingList) && pendingList.length > 0) {
+        const pendingSet = new Set(pendingList.map((s) => s.toLowerCase().trim()));
+        const filtered = activeComps.filter((c) => pendingSet.has(c.name.toLowerCase().trim()));
+        if (filtered.length > 0) {
+          activeComps = filtered;
+          console.log(`[Bulk Results] Optimizado: Filtradas ${activeComps.length} ligas con picks pendientes.`);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[Bulk Results] No se pudo obtener ligas pendientes de Sherlock, buscando en todas las activas:", e.message);
+  }
+
+  sendBulkProgress({ phase: "start", message: `Buscando resultados en ${activeComps.length} competiciones...`, total: activeComps.length, done: 0 });
+
+  // Calcular timestamps para hoy y ayer
+  const now = new Date();
+  const todayStart = new Date(now);
+  todayStart.setUTCHours(0, 0, 0, 0);
+  const yesterdayStart = new Date(todayStart);
+  yesterdayStart.setDate(yesterdayStart.getDate() - 1);
+
+  let totalProcessed = 0;
+  let totalSaved = 0;
+  let totalErrors = 0;
+
+  for (let ci = 0; ci < activeComps.length; ci++) {
+    if (_bulkCancelled) {
+      sendBulkProgress({ phase: "cancelled", message: "Cancelado por el usuario", totalProcessed, totalSaved, totalErrors });
+      return { success: false, cancelled: true, totalProcessed, totalSaved, totalErrors };
+    }
+
+    const comp = activeComps[ci];
+    sendBulkProgress({
+      phase: "league_start",
+      message: `[${ci + 1}/${activeComps.length}] ${comp.name}...`,
+      total: activeComps.length,
+      done: ci,
+      leagueName: comp.name,
+    });
+
+    try {
+      const eventsData = await fetchSofaScore(
+        `/api/v1/unique-tournament/${comp.id}/season/${comp.season}/events/last/0`
+      );
+      const events = eventsData?.events || [];
+
+      // Solo eventos finalizados de hoy o ayer
+      const targetEvents = events.filter((e) => {
+        if (e.status?.type !== "finished") return false;
+        const ts = e.startTimestamp * 1000;
+        return ts >= yesterdayStart.getTime() && ts <= now.getTime();
+      });
+
+      if (targetEvents.length === 0) {
+        sendBulkProgress({
+          phase: "league_skip",
+          message: `${comp.name}: Sin resultados del día`,
+          done: ci + 1,
+          total: activeComps.length,
+        });
+      } else {
+        sendBulkProgress({
+          phase: "league_found",
+          message: `${comp.name}: ${targetEvents.length} resultado(s) encontrado(s)`,
+          done: ci + 1,
+          total: activeComps.length,
+        });
+
+        for (let ei = 0; ei < targetEvents.length; ei++) {
+          if (_bulkCancelled) break;
+
+          const event = targetEvents[ei];
+          const homeName = event.homeTeam?.shortName || event.homeTeam?.name || "";
+          const awayName = event.awayTeam?.shortName || event.awayTeam?.name || "";
+
+          sendBulkProgress({
+            phase: "event_processing",
+            message: `  → ${homeName} vs ${awayName}`,
+            totalProcessed,
+            totalSaved,
+            totalErrors,
+          });
+
+          try {
+            const result = await handleExtractResults({ eventId: String(event.id) });
+
+            if (result?.success) {
+              totalSaved++;
+              sendBulkProgress({ phase: "event_saved", message: `  ✅ ${homeName} vs ${awayName}`, totalProcessed, totalSaved, totalErrors });
+            } else {
+              totalErrors++;
+              sendBulkProgress({ phase: "event_error", message: `  ❌ ${homeName} vs ${awayName}: ${result?.error || "error"}`, totalProcessed, totalSaved, totalErrors });
+            }
+            totalProcessed++;
+          } catch (e) {
+            totalErrors++;
+            totalProcessed++;
+            console.warn(`[Bulk Results] Error evento ${event.id}:`, e.message);
+          }
+
+          // Espera entre partidos (mínimo 3 segundos)
+          if (ei < targetEvents.length - 1) {
+            await delay(3000);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[Bulk Results] Error liga ${comp.name}:`, e.message);
+      sendBulkProgress({ phase: "league_error", message: `${comp.name}: Error — ${e.message}`, done: ci + 1, total: activeComps.length });
+    }
+
+    // Espera entre ligas (5 segundos)
+    if (ci < activeComps.length - 1 && !_bulkCancelled) {
+      await delay(5000);
+    }
+  }
+
+  sendBulkProgress({
+    phase: "done",
+    message: `✅ Resultados: ${totalSaved} guardados, ${totalErrors} errores`,
+    totalProcessed,
+    totalSaved,
+    totalErrors,
+  });
+
+  return { success: true, totalProcessed, totalSaved, totalErrors };
 }

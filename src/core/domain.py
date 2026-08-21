@@ -268,6 +268,14 @@ class AnalysisHistory(Base):
     llm_timestamp = Column(DateTime, nullable=True)
     compare_response_snapshot = Column(Text, nullable=True)
     needs_reanalysis = Column(Boolean, default=False)
+    has_odds = Column(Boolean, default=False, nullable=False, index=True, server_default="0")
+    needs_recalc = Column(Boolean, default=True, nullable=False, index=True, server_default="1")
+    last_recalculated_at = Column(DateTime, nullable=True)
+    
+    # Pre-calculated prior statistics & windows
+    pre_match_stats = Column(Text, nullable=True)      # JSON: Liga y estadísticas generales/local/visitante previas
+    recent_form_stats = Column(Text, nullable=True)    # JSON: Ventanas de últimos 5, 10 y 15 partidos de A y B
+    historical_pick_rates = Column(Text, nullable=True) # JSON: Frecuencia de acierto (% hit rate) por mercado/equipo
 
 
     # Final Results

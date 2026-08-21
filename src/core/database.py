@@ -15,7 +15,7 @@ class Base(DeclarativeBase):
 engine = create_engine(
     settings.database_url,
     echo=False,
-    connect_args={"check_same_thread": False} if "sqlite" in settings.database_url else {},
+    connect_args={"check_same_thread": False, "timeout": 30} if "sqlite" in settings.database_url else {},
 )
 
 SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
@@ -34,7 +34,6 @@ def init_db() -> None:
     """Create all tables and run idempotent schema migrations."""
                 
     Base.metadata.create_all(bind=engine)
-    create_indexes()
 
     with engine.connect() as conn:
         # ── analysis_history result fields ──
@@ -159,11 +158,17 @@ def init_db() -> None:
                 except Exception as e:
                     print(f"DB migration warning for {col}: {e}")
 
-        # ── analysis_history JSON/Text fields (if not present from ORM) ──
+        # ── analysis_history JSON/Text/Flag fields (if not present from ORM) ──
         json_fields = [
             ("compare_response_snapshot", "TEXT"),
             ("llm_response", "TEXT"),
             ("llm_timestamp", "TEXT"),
+            ("pre_match_stats", "TEXT"),
+            ("recent_form_stats", "TEXT"),
+            ("historical_pick_rates", "TEXT"),
+            ("has_odds", "BOOLEAN NOT NULL DEFAULT 0"),
+            ("needs_recalc", "BOOLEAN NOT NULL DEFAULT 1"),
+            ("last_recalculated_at", "DATETIME"),
         ]
         for col, dtype in json_fields:
             if not _column_exists(conn, "analysis_history", col):
@@ -175,8 +180,17 @@ def init_db() -> None:
                 except Exception as e:
                     print(f"DB migration warning for {col}: {e}")
 
+        # Idempotent backfill of has_odds for historical records
+        try:
+            conn.execute(text(
+                "UPDATE analysis_history SET has_odds = 1 WHERE (has_odds IS NULL OR has_odds = 0) AND (payload LIKE '%\"odds\"%' OR payload LIKE '%\"sources\"%');"
+            ))
+        except Exception as e:
+            print(f"DB backfill warning for has_odds: {e}")
+
         conn.commit()
         print("Database initialization complete.")
+    create_indexes()
 
 
 def get_db():
@@ -195,5 +209,11 @@ def create_indexes():
         ))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_analysis_history_sport_date ON analysis_history(sport, match_date DESC);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_analysis_history_has_odds ON analysis_history(has_odds);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_analysis_history_needs_recalc ON analysis_history(needs_recalc);"
         ))
         conn.commit()

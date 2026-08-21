@@ -32,7 +32,6 @@ from src.ui.api.compare import (
     split_asian_line,
     _market_family
 )
-from src.core.glm_model import get_predictor as _get_glm_predictor, retrain_predictor as _retrain_glm
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi import Request
@@ -52,12 +51,6 @@ from contextlib import asynccontextmanager
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
-    # Cargar el predictor GLM al iniciar (desde disco si existe, o fallback)
-    try:
-        _get_glm_predictor()
-    except Exception as e:
-        import logging
-        logging.getLogger("sherlock").warning("[GLM] No se pudo cargar el predictor: %s", e)
     yield
 
 app = FastAPI(
@@ -69,9 +62,9 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # O especifica "http://127.0.0.1:8000"
+    allow_origins=["*"],
     allow_credentials=True,
-    allow_methods=["*"],  # Esto habilita DELETE, POST, etc.
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -103,89 +96,14 @@ def file_version(path: str) -> str:
     return str(int(os.path.getmtime(path)))
 
 def _resolve_stake_from_pick(pick: dict) -> float:
-    """
-    Usa el stake calculado por el motor si existe.
-    Fallback al cálculo legacy solo para picks antiguos.
-    """
-    # Nuevo campo del motor
     explicit = pick.get("stake_units")
     if explicit is not None and explicit > 0:
         return float(explicit)
     
-    # Legacy: calcular desde Kelly
     kelly = float(pick.get("kelly_fraction") or 0.0)
     if kelly > 0:
         return min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0)))
     return MIN_STAKE
-
-
-# ---------------------------------------------------------------------------
-# ML / GLM Model endpoints
-# ---------------------------------------------------------------------------
-
-class MLTrainRequest(BaseModel):
-    """Payload para entrenar el modelo GLM con registros históricos."""
-    records: list = Field(
-        ...,
-        description=(
-            "Lista de dicts, cada uno con home_stats, away_stats y resultados "
-            "finales (final_score_home/away, final_corners_*, etc.)"
-        ),
-    )
-
-
-@app.post("/api/v1/ml/train", tags=["ML"])
-async def train_glm_model(body: MLTrainRequest, background_tasks=None):
-    """
-    Reentrena el modelo GLM/NB con los datos históricos proporcionados.
-
-    El entrenamiento es síncrono (puede tardar varios segundos con miles de
-    registros). Tras completarse guarda el modelo en disco y lo activa.
-    Con < 80 registros activa el modo fallback con coeficientes heurísticos.
-    """
-    import asyncio
-    loop = asyncio.get_event_loop()
-    try:
-        predictor = await loop.run_in_executor(
-            None, _retrain_glm, body.records
-        )
-        return {
-            "success": True,
-            "n_training_samples": predictor.n_training_samples,
-            "is_trained": predictor.is_trained,
-            "message": (
-                f"Modelo entrenado con {predictor.n_training_samples} registros."
-                if predictor.is_trained
-                else (
-                    f"Fallback activo: solo {predictor.n_training_samples} registros "
-                    f"(mínimo 80 requeridos)."
-                )
-            ),
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Error entrenando modelo: {exc}")
-
-
-@app.get("/api/v1/ml/status", tags=["ML"])
-def glm_model_status():
-    """
-    Devuelve el estado actual del predictor GLM (entrenado/fallback,
-    número de muestras, calibradores activos).
-    """
-    try:
-        predictor = _get_glm_predictor()
-        calibrators = {
-            market: {"trained": cal.is_trained, "n_samples": cal.n_samples}
-            for market, cal in predictor._calibrators.items()
-        }
-        return {
-            "is_trained": predictor.is_trained,
-            "n_training_samples": predictor.n_training_samples,
-            "calibrators": calibrators,
-            "mode": "GLM entrenado" if predictor.is_trained else "Fallback heurístico",
-        }
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
@@ -261,6 +179,42 @@ def serve_rules(request: Request):
 def list_sports() -> list[SportOut]:
     """List available sports."""
     return [SportOut(value=s.value, label=s.value.capitalize()) for s in Sport]
+
+
+@app.get("/api/v1/competitions", tags=["Competitions"])
+def list_competitions():
+    """Return active competitions list from data/competitions.json."""
+    json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), "data", "competitions.json")
+    if not os.path.exists(json_path):
+        json_path = os.path.join(os.getcwd(), "data", "competitions.json")
+    if os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading competitions.json: {e}")
+    return []
+
+
+@app.get("/api/v1/competitions/pending-picks", tags=["Competitions"])
+def list_competitions_with_pending_picks(db: Session = Depends(get_db)):
+    """Return list of competition names that have pending picks (final score not set)."""
+    rows = db.query(AnalysisHistory).filter(
+        AnalysisHistory.final_score_home.is_(None)
+    ).all()
+    comps = set()
+    for r in rows:
+        c_name = None
+        if r.payload:
+            try:
+                p = json.loads(r.payload) if isinstance(r.payload, str) else r.payload
+                c_name = p.get("competition") or p.get("tournament", {}).get("name")
+            except Exception:
+                pass
+        if c_name:
+            comps.add(c_name.strip())
+    return {"pending_competitions": list(comps)}
+
 
 
 # ---------------------------------------------------------------------------
@@ -357,6 +311,38 @@ def _normalize_betano_odds(raw: dict) -> dict:
 
     return normalized
 
+def _check_payload_has_odds(payload: dict | str | None) -> bool:
+    """Helper to determine if a payload dict or JSON string contains valid odds (> 1.0)."""
+    if not payload:
+        return False
+    try:
+        data = json.loads(payload) if isinstance(payload, str) else payload
+        if not isinstance(data, dict):
+            return False
+
+        odds_data = data.get("odds")
+        sources_data = data.get("sources")
+        if isinstance(odds_data, dict) and not sources_data:
+            sources_data = odds_data.get("sources")
+
+        def _has_valid(d: Any) -> bool:
+            if isinstance(d, dict):
+                return any(_has_valid(v) for v in d.values())
+            elif isinstance(d, list):
+                return any(_has_valid(v) for v in d)
+            elif isinstance(d, (int, float)):
+                return d > 1.0
+            return False
+
+        if odds_data and _has_valid(odds_data):
+            return True
+        if sources_data and _has_valid(sources_data):
+            return True
+        return False
+    except Exception:
+        return False
+
+
 def _merge_best_odds(sources: dict) -> dict:
     """
     Recorre las cuotas crudas de todas las casas (formato de
@@ -393,7 +379,8 @@ def _merge_best_odds(sources: dict) -> dict:
     best: dict = {}
     bookmaker_map: dict = {}
 
-    for bookmaker_key, odds in sources.items():
+    # Sort sources by key to ensure deterministic processing order
+    for bookmaker_key, odds in sorted(sources.items(), key=lambda x: str(x[0])):
         if not isinstance(odds, dict):
             continue
         bk_label = odds.get("bookmaker") or bookmaker_key
@@ -695,9 +682,22 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                # ── ESTRATEGIA 2: Búsqueda por título exacto + fecha ──
                 match_date_val = None
                 if payload.get("start_timestamp"):
-                    match_date_val = datetime.utcfromtimestamp(payload["start_timestamp"])
+                    try:
+                        match_date_val = datetime.utcfromtimestamp(payload["start_timestamp"])
+                    except Exception:
+                        pass
+                if not match_date_val and payload.get("match_date"):
+                    try:
+                        match_date_val = datetime.fromisoformat(str(payload["match_date"]).replace("Z", "+00:00"))
+                    except Exception:
+                        pass
+                if not match_date_val and payload.get("date"):
+                    try:
+                        match_date_val = datetime.fromisoformat(str(payload["date"]).replace("Z", "+00:00"))
+                    except Exception:
+                        pass
 
-                # 2a. Intento exacto: título con orden correcto + fecha cercana
+                # 2a. Intento exacto: título con orden correcto + fecha cercana (+/- 2 días)
                 exact_title = f"{home_name} vs {away_name}"
                 query = (
                     db.query(AnalysisHistory)
@@ -709,13 +709,23 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                 if match_date_val:
                     from datetime import timedelta
                     query = query.filter(
-                        AnalysisHistory.match_date >= match_date_val - timedelta(days=1),
-                        AnalysisHistory.match_date <= match_date_val + timedelta(days=1),
+                        or_(
+                            and_(
+                                AnalysisHistory.match_date.isnot(None),
+                                AnalysisHistory.match_date >= match_date_val - timedelta(days=2),
+                                AnalysisHistory.match_date <= match_date_val + timedelta(days=2),
+                            ),
+                            and_(
+                                AnalysisHistory.match_date.is_(None),
+                                AnalysisHistory.date >= match_date_val - timedelta(days=2),
+                                AnalysisHistory.date <= match_date_val + timedelta(days=2),
+                            )
+                        )
                     )
                 matched = query.order_by(AnalysisHistory.date.desc()).first()
 
                 # 2b. Si no hay exacto, buscar candidatos con ambos nombres PERO
-                #    filtrar por fecha y respetar el orden (local primero, visitante segundo)
+                #    filtrar estrictamente por fecha y respetar el orden (local primero, visitante segundo)
                 if not matched:
                     candidates_query = (
                         db.query(AnalysisHistory)
@@ -728,31 +738,45 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                     if match_date_val:
                         from datetime import timedelta
                         candidates_query = candidates_query.filter(
-                            AnalysisHistory.match_date >= match_date_val - timedelta(days=1),
-                            AnalysisHistory.match_date <= match_date_val + timedelta(days=1),
+                            or_(
+                                and_(
+                                    AnalysisHistory.match_date.isnot(None),
+                                    AnalysisHistory.match_date >= match_date_val - timedelta(days=2),
+                                    AnalysisHistory.match_date <= match_date_val + timedelta(days=2),
+                                ),
+                                and_(
+                                    AnalysisHistory.match_date.is_(None),
+                                    AnalysisHistory.date >= match_date_val - timedelta(days=2),
+                                    AnalysisHistory.date <= match_date_val + timedelta(days=2),
+                                )
+                            )
                         )
                     candidates = candidates_query.order_by(AnalysisHistory.date.desc()).all()
 
                     for h in candidates:
                         title_lower = h.match_title.lower()
-                        # Verificar que AMBOS nombres estén presentes
                         home_match = h_name_lower[:5] in title_lower or h_name_lower in title_lower
                         away_match = a_name_lower[:5] in title_lower or a_name_lower in title_lower
                         if not (home_match and away_match):
                             continue
 
-                        # Diferenciador CLAVE: respetar el orden del partido
+                        # Diferenciación estricta por fecha: si el candidato es de otra fecha (+/- 2 días), omitir
+                        rec_date = h.match_date or h.date
+                        if match_date_val and rec_date:
+                            if abs((rec_date - match_date_val).total_seconds()) > 2 * 86400:
+                                continue
+
                         home_idx = title_lower.find(h_name_lower)
                         away_idx = title_lower.find(a_name_lower)
                         if home_idx != -1 and away_idx != -1 and home_idx < away_idx:
-                            # home_name aparece ANTES que away_name → es el partido correcto
                             matched = h
                             break
 
-                    # 2c. Último fallback: si hay candidatos con fecha exacta pero orden invertido,
-                    #     preferir el más reciente de esa fecha (puede ser el de vuelta si no hay de ida)
                     if not matched and candidates:
-                        matched = candidates[0]
+                        cand = candidates[0]
+                        rec_date = cand.match_date or cand.date
+                        if not match_date_val or not rec_date or abs((rec_date - match_date_val).total_seconds()) <= 2 * 86400:
+                            matched = cand
 
             # ── Si encontramos el partido, actualizamos ──
             if matched:
@@ -943,6 +967,8 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
             date=match_date_val,
             match_date=match_date_val,
             picks_calculados=None,
+            has_odds=_check_payload_has_odds(cleaned_payload),
+            needs_recalc=True,
             has_real_stats=True,
             count_in_profitability=False,
             final_score_home=payload.get("final_score_home"),
@@ -1234,7 +1260,7 @@ async def compare_teams_football(request: FootballCompareRequest, db: Session = 
     """
     request, bookmaker_map = _apply_line_shopping(request)
 
-    res = await compare_football(request)
+    res = await compare_football(request, db=db)
 
     if bookmaker_map:
         _annotate_best_bookmaker(res, bookmaker_map, request.home.name, request.away.name)
@@ -1329,6 +1355,77 @@ def save_analysis(
             
         existing = query.order_by(AnalysisHistory.date.desc()).first()
 
+    # ── Calcular parámetros previos, ventanas de forma reciente (5, 10, 15) y hit rates empíricos ──
+    from datetime import datetime, timezone
+    from src.core.math_engine import LeagueMathEngine
+    record_date = req.match_date or datetime.now(timezone.utc)
+    pre_match_data = req.pre_match_stats
+    recent_form_data = req.recent_form_stats
+    pick_rates_data = req.historical_pick_rates
+
+    try:
+        title = req.match_title or ""
+        h_name = title.split(" vs ")[0].strip() if " vs " in title else ""
+        a_name = title.split(" vs ")[1].strip() if " vs " in title else ""
+        comp_name = req.payload.get("competition") if isinstance(req.payload, dict) else ""
+
+        # Obtener partidos históricos jugados antes de este partido
+        q_prior = db.query(AnalysisHistory).filter(
+            AnalysisHistory.final_score_home.isnot(None),
+            AnalysisHistory.final_score_away.isnot(None)
+        )
+        if record_date:
+            q_prior = q_prior.filter(
+                AnalysisHistory.id != req.id,  # Excluir el mismo registro explícitamente
+                or_(
+                    AnalysisHistory.match_date < record_date,
+                    and_(AnalysisHistory.match_date.is_(None), AnalysisHistory.date < record_date)
+                )
+            )
+        prior_rows = q_prior.order_by(AnalysisHistory.date.desc()).all()
+        prior_records = []
+        target_comp = (comp_name or "").strip().lower()
+        for r in prior_rows:
+            r_payload = {}
+            if r.payload:
+                try:
+                    r_payload = json.loads(r.payload) if isinstance(r.payload, str) else r.payload
+                except Exception:
+                    pass
+            comp_cand = f"{r_payload.get('competition', '')} {r_payload.get('league', '')} {r.match_title}".lower()
+            if not target_comp or target_comp in comp_cand:
+                prior_records.append({
+                    "match_title": r.match_title,
+                    "match_date": r.match_date or r.date,
+                    "final_score_home": r.final_score_home,
+                    "final_score_away": r.final_score_away,
+                    "final_corners_home": r.final_corners_home,
+                    "final_corners_away": r.final_corners_away,
+                    "final_yellow_cards_home": r.final_yellow_cards_home,
+                    "final_yellow_cards_away": r.final_yellow_cards_away,
+                    "final_shots_home": r.final_shots_home,
+                    "final_shots_away": r.final_shots_away,
+                })
+
+        if prior_records:
+            if not pre_match_data:
+                avg_engine = LeagueMathEngine.compute_league_averages(prior_records)
+                pre_match_data = {"league_averages": avg_engine, "sample_size": len(prior_records)}
+
+            if not recent_form_data:
+                recent_form_data = {
+                    "home": LeagueMathEngine.compute_recent_form_windows(prior_records, h_name, windows=[5, 10, 15]),
+                    "away": LeagueMathEngine.compute_recent_form_windows(prior_records, a_name, windows=[5, 10, 15])
+                }
+
+            if not pick_rates_data:
+                pick_rates_data = {
+                    "home_over25_home": LeagueMathEngine.compute_pick_hit_rate(prior_records, h_name, "goals", 2.5, is_over=True, role_filter="home"),
+                    "away_over25_away": LeagueMathEngine.compute_pick_hit_rate(prior_records, a_name, "goals", 2.5, is_over=True, role_filter="away"),
+                }
+    except Exception as err_p:
+        print(f"Error calculando parámetros previos al guardar análisis: {err_p}")
+
     if existing:
         # pyrefly: ignore [bad-assignment]
         existing.sport = sport_enum
@@ -1348,7 +1445,6 @@ def save_analysis(
             # pyrefly: ignore [bad-assignment]
             existing.user_context = req.user_context
         if req.llm_response is not None:
-            from datetime import datetime, timezone
             existing.llm_response = req.llm_response
             existing.llm_timestamp = req.llm_timestamp or datetime.now(timezone.utc)
         if req.needs_reanalysis is not None:
@@ -1378,6 +1474,13 @@ def save_analysis(
         if req.has_real_stats is not None:
             # pyrefly: ignore [bad-assignment]
             existing.has_real_stats = req.has_real_stats
+
+        if pre_match_data is not None:
+            existing.pre_match_stats = json.dumps(pre_match_data) if not isinstance(pre_match_data, str) else pre_match_data
+        if recent_form_data is not None:
+            existing.recent_form_stats = json.dumps(recent_form_data) if not isinstance(recent_form_data, str) else recent_form_data
+        if pick_rates_data is not None:
+            existing.historical_pick_rates = json.dumps(pick_rates_data) if not isinstance(pick_rates_data, str) else pick_rates_data
         
         db.commit()
         db.refresh(existing)
@@ -1385,9 +1488,6 @@ def save_analysis(
         return _populate_history_extra_fields(existing, out)
 
     # Create new record
-    # Use match_date if provided, otherwise use current time (same as `date`)
-    from datetime import datetime, timezone
-    record_date = req.match_date or datetime.now(timezone.utc)
     comp_name = req.payload.get("competition") if isinstance(req.payload, dict) else None
     has_real_stats_val = req.has_real_stats if req.has_real_stats is not None else True
     if req.count_in_profitability is not None:
@@ -1406,17 +1506,21 @@ def save_analysis(
         picks_calculados=json.dumps(req.picks_calculados) if req.picks_calculados else None,
         user_context=req.user_context,
         llm_response=req.llm_response,
-        llm_timestamp=req.llm_timestamp,
-        compare_response_snapshot=json.dumps(req.compare_response_snapshot) if req.compare_response_snapshot else None,
+        llm_timestamp=req.llm_timestamp or (datetime.now(timezone.utc) if req.llm_response else None),
         needs_reanalysis=req.needs_reanalysis or False,
+        compare_response_snapshot=json.dumps(req.compare_response_snapshot) if req.compare_response_snapshot else None,
         count_in_profitability=count_in_prof_val,
         has_real_stats=has_real_stats_val,
+        pre_match_stats=json.dumps(pre_match_data) if pre_match_data and not isinstance(pre_match_data, str) else (pre_match_data if isinstance(pre_match_data, str) else None),
+        recent_form_stats=json.dumps(recent_form_data) if recent_form_data and not isinstance(recent_form_data, str) else (recent_form_data if isinstance(recent_form_data, str) else None),
+        historical_pick_rates=json.dumps(pick_rates_data) if pick_rates_data and not isinstance(pick_rates_data, str) else (pick_rates_data if isinstance(pick_rates_data, str) else None),
     )
     db.add(history)
     db.commit()
     db.refresh(history)
     out = AnalysisHistoryOut.model_validate(history)
     return _populate_history_extra_fields(history, out)
+
 
 
 @app.post("/api/v1/analysis/quick-save", response_model=AnalysisHistoryOut, tags=["Analysis History"])
@@ -2364,7 +2468,15 @@ async def recalculate_all_accuracy(
         except Exception:
             pass
 
-    history_list = db.query(AnalysisHistory).all()
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.has_odds == True)
+    if threshold_dt:
+        query = query.filter(
+            or_(
+                AnalysisHistory.match_date >= threshold_dt,
+                and_(AnalysisHistory.match_date.is_(None), AnalysisHistory.date >= threshold_dt)
+            )
+        )
+    history_list = query.all()
     count = 0
     updated_accuracy_count = 0
 
@@ -2373,14 +2485,12 @@ async def recalculate_all_accuracy(
             if not history.payload:
                 continue
 
-            # Skip matches with no calculated picks (picks_calculados is empty/null/[])
-            if not history.picks_calculados or not str(history.picks_calculados).strip() or str(history.picks_calculados).strip() == "[]":
+            # Double-check odds validity
+            if not _check_payload_has_odds(history.payload):
+                history.has_odds = False
                 continue
 
-            # Skip matches without odds saved in the payload
             payload_dict = json.loads(str(history.payload))
-            if not payload_dict.get("odds"):
-                continue
             local_payload = dict(payload_dict)
             sport = history.sport
 
@@ -2409,7 +2519,12 @@ async def recalculate_all_accuracy(
                     # mercado ANTES de correr el motor, igual que en el
                     # análisis original. ──
                     req, bookmaker_map = _apply_line_shopping(req)
-                    new_response = await compare_football(req, db=db)
+                    new_response = await compare_football(
+                        req,
+                        db=db,
+                        exclude_match_id=history.id,
+                        current_match_date=history.match_date or history.date,
+                    )
             except Exception as comp_err:
                 print(f"Error en motor de comparación para {history.id} ({sport}): {comp_err}")
                 continue
@@ -2478,6 +2593,8 @@ async def recalculate_all_accuracy(
 
                     updated_accuracy_count += 1
 
+                history.last_recalculated_at = datetime.utcnow()
+                history.needs_recalc = False
                 count += 1
         except Exception as e:
             print(f"Error re-analizando registro {history.id}: {e}")
@@ -2500,6 +2617,7 @@ def apply_blacklist(db: Session = Depends(get_db)):
     from src.ui.api.compare import (
         is_market_blacklisted_for_league,
         is_publishable_pick,
+        is_value_pick,
         is_underdog_pick,
         score_pick_quality,
         _calculate_display_score,
@@ -2565,7 +2683,7 @@ def apply_blacklist(db: Session = Depends(get_db)):
                             is_blacklisted=False
                         )
                         pick["is_publishable"] = is_publishable_pick(v)
-                        pick["is_value"] = (v.edge_ev or 0.0) > 0.03 and (v.stake_units or 0.0) >= 1.0
+                        pick["is_value"] = is_value_pick(v)
                         pick["quality_score"] = score_pick_quality(v)
                         pick["display_score"] = _calculate_display_score(v)
                         pick["is_underdog"] = is_underdog_pick(v)
@@ -2801,13 +2919,14 @@ def get_pick_rules():
 
 
 @app.put("/api/v1/pick-rules", tags=["Pick Rules"])
-def save_pick_rules(rules: list = Body(...)):
-    """Saves the full list of pick rules (overwrite)."""
+def save_pick_rules(rules: Any = Body(...)):
+    """Saves the full list of pick rules and structural correlation rules (overwrite)."""
     try:
         os.makedirs(os.path.dirname(PICK_RULES_PATH), exist_ok=True)
         with open(PICK_RULES_PATH, "w", encoding="utf-8") as f:
             json.dump(rules, f, ensure_ascii=False, indent=2)
-        return {"status": "ok", "count": len(rules)}
+        count = len(rules.get("rules", [])) if isinstance(rules, dict) else len(rules)
+        return {"status": "ok", "count": count}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -2952,21 +3071,18 @@ def apply_pick_rules(db: Session = Depends(get_db)):
     Also un-blocks picks for rules that are now disabled.
     """
     from src.ui.api.compare import (
-        is_publishable_pick, is_underdog_pick, score_pick_quality,
+        is_publishable_pick, is_value_pick, is_underdog_pick, score_pick_quality,
         _calculate_display_score, _frontend_style_strategic_score,
         ValueIndicator
     )
-    from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
+    from src.core.pick_rules_engine import evaluate_pick_rules, load_pick_rules_data, resolve_match_picks_correlation, StatSource
 
     try:
-        if not os.path.exists(PICK_RULES_PATH):
-            return {"status": "ok", "message": "No hay reglas configuradas.", "updated_count": 0}
-        with open(PICK_RULES_PATH, "r", encoding="utf-8") as f:
-            rules = json.load(f)
+        rules_list, correlation_rules = load_pick_rules_data(PICK_RULES_PATH)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error leyendo reglas: {e}")
 
-    enabled_rules = [r for r in rules if r.get("enabled", False)]
+    enabled_rules = [r for r in rules_list if r.get("enabled", False)]
 
     history_list = db.query(AnalysisHistory).all()
     updated_count = 0
@@ -2989,7 +3105,6 @@ def apply_pick_rules(db: Session = Depends(get_db)):
                 sel = pick.get("selection", "")
                 should_block, _ = evaluate_pick_rules(sel, stat_source, enabled_rules)
 
-                # Only update and mark as changed if the block status has actually changed
                 current_blocked = pick.get("is_rule_blocked", False)
                 if should_block != current_blocked:
                     pick["is_rule_blocked"] = should_block
@@ -2999,7 +3114,6 @@ def apply_pick_rules(db: Session = Depends(get_db)):
                         pick["is_value"] = False
                         pick["quality_score"] = -1
                     else:
-                        # Restore based on current pick values (not blacklisted by league rules)
                         v = ValueIndicator(
                             selection=sel,
                             odds=pick.get("odds"),
@@ -3013,13 +3127,16 @@ def apply_pick_rules(db: Session = Depends(get_db)):
                         )
                         if not v.is_blacklisted:
                             pick["is_publishable"] = is_publishable_pick(v)
-                            pick["is_value"] = (v.edge_ev or 0.0) > 0.03 and (v.stake_units or 0.0) >= 1.0
+                            pick["is_value"] = is_value_pick(v)
                             pick["quality_score"] = score_pick_quality(v)
                             pick["is_underdog"] = is_underdog_pick(v)
 
+            # Descorrelacionar picks del partido
+            picks = resolve_match_picks_correlation(picks, correlation_rules=correlation_rules)
+            changed = True
+
             if changed:
                 history.picks_calculados = json.dumps(picks)
-                # Also update compare_response_snapshot if it exists
                 if history.compare_response_snapshot:
                     try:
                         snap = json.loads(str(history.compare_response_snapshot))
@@ -3862,6 +3979,10 @@ def export_excel_report(
                             "Cuota": odds,
                             "Cuota Cierre": closing_odds if closing_odds else "",   # placeholder CLV
                             "CLV (%)": clv_pct if clv_pct is not None else "",       # placeholder CLV
+                            "Hit Rate Local (%)": pick.get("home_hit_rate"),
+                            "Hit Rate Visitante (%)": pick.get("away_hit_rate"),
+                            "Hit Rate Total (%)": pick.get("empirical_hit_rate"),
+                            "Hit Rate H2H (%)": pick.get("h2h_hit_rate"),
                             "Prob Calibrada (%)": float(pick.get("calibrated_prob", 0.0)) if pick.get("calibrated_prob") is not None else None,
                             "Prob Modelo (%)": float(pick.get("model_prob", 0.0)) if pick.get("model_prob") is not None else None,
                             "Edge Prob (%)": edge_prob,          # ANTES mal llamado "EV Edge (%)"
@@ -4681,42 +4802,50 @@ def delete_analysis(
     return None
 
 if __name__ == "__main__":
-    # old_name = "Liga 1, Clausura"
-    # new_name = "Liga 1 Te Apuesto"
+
+    #----------Contar equipos de liga--------------------------------
+
+    # db = next(get_db())
+
+    # try:
+    #     resultado = list_teams_count("Brasileirão Série B", db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
+
+    
+    ##---------Cambiar nombre de liga---------------
+    # old_name = "Bundesliga, Relegation/Promotion Playoffs"
+    # new_name = "Bundesliga"
     
     # db = next(get_db())
     # try:
     #     resultado = rename_competition_matches(old_name, new_name, db)
     #     print(resultado)
     # finally:
-        # db.close()
+    #     db.close()
 
-    del_comp = "Bundesliga, Relegation/Promotion Playoffs"
+    ##---------Eliminar liga--------------------------------
+
+    # del_comp = "Bundesliga, Relegation/Promotion Playoffs"
     
+    # db = next(get_db())
+    # try:
+    #     resultado = delete_competition_matches(del_comp, db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
+
+    #------------------Eliminar duplicados-------------------
+
     db = next(get_db())
     try:
-        resultado = delete_competition_matches(del_comp, db)
+        resultado = deduplicate_competition_matches("Brasileirão Série B", db)
         print(resultado)
     finally:
         db.close()
-    
-    # old_name = "Independiente Santa Fe"   # Nombre que guardó SofaScore
-    # new_name = "Santa Fe" # Nombre que tú prefieres
-    
-    # db = next(get_db())
-    # try:
-    #     resultado = rename_team_matches(old_name, new_name, db)
-    #     print(resultado)
-    # finally:
-    #     db.close()
 
-    # db = next(get_db())
-    # try:
-    #     resultado = deduplicate_competition_matches("Primera A", db)
-    #     print(resultado)
-    # finally:
-    #     db.close()
-
+    #-----------------Eliminar partidos--------------------
     # db = next(get_db())
     # try:
     #     resultado = delete_incomplete_competition_matches("HNL", dry_run=False, db=db)
@@ -4724,32 +4853,36 @@ if __name__ == "__main__":
     # finally:
     #     db.close()
 
+    #----------Renombra equipos de una liga especifica---------------
     # db = next(get_db())
     # try:
     #     liga = "Primera A"
         
     #     # Arreglar Nacional solo en la liga de Colombia
-    #     rename_team_matches("Inter Bogota", "Inter De Bogotá", competition=liga, db=db)
+    #     # rename_team_matches("Deportivo La Equidad", "Inter De Bogotá", competition=liga, db=db)
         
-    #     # # Puedes ir encadenando las demás correcciones usando kwargs:
-    #     rename_team_matches(old_name="Deportivo La Equidad", new_name="Inter De Bogotá", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Deportivo Cali", new_name="Dep. Cali", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Pasto", new_name="Dep. Pasto", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Pereira", new_name="Deportivo Pereira", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Cúcuta Deportivo", new_name="Cúcuta", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Cucuta", new_name="Cúcuta", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Boyacá Chicó Fc", new_name="Boyacá Chicó", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Boyaca Chico", new_name="Boyacá Chicó", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Fortaleza Fc", new_name="Fortaleza", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Fortaleza Ceif", new_name="Fortaleza", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Atlético Bucaramanga", new_name="Bucaramanga", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Alianza Valledupar", new_name="Alianza Petrolera", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Alianza Valledupar Fc", new_name="Alianza Petrolera", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Rionegro Águilas Doradas", new_name="Águilas Doradas", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Llaneros Fc", new_name="Llaneros", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Santa Fea", new_name="Santa Fe", competition=liga, db=db)
+    #     # Puedes ir encadenando las demás correcciones usando kwargs:
+    #     rename_team_matches(old_name="Clube De Regatas Brasil", new_name="CRB", competition=liga, db=db)
+    #     rename_team_matches(old_name="Vila Nova Fc", new_name="Vila Nova", competition=liga, db=db)
+    #     rename_team_matches(old_name="Grêmio Novorizontino", new_name="Novorizontino", competition=liga, db=db)
+    #     rename_team_matches(old_name="Atlético Goianiense", new_name="Atlético-GO", competition=liga, db=db)
+    #     rename_team_matches(old_name="América Mineiro", new_name="América-MG", competition=liga, db=db)
+    #     rename_team_matches(old_name="Athletic Club", new_name="Athletic", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Ca Independiente", new_name="Independiente", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Club Atlético Platense", new_name="Platense", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Club Atlético Unión De Santa Fe", new_name="Unión De Santa Fe", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Defensa Y Justicia", new_name="Def Y Justicia", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Ca Lanús", new_name="Lanús", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Ca Talleres", new_name="Talleres", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Instituto De Córdoba", new_name="Instituto", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Newell'S Old Boys", new_name="Newell'S", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Deportivo Riestra", new_name="Dep. Riestra", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Independiente Rivadavia", new_name="Ind. Rivadavia", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Gimnasia Y Esgrima Mendoza", new_name="Gimnasia Mendoza", competition=liga, db=db)
+    #     # rename_team_matches(old_name="Estudiantes De Río Cuarto", new_name="Estudiantes R.C.", competition=liga, db=db)
+
         
-    #     print("Equipos renombrados exitosamente en Primera A.")
+    #     print("Equipos renombrados exitosamente.")
         
     # finally:
     #     db.close()

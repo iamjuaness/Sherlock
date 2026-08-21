@@ -150,7 +150,7 @@ async function toggleActiveLeagueProfitability(isProfitable) {
   try {
     const res = await fetch(
       `/api/v1/leagues/${encodeURIComponent(activeLeague)}/profitability?count_in_profitability=${isProfitable}`,
-      { method: "POST" }
+      { method: "POST" },
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     await fetchLeagues();
@@ -164,7 +164,7 @@ async function deleteCurrentLeague() {
   if (!activeLeague) return;
   if (
     !confirm(
-      `¿Estás seguro de eliminar completamente la competición "${activeLeague}" y todos sus partidos asociados? Esta acción no se puede deshacer.`
+      `¿Estás seguro de eliminar completamente la competición "${activeLeague}" y todos sus partidos asociados? Esta acción no se puede deshacer.`,
     )
   ) {
     return;
@@ -172,7 +172,7 @@ async function deleteCurrentLeague() {
   try {
     const res = await fetch(
       `/api/v1/analysis/competition/${encodeURIComponent(activeLeague)}`,
-      { method: "DELETE" }
+      { method: "DELETE" },
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
@@ -318,6 +318,26 @@ function renderFilteredMatches() {
   }
 }
 
+// ── Eliminar un análisis del historial ─────────────────────────
+async function deleteHistoryEntry(id, leagueName) {
+  if (!confirm("¿Estás seguro de que deseas eliminar este registro?")) return;
+
+  try {
+    const response = await fetch(`/api/v1/analysis/${id}`, {
+      method: "DELETE",
+    });
+
+    if (!response.ok) {
+      throw new Error("No se pudo eliminar el registro de la BD.");
+    }
+
+    await fetchMatchesForLeague(leagueName);
+  } catch (error) {
+    console.error("Error al eliminar:", error);
+    alert(error.message);
+  }
+}
+
 function renderMatchesView(filtered, matchesContainer) {
   const cards = filtered.map((match) => {
     let scoreText = "-";
@@ -444,11 +464,19 @@ function renderMatchesView(filtered, matchesContainer) {
             ? `<span style="font-size:0.75rem; color:var(--accent-light); margin-left:6px; font-weight:bold;">Stake ${pickStake}</span>`
             : "";
 
+          // Hit rate badge if present
+          let hrHtml = "";
+          if (pick.empirical_hit_rate != null || pick.home_hit_rate != null || pick.away_hit_rate != null) {
+            const hrVal = pick.empirical_hit_rate != null ? pick.empirical_hit_rate : (pick.home_hit_rate || pick.away_hit_rate);
+            hrHtml = `<span style="font-size:0.72rem; background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); padding:1px 5px; border-radius:4px; margin-left:4px;" title="Hit rate histórico del pick">🎯 ${Number(hrVal).toFixed(0)}%</span>`;
+          }
+
           return `
             <div class="pick-row">
               <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
                 <span style="font-weight: 600; color: #fff;">${escapeHtml(sel)}</span>
                 ${catBadge}
+                ${hrHtml}
                 <span style="color: var(--text-muted); font-size: 0.8rem;">@${odds.toFixed(2)}</span>
                 ${stakeHtml}
               </div>
@@ -460,6 +488,8 @@ function renderMatchesView(filtered, matchesContainer) {
     } else {
       picksHtml = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 0.5rem 0;">Sin picks de valor registrados.</div>`;
     }
+
+    const leagueName = document.getElementById("selected-league-name").value;
 
     const matchDateStr = match.match_date
       ? new Date(match.match_date).toLocaleString("es-ES", {
@@ -485,6 +515,7 @@ function renderMatchesView(filtered, matchesContainer) {
               </label>
               <span style="font-weight: 800; color: var(--accent-light); font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">${scoreText}</span>
               <span class="match-card__date">${matchDateStr}</span>
+              <button class="btn-preset" style="color: var(--red);" title="Eliminar" onclick="deleteHistoryEntry('${match.id}', '${match.payload.competition}')">🗑️</button>
             </div>
           </div>
           <div class="match-card__body">
@@ -652,7 +683,7 @@ function renderMarketsView(filtered, matchesContainer) {
         <div class="match-card__header" style="border-bottom: none; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
           <div style="display: flex; align-items: center; gap: 0.75rem;">
             <span class="match-card__title" style="font-size: 1.15rem; font-weight: 700; color: #fff;">📊 ${escapeHtml(m.name)}</span>
-            <button onclick="addMarketToBlacklist('${escapeAttr(m.name)}')" style="background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'" title="Agregar este mercado a la blacklist de ${escapeAttr(activeLeague || '')}">🚫 Blacklist</button>
+            <button onclick="addMarketToBlacklist('${escapeAttr(m.name)}')" style="background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'" title="Agregar este mercado a la blacklist de ${escapeAttr(activeLeague || "")}">🚫 Blacklist</button>
           </div>
           <span style="font-weight: 800; color: ${profitColor}; font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">
             ${profitSign}${m.profit.toFixed(2)} u
@@ -748,7 +779,9 @@ function updateStatsSummaryForFiltered(filteredMatches) {
       : [];
     const visiblePicks = rawPicks.filter(
       (p) =>
-        !p.is_blacklisted && !p.is_rule_blocked && (p.is_publishable || p.is_underdog || p.is_value),
+        !p.is_blacklisted &&
+        !p.is_rule_blocked &&
+        (p.is_publishable || p.is_underdog || p.is_value),
     );
 
     const hasResult = match.final_score_home != null;
@@ -852,7 +885,7 @@ async function addMarketToBlacklist(marketName) {
   if (!activeLeague) return;
   if (
     !confirm(
-      `¿Deseas agregar el mercado "${marketName}" a la blacklist de la competición "${activeLeague}" y aplicar a todos los picks del historial?`
+      `¿Deseas agregar el mercado "${marketName}" a la blacklist de la competición "${activeLeague}" y aplicar a todos los picks del historial?`,
     )
   ) {
     return;
@@ -869,10 +902,9 @@ async function addMarketToBlacklist(marketName) {
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     alert(data.message || "Mercado añadido a blacklist.");
-    await fetchLeagues();
+    fetchMatchesForLeague(activeLeague);
   } catch (err) {
     console.error("Error al agregar mercado a blacklist:", err);
     alert("Error al agregar a blacklist: " + err.message);
   }
 }
-

@@ -53,12 +53,15 @@ const els = {
   historicalProgressFill: document.getElementById("historicalProgressFill"),
   btnExtractHistorical: document.getElementById("btnExtractHistorical"),
   btnCancelHistorical: document.getElementById("btnCancelHistorical"),
+  btnBulkExtractStats: document.getElementById("btnBulkExtractStats"),
+  btnBulkExtractResults: document.getElementById("btnBulkExtractResults"),
   matchesSection: document.getElementById("matchesSection"),
   matchesCount: document.getElementById("matchesCount"),
   matchesToggle: document.getElementById("matchesToggle"),
   matchesSearch: document.getElementById("matchesSearch"),
   matchesList: document.getElementById("matchesList"),
   historicalStatus: document.getElementById("historicalStatus"),
+  seasonSelect: document.getElementById("seasonSelect"),
 };
 // ═══════════════════════════════════════════════════════════════
 // INICIALIZACIÓN
@@ -164,10 +167,206 @@ function setupEventListeners() {
   if (btnSaveMatch) {
     btnSaveMatch.addEventListener("click", handleSaveMatchWithoutStats);
   }
+  if (els.btnBulkExtractStats) {
+    els.btnBulkExtractStats.addEventListener("click", handleBulkExtractStatsUI);
+  }
+  if (els.btnBulkExtractResults) {
+    els.btnBulkExtractResults.addEventListener("click", handleBulkExtractResultsUI);
+  }
   els.btnViewJson.addEventListener("click", handleViewJson);
   els.btnSettings.addEventListener("click", () =>
     chrome.runtime.openOptionsPage(),
   );
+}
+
+// ═══════════════════════════════════════════════════════════════
+// EXTRACCIÓN MASIVA (BULK) DE PARTIDOS / RESULTADOS
+// ═══════════════════════════════════════════════════════════════
+async function getActiveCompetitions() {
+  // 1. Intentar consultar las competiciones directamente a la API de Sherlock si el endpoint está configurado
+  if (sherlockEndpoint) {
+    try {
+      let baseUrl = sherlockEndpoint;
+      if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
+      const res = await fetch(`${baseUrl}/api/v1/competitions`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          return data.filter((c) => c.active !== false);
+        }
+      }
+    } catch (e) {
+      console.warn("No se pudo obtener competiciones desde la API de Sherlock:", e.message);
+    }
+  }
+
+  // 2. Fallback a intentar cargar localmente competitions.json del paquete de la extensión
+  try {
+    const res = await fetch(chrome.runtime.getURL("competitions.json"));
+    if (res.ok) {
+      const data = await res.json();
+      if (Array.isArray(data) && data.length > 0) return data;
+    }
+  } catch (e) {
+    console.warn("No se pudo cargar competitions.json vía extension URL:", e);
+  }
+
+  // 3. Fallback estático con las competiciones activas principales de Sherlock
+  return [
+    { name: "2. Bundesliga", id: 44, season: 97406, active: true },
+    { name: "Allsvenskan", id: 40, season: 87925, active: true },
+    { name: "Austrian Bundesliga", id: 45, season: 97043, active: true },
+    { name: "Brasileirão Betano", id: 325, season: 87678, active: true },
+    { name: "Brasileirão Série B", id: 390, season: 89840, active: true },
+    { name: "Canadian Premier League", id: 13470, season: 89676, active: true },
+    { name: "Chinese Super League", id: 649, season: 90049, active: true },
+    { name: "CONMEBOL Libertadores", id: 384, season: 87760, active: true },
+    { name: "CONMEBOL Sudamericana", id: 480, season: 87770, active: true },
+    { name: "Coppa Italia", id: 328, season: 97028, active: true },
+    { name: "Czech First League", id: 172, season: 96966, active: true },
+    { name: "División Profesional", id: 16736, season: 92509, active: true },
+    { name: "EFL Cup", id: 21, season: 96185, active: true },
+    { name: "Ekstraklasa", id: 202, season: 96144, active: true },
+    { name: "Eliteserien", id: 20, season: 87809, active: true },
+    { name: "HNL", id: 170, season: 95727, active: true },
+    { name: "K League 1", id: 410, season: 88606, active: true },
+    { name: "LaLiga", id: 8, season: 97268, active: true },
+    { name: "LaLiga 2", id: 54, season: 97280, active: true },
+    { name: "League One", id: 24, season: 97077, active: true },
+    { name: "League Two", id: 25, season: 97078, active: true },
+    { name: "Liga 1 Te Apuesto", id: 406, season: 88529, active: true },
+    { name: "Liga de Primera", id: 11653, season: 88493, active: true },
+    { name: "Liga MX, Apertura", id: 11621, season: 96191, active: true },
+    { name: "Liga Portugal Betclic", id: 238, season: 97436, active: true },
+    { name: "Liga Profesional de Fútbol", id: 155, season: 87913, active: true },
+    { name: "LigaPro Serie A", id: 240, season: 89674, active: true },
+    { name: "Ligue 1", id: 34, season: 96127, active: true },
+    { name: "MLS", id: 242, season: 86668, active: true },
+    { name: "Premier League", id: 17, "season": 96668, active: true },
+    { name: "Primera A", id: 11539, season: 88503, active: true },
+    { name: "Pro League", id: 28, season: 96616, active: true },
+    { name: "Saudi Pro League", id: 955, season: 99275, active: true },
+    { name: "Scottish Premiership", id: 36, season: 96658, active: true },
+    { name: "Serie A", id: 23, season: 95836, active: true },
+    { name: "VriendenLoterij Eredivisie", id: 37, season: 96143, active: true }
+  ];
+}
+
+async function handleBulkExtractStatsUI() {
+  if (!sherlockEndpoint) {
+    showStatus("error", "Configura el endpoint de Sherlock en Settings");
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  const comps = await getActiveCompetitions();
+  if (!comps || comps.length === 0) {
+    showStatus("error", "No se pudieron cargar las competiciones activas");
+    return;
+  }
+
+  const btnBulkStats = document.getElementById("btnBulkExtractStatsNoMatch");
+  const btnCancelBulk = document.getElementById("btnCancelBulkExtract");
+
+  if (btnBulkStats) btnBulkStats.style.display = "none";
+  if (btnCancelBulk) {
+    btnCancelBulk.style.display = "block";
+    btnCancelBulk.onclick = async () => {
+      showStatus("loading", "⏳ Cancelando extracción...");
+      await chrome.runtime.sendMessage({ action: "cancelBulkExtraction" });
+    };
+  }
+
+  showStatus("loading", "Iniciando extracción masiva de partidos...");
+  showProgress(10);
+
+  // Escuchar progreso bulk
+  const listener = (msg) => {
+    if (msg.action === "bulkProgress") {
+      const d = msg.data;
+      showStatus(d.phase === "error" ? "error" : "loading", d.message || "");
+      if (d.total && d.done !== undefined) {
+        showProgress(Math.min(100, Math.round((d.done / d.total) * 100)));
+      }
+    }
+  };
+  chrome.runtime.onMessage.addListener(listener);
+
+  try {
+    let baseUrl = sherlockEndpoint;
+    if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
+
+    const res = await chrome.runtime.sendMessage({
+      action: "bulkExtractStats",
+      data: { baseUrl, competitions: comps },
+    });
+
+    showProgress(100);
+    if (res && res.success) {
+      showStatus("success", `✅ ${res.totalSaved} partidos guardados, ${res.totalErrors} errores`);
+    } else if (res && res.cancelled) {
+      showStatus("error", "⏹ Extracción masiva cancelada por el usuario");
+    } else {
+      showStatus("error", `❌ ${res?.error || "Error en proceso"}`);
+    }
+  } catch (err) {
+    showStatus("error", `❌ Error: ${err.message}`);
+  } finally {
+    if (btnBulkStats) btnBulkStats.style.display = "block";
+    if (btnCancelBulk) btnCancelBulk.style.display = "none";
+    chrome.runtime.onMessage.removeListener(listener);
+    setTimeout(() => hideProgress(), 3000);
+  }
+}
+
+async function handleBulkExtractResultsUI() {
+  if (!sherlockEndpoint) {
+    showStatus("error", "Configura el endpoint de Sherlock en Settings");
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  const comps = await getActiveCompetitions();
+  if (!comps || comps.length === 0) {
+    showStatus("error", "No se pudieron cargar las competiciones activas");
+    return;
+  }
+
+  showStatus("loading", "Buscando resultados del día...");
+  showProgress(10);
+
+  const listener = (msg) => {
+    if (msg.action === "bulkProgress") {
+      const d = msg.data;
+      showStatus(d.phase === "error" ? "error" : "loading", d.message || "");
+      if (d.total && d.done !== undefined) {
+        showProgress(Math.min(100, Math.round((d.done / d.total) * 100)));
+      }
+    }
+  };
+  chrome.runtime.onMessage.addListener(listener);
+
+  try {
+    let baseUrl = sherlockEndpoint;
+    if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
+
+    const res = await chrome.runtime.sendMessage({
+      action: "bulkExtractResults",
+      data: { baseUrl, competitions: comps },
+    });
+
+    showProgress(100);
+    if (res && res.success) {
+      showStatus("success", `✅ Resultados: ${res.totalSaved} guardados, ${res.totalErrors} errores`);
+    } else if (res && res.cancelled) {
+      showStatus("error", "⏹ Extracción cancelada");
+    } else {
+      showStatus("error", `❌ ${res?.error || "Error en proceso"}`);
+    }
+  } catch (err) {
+    showStatus("error", `❌ Error: ${err.message}`);
+  } finally {
+    chrome.runtime.onMessage.removeListener(listener);
+    setTimeout(() => hideProgress(), 3000);
+  }
 }
 // ═══════════════════════════════════════════════════════════════
 // EXTRACCIÓN DE RESULTADOS FINALES
@@ -681,6 +880,20 @@ function showBetanoStatus(type, message) {
 function showNoMatch() {
   els.matchContainer.style.display = "block";
   els.statsContainer.style.display = "none";
+
+  const btnBulkStats = document.getElementById("btnBulkExtractStatsNoMatch");
+  const btnBulkResults = document.getElementById("btnBulkExtractResultsNoMatch");
+  const btnSettings = document.getElementById("btnNoMatchSettings");
+
+  if (btnBulkStats) {
+    btnBulkStats.onclick = handleBulkExtractStatsUI;
+  }
+  if (btnBulkResults) {
+    btnBulkResults.onclick = handleBulkExtractResultsUI;
+  }
+  if (btnSettings) {
+    btnSettings.onclick = () => chrome.runtime.openOptionsPage();
+  }
 }
 // ═══════════════════════════════════════════════════════════════
 // MOSTRAR PREVIEW DE ESTADÍSTICAS
@@ -723,21 +936,45 @@ function updateEndpointDisplay() {
   }
 }
 function showStatus(type, message) {
-  els.status.textContent = message;
-  els.status.className = `status show ${type}`;
+  if (els.status) {
+    els.status.textContent = message;
+    els.status.className = `status show ${type}`;
+  }
+  const noMatchStatus = document.getElementById("noMatchStatus");
+  if (noMatchStatus) {
+    noMatchStatus.textContent = message;
+    noMatchStatus.className = `status show ${type}`;
+  }
   if (type === "success" || type === "error") {
     setTimeout(() => {
-      els.status.classList.remove("show");
+      if (els.status) els.status.classList.remove("show");
+      if (noMatchStatus) noMatchStatus.classList.remove("show");
     }, 5000);
   }
 }
 function showProgress(percent) {
-  els.progressBar.classList.add("show");
-  els.progressFill.style.width = `${percent}%`;
+  if (els.progressBar) {
+    els.progressBar.classList.add("show");
+    els.progressFill.style.width = `${percent}%`;
+  }
+  const noMatchProgressBar = document.getElementById("noMatchProgressBar");
+  const noMatchProgressFill = document.getElementById("noMatchProgressFill");
+  if (noMatchProgressBar && noMatchProgressFill) {
+    noMatchProgressBar.classList.add("show");
+    noMatchProgressFill.style.width = `${percent}%`;
+  }
 }
 function hideProgress() {
-  els.progressBar.classList.remove("show");
-  els.progressFill.style.width = "0%";
+  if (els.progressBar) {
+    els.progressBar.classList.remove("show");
+    els.progressFill.style.width = "0%";
+  }
+  const noMatchProgressBar = document.getElementById("noMatchProgressBar");
+  const noMatchProgressFill = document.getElementById("noMatchProgressFill");
+  if (noMatchProgressBar && noMatchProgressFill) {
+    noMatchProgressBar.classList.remove("show");
+    noMatchProgressFill.style.width = "0%";
+  }
 }
 // ═══════════════════════════════════════════════════════════════
 // HELPERS
@@ -820,6 +1057,24 @@ async function initHistoricalSection(tournamentId, url) {
   }
   els.competitionId.textContent = `Tournament ID: ${tournamentId}`;
 
+  // Cargar lista de temporadas en el dropdown
+  try {
+    const seasonsData = await fetchSofaScoreAPI(
+      `/api/v1/unique-tournament/${tournamentId}/seasons`,
+    );
+    if (seasonsData && seasonsData.seasons && els.seasonSelect) {
+      els.seasonSelect.innerHTML = `<option value="all">🌐 Todas las temporadas (${seasonsData.seasons.length})</option>`;
+      seasonsData.seasons.forEach((s) => {
+        const opt = document.createElement("option");
+        opt.value = String(s.id);
+        opt.textContent = `📅 Temporada ${s.year} (ID: ${s.id})`;
+        els.seasonSelect.appendChild(opt);
+      });
+    }
+  } catch (err) {
+    console.warn("No se pudieron cargar las temporadas para el dropdown", err);
+  }
+
   // Cargar partidos ya guardados en storage
   const storageKey = `tournament_${tournamentId}_events`;
   const stored = await chrome.storage.local.get([storageKey]);
@@ -880,11 +1135,13 @@ async function handleExtractHistorical() {
   if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
 
   try {
+    const targetSeasonId = els.seasonSelect ? els.seasonSelect.value : "all";
     const result = await chrome.runtime.sendMessage({
       action: "extractHistoricalData",
       data: {
         tournamentId: _currentTournamentId,
         tournamentName: _currentTournamentName,
+        targetSeasonId,
         baseUrl,
       },
     });
