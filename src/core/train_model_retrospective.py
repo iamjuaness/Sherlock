@@ -273,13 +273,17 @@ def train() -> None:
     logger.info("Dataset generado: %d partidos válidos para entrenamiento.", len(records))
 
     if len(records) < 80:
-        logger.warning("Menos de 80 partidos válidos. El modelo GLM activará el modo fallback heurístico.")
+        logger.warning("Menos de 80 partidos válidos. El calibrador se quedará en la identidad.")
 
     if not records:
         logger.error("No se encontraron partidos que cumplan la condición (sin cuotas y con stats finales).")
         return
 
-    logger.info("Enviando dataset al endpoint /api/v1/ml/train...")
+    # El endpoint ya no entrena un GLM: reentrena el calibrador a partir de los
+    # picks liquidados en la base de datos. El dataset se sigue enviando por
+    # compatibilidad, pero el servidor lo ignora a proposito -- entrenar con un
+    # dataset externo saltaria el cutoff temporal que protege las features.
+    logger.info("Solicitando reentrenamiento del calibrador en /api/v1/ml/train...")
     try:
         response = requests.post(
             "http://localhost:8000/api/v1/ml/train",
@@ -287,7 +291,7 @@ def train() -> None:
             timeout=120
         )
         if response.status_code == 200:
-            logger.info("Modelo GLM reentrenado exitosamente.")
+            logger.info("Reentrenamiento del calibrador completado.")
             print(json.dumps(response.json(), indent=2))
         else:
             logger.error("Error devuelto por el servidor: HTTP %d", response.status_code)

@@ -196,6 +196,8 @@ function renderOddsBookmakerCards(sources) {
           loadedHistoryEntryDate = new Date(
             payload.start_timestamp * 1000 - 18000000,
           ).toISOString();
+        } else if (payload.match_date || payload.date) {
+          loadedHistoryEntryDate = payload.match_date || payload.date;
         }
 
         showPrefillBanner(sport, payload);
@@ -300,7 +302,10 @@ function renderMultiLineCards(values) {
   // ── 1. Evaluar picks (Sincronizado con Backend) ──
   const valuePicks = values
     .filter((v) => v.selection && v.odds != null)
-    .filter((v) => v.is_value === true && v.is_underdog !== true && Number(v.odds) <= 3.50) // Profesional
+    .filter(
+      (v) =>
+        v.is_value === true && v.is_underdog !== true && Number(v.odds) <= 3.5,
+    ) // Profesional
     .sort((a, b) => {
       const dqA = a.data_quality_score ?? 0;
       const dqB = b.data_quality_score ?? 0;
@@ -365,20 +370,34 @@ function renderMultiLineCards(values) {
     const lrsLabel = lrs == null ? "N/A" : `${Math.round(lrs * 100)}%`;
 
     // Frecuencia / Hit Rate histórico real por equipo, combinado y H2H directo
-    const homeHr = v.home_hit_rate != null ? `${Number(v.home_hit_rate).toFixed(1)}%` : null;
-    const awayHr = v.away_hit_rate != null ? `${Number(v.away_hit_rate).toFixed(1)}%` : null;
-    const empHr = v.empirical_hit_rate != null ? `${Number(v.empirical_hit_rate).toFixed(1)}%` : null;
-    const h2hHr = v.h2h_hit_rate != null ? `${Number(v.h2h_hit_rate).toFixed(1)}%` : null;
-    const h2hCount = v.h2h_samples != null && v.h2h_samples > 0 ? ` (${v.h2h_samples} PJ)` : "";
+    const homeHr =
+      v.home_hit_rate != null ? `${Number(v.home_hit_rate).toFixed(1)}%` : null;
+    const awayHr =
+      v.away_hit_rate != null ? `${Number(v.away_hit_rate).toFixed(1)}%` : null;
+    const empHr =
+      v.empirical_hit_rate != null
+        ? `${Number(v.empirical_hit_rate).toFixed(1)}%`
+        : null;
+    const h2hHr =
+      v.h2h_hit_rate != null ? `${Number(v.h2h_hit_rate).toFixed(1)}%` : null;
+    const h2hCount =
+      v.h2h_samples != null && v.h2h_samples > 0
+        ? ` (${v.h2h_samples} PJ)`
+        : "";
 
     let hitRateRow = "";
     if (homeHr || awayHr || empHr || h2hHr) {
       const parts = [];
       if (homeHr) parts.push(`Loc: <b>${homeHr}</b>`);
       if (awayHr) parts.push(`Vis: <b>${awayHr}</b>`);
-      if (empHr && (homeHr || awayHr) && empHr !== homeHr && empHr !== awayHr) parts.push(`Total: <b>${empHr}</b>`);
-      else if (empHr && !homeHr && !awayHr) parts.push(`Total: <b>${empHr}</b>`);
-      if (h2hHr) parts.push(`<span style="color:#a78bfa;" title="Hit rate en enfrentamientos directos previos">H2H: <b>${h2hHr}${h2hCount}</b></span>`);
+      if (empHr && (homeHr || awayHr) && empHr !== homeHr && empHr !== awayHr)
+        parts.push(`Total: <b>${empHr}</b>`);
+      else if (empHr && !homeHr && !awayHr)
+        parts.push(`Total: <b>${empHr}</b>`);
+      if (h2hHr)
+        parts.push(
+          `<span style="color:#a78bfa;" title="Hit rate en enfrentamientos directos previos">H2H: <b>${h2hHr}${h2hCount}</b></span>`,
+        );
 
       hitRateRow = `<div class="value-line-card__row" style="background:rgba(255,255,255,0.03);padding:4px 8px;border-radius:6px;margin:4px 0;border:1px solid rgba(56,189,248,0.15);">
         <span title="% de partidos históricos donde se cumplió este pick">🎯 Hit Rate Histórico</span>
@@ -466,7 +485,7 @@ function renderMultiLineCards(values) {
 
   const allPicks = [...valuePicks, ...underdogPicks];
   const picksWithH2HMatches = allPicks.filter(
-    (v) => Array.isArray(v.h2h_matches) && v.h2h_matches.length > 0
+    (v) => Array.isArray(v.h2h_matches) && v.h2h_matches.length > 0,
   );
 
   if (h2hCard) {
@@ -475,13 +494,19 @@ function renderMultiLineCards(values) {
       picksWithH2HMatches.forEach((v) => {
         const hitMatches = v.h2h_matches.filter((m) => m.hit === true);
         const totalMatches = v.h2h_matches.length;
-        const h2hHrText = v.h2h_hit_rate != null ? `${Number(v.h2h_hit_rate).toFixed(1)}%` : `${Math.round((hitMatches.length / totalMatches) * 100)}%`;
+        const h2hHrText =
+          v.h2h_hit_rate != null
+            ? `${Number(v.h2h_hit_rate).toFixed(1)}%`
+            : `${Math.round((hitMatches.length / totalMatches) * 100)}%`;
 
         let matchesListHtml = "";
         if (hitMatches.length > 0) {
           matchesListHtml = hitMatches
             .map((m) => {
-              const score = (m.score_home != null && m.score_away != null) ? `${m.score_home} - ${m.score_away}` : "";
+              const score =
+                m.score_home != null && m.score_away != null
+                  ? `${m.score_home} - ${m.score_away}`
+                  : "";
               const date = m.date ? `[${m.date}] ` : "";
               return `<div style="padding: 6px 12px; background: rgba(16, 185, 129, 0.08); border: 1px solid rgba(16, 185, 129, 0.2); border-radius: 6px; display: flex; justify-content: space-between; align-items: center; font-size: 0.84rem;">
                 <span style="font-weight: 500; color: #f1f5f9;">${date}<b>${m.home_team}</b> <span style="color:#a78bfa; font-weight:bold; margin: 0 6px;">${score}</span> <b>${m.away_team}</b></span>
@@ -494,7 +519,8 @@ function renderMultiLineCards(values) {
         }
 
         const block = document.createElement("div");
-        block.style.cssText = "background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 8px; padding: 0.85rem;";
+        block.style.cssText =
+          "background: rgba(255, 255, 255, 0.025); border: 1px solid rgba(167, 139, 250, 0.25); border-radius: 8px; padding: 0.85rem;";
         block.innerHTML = `
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem; border-bottom: 1px solid rgba(255, 255, 255, 0.08); padding-bottom: 0.4rem;">
             <div>
@@ -1274,7 +1300,7 @@ function renderHistoryList(entries) {
             (p.is_value === true &&
               p.is_underdog !== true &&
               p.is_high_confidence !== true &&
-              Number(p.odds || 0) <= 3.50),
+              Number(p.odds || 0) <= 3.5),
         );
         const hasUnderdog = picks.some((p) => p.is_underdog === true);
 
@@ -2460,16 +2486,16 @@ function populateAppForm(sport, data) {
       const tb = document.getElementById(tbodyId);
       if (!tb) return;
       tb.innerHTML = "";
-      (lines || []).forEach(line => {
+      (lines || []).forEach((line) => {
         const lineStr = String(line);
         const overVal = overOdds ? overOdds[lineStr] : "";
         const underVal = underOdds ? underOdds[lineStr] : "";
-        
+
         const tr = document.createElement("tr");
         tr.innerHTML = `
           <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${lineStr}" placeholder="Ej: 5.5" /></td>
-          <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${overVal ?? ''}" placeholder="" /></td>
-          <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${underVal ?? ''}" placeholder="" /></td>
+          <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${overVal ?? ""}" placeholder="" /></td>
+          <td><input type="number" step="0.01" class="input" style="padding: 0.2rem; text-align: center" value="${underVal ?? ""}" placeholder="" /></td>
         `;
         tb.appendChild(tr);
       });
@@ -2496,31 +2522,31 @@ function populateAppForm(sport, data) {
         "goals-odds-tbody",
         odds.goals_lines || odds.goalsLines,
         odds.goalsOverOdds || odds.goals_over_odds,
-        odds.goalsUnderOdds || odds.goals_under_odds
+        odds.goalsUnderOdds || odds.goals_under_odds,
       );
       populateOddsTable(
         "corners-odds-tbody",
         odds.corners_lines || odds.cornersLines,
         odds.cornersOverOdds || odds.corners_over_odds,
-        odds.cornersUnderOdds || odds.corners_under_odds
+        odds.cornersUnderOdds || odds.corners_under_odds,
       );
       populateOddsTable(
         "cards-odds-tbody",
         odds.cards_lines || odds.cardsLines,
         odds.cardsOverOdds || odds.cards_over_odds,
-        odds.cardsUnderOdds || odds.cards_under_odds
+        odds.cardsUnderOdds || odds.cards_under_odds,
       );
       populateOddsTable(
         "shots-odds-tbody",
         odds.shots_lines || odds.shotsLines,
         odds.shotsOverOdds || odds.shots_over_odds,
-        odds.shotsUnderOdds || odds.shots_under_odds
+        odds.shotsUnderOdds || odds.shots_under_odds,
       );
       populateOddsTable(
         "shots-target-odds-tbody",
         odds.shots_target_lines || odds.shotsTargetLines,
         odds.shotsTargetOverOdds || odds.shots_target_over_odds,
-        odds.shotsTargetUnderOdds || odds.shots_target_under_odds
+        odds.shotsTargetUnderOdds || odds.shots_target_under_odds,
       );
 
       if (odds.sources && Object.keys(odds.sources).length > 0) {
@@ -2538,21 +2564,37 @@ function populateAppForm(sport, data) {
             dc_1x: odds.dc_1x,
             dc_x2: odds.dc_x2,
             dc_12: odds.dc_12,
-            goals_lines: (odds.goals_lines || odds.goalsLines || []).map(Number),
+            goals_lines: (odds.goals_lines || odds.goalsLines || []).map(
+              Number,
+            ),
             goalsOverOdds: odds.goalsOverOdds || odds.goals_over_odds || {},
             goalsUnderOdds: odds.goalsUnderOdds || odds.goals_under_odds || {},
-            corners_lines: (odds.corners_lines || odds.cornersLines || []).map(Number),
-            cornersOverOdds: odds.cornersOverOdds || odds.corners_over_odds || {},
-            cornersUnderOdds: odds.cornersUnderOdds || odds.corners_under_odds || {},
-            cards_lines: (odds.cards_lines || odds.cardsLines || []).map(Number),
+            corners_lines: (odds.corners_lines || odds.cornersLines || []).map(
+              Number,
+            ),
+            cornersOverOdds:
+              odds.cornersOverOdds || odds.corners_over_odds || {},
+            cornersUnderOdds:
+              odds.cornersUnderOdds || odds.corners_under_odds || {},
+            cards_lines: (odds.cards_lines || odds.cardsLines || []).map(
+              Number,
+            ),
             cardsOverOdds: odds.cardsOverOdds || odds.cards_over_odds || {},
             cardsUnderOdds: odds.cardsUnderOdds || odds.cards_under_odds || {},
-            shots_lines: (odds.shots_lines || odds.shotsLines || []).map(Number),
+            shots_lines: (odds.shots_lines || odds.shotsLines || []).map(
+              Number,
+            ),
             shotsOverOdds: odds.shotsOverOdds || odds.shots_over_odds || {},
             shotsUnderOdds: odds.shotsUnderOdds || odds.shots_under_odds || {},
-            shots_target_lines: (odds.shots_target_lines || odds.shotsTargetLines || []).map(Number),
-            shotsTargetOverOdds: odds.shotsTargetOverOdds || odds.shots_target_over_odds || {},
-            shotsTargetUnderOdds: odds.shotsTargetUnderOdds || odds.shots_target_under_odds || {},
+            shots_target_lines: (
+              odds.shots_target_lines ||
+              odds.shotsTargetLines ||
+              []
+            ).map(Number),
+            shotsTargetOverOdds:
+              odds.shotsTargetOverOdds || odds.shots_target_over_odds || {},
+            shotsTargetUnderOdds:
+              odds.shotsTargetUnderOdds || odds.shots_target_under_odds || {},
           },
         };
         window.currentPrefillSources = syntheticSources;

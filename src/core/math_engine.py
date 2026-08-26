@@ -16,6 +16,8 @@ import logging
 from typing import Dict, List, Optional, Tuple, Any
 from datetime import datetime
 
+from src.domain.temporal import TemporalCutoff, record_date
+
 logger = logging.getLogger("sherlock.math_engine")
 
 
@@ -453,21 +455,14 @@ class LeagueMathEngine:
         matching_count = 0
         hit_count = 0
 
-        ref_dt = None
-        if current_match_date:
-            try:
-                if isinstance(current_match_date, datetime):
-                    ref_dt = current_match_date
-                else:
-                    dt_s = str(current_match_date).replace("Z", "+00:00")
-                    if "T" in dt_s:
-                        ref_dt = datetime.fromisoformat(dt_s)
-                    elif len(dt_s) >= 10:
-                        ref_dt = datetime.strptime(dt_s[:10], "%Y-%m-%d")
-            except Exception:
-                ref_dt = None
-
-        ref_date_only = ref_dt.date() if ref_dt else None
+        # Cutoff temporal en UTC, obligatorio. `create` devuelve None si el
+        # kickoff no es utilizable y entonces NO se admite ningun registro: sin
+        # kickoff no hay forma de demostrar que un partido sea anterior. Antes,
+        # esa misma situacion DESACTIVABA el filtro y dejaba entrar el historico
+        # completo, incluidos partidos posteriores al que se analiza.
+        cutoff = TemporalCutoff.create(current_match_date)
+        if cutoff is None:
+            return {"sample_size": 0, "hits": 0, "hit_rate_pct": 0.0, "cutoff_missing": True}
 
         for m in matches:
             if exclude_match_id is not None:
@@ -475,22 +470,11 @@ class LeagueMathEngine:
                 if m_id is not None and str(m_id) == str(exclude_match_id):
                     continue
 
-            date_val = m.get("date") or m.get("match_date")
-            m_dt = None
-            if date_val:
-                try:
-                    if isinstance(date_val, datetime):
-                        m_dt = date_val
-                    else:
-                        m_s = str(date_val).replace("Z", "+00:00")
-                        if "T" in m_s or " " in m_s:
-                            m_dt = datetime.fromisoformat(m_s)
-                        elif len(m_s) >= 10:
-                            m_dt = datetime.strptime(m_s[:10], "%Y-%m-%d")
-                except Exception:
-                    pass
-
-            if ref_date_only and m_dt and m_dt.date() >= ref_date_only:
+            # Se compara el instante completo en UTC, no solo el dia: dos
+            # partidos de la misma jornada son distinguibles y una zona horaria
+            # distinta ya no puede desplazar la fecha. Un registro sin fecha
+            # utilizable se DESCARTA en lugar de admitirse.
+            if not cutoff.allows_record(m):
                 continue
 
             ht = (m.get("home_team") or m.get("match_title", "").split(" vs ")[0]).strip().lower()
@@ -548,21 +532,20 @@ class LeagueMathEngine:
         hit_count = 0
         h2h_matches_list = []
 
-        ref_dt = None
-        if current_match_date:
-            try:
-                if isinstance(current_match_date, datetime):
-                    ref_dt = current_match_date
-                else:
-                    dt_s = str(current_match_date).replace("Z", "+00:00")
-                    if "T" in dt_s or " " in dt_s:
-                        ref_dt = datetime.fromisoformat(dt_s)
-                    elif len(dt_s) >= 10:
-                        ref_dt = datetime.strptime(dt_s[:10], "%Y-%m-%d")
-            except Exception as e:
-                ref_dt = None
-
-        ref_date_only = ref_dt.date() if ref_dt else None
+        # Cutoff temporal en UTC, obligatorio. `create` devuelve None si el
+        # kickoff no es utilizable y entonces NO se admite ningun registro: sin
+        # kickoff no hay forma de demostrar que un partido sea anterior. Antes,
+        # esa misma situacion DESACTIVABA el filtro y dejaba entrar el historico
+        # completo, incluidos partidos posteriores al que se analiza.
+        cutoff = TemporalCutoff.create(current_match_date)
+        if cutoff is None:
+            return {
+                "sample_size": 0,
+                "hits": 0,
+                "hit_rate_pct": 0.0,
+                "h2h_matches": [],
+                "cutoff_missing": True,
+            }
 
         for m in matches:
             m_id = m.get("id") or m.get("match_id")
@@ -574,29 +557,16 @@ class LeagueMathEngine:
                     print(f"  ❌ [EXCLUIDO POR ID] match_id={m_id} coincide con exclude_match_id={exclude_match_id}")
                     continue
 
-            # 2. Validación de Exclusión por Fecha
-            date_val = m.get("date") or m.get("match_date")
-            m_dt = None
-            if date_val:
-                try:
-                    if isinstance(date_val, datetime):
-                        m_dt = date_val
-                    else:
-                        m_s = str(date_val).replace("Z", "+00:00")
-                        if "T" in m_s or " " in m_s:
-                            m_dt = datetime.fromisoformat(m_s)
-                        elif len(m_s) >= 10:
-                            m_dt = datetime.strptime(m_s[:10], "%Y-%m-%d")
-                except Exception as e:
-                    print(f"[DEBUG H2H] Error parseando date_val '{date_val}': {e}")
+            # 2. Validación de Exclusión por Fecha (cutoff UTC estricto)
+            # La comparacion anterior `m_dt >= ref_dt` mezclaba datetimes con y
+            # sin zona horaria, lo que lanza TypeError sin capturar. Normalizar
+            # ambos a UTC en el dominio elimina ese fallo latente.
+            if not cutoff.allows_record(m):
+                continue
 
-            # Filtrar si el partido es igual o posterior en fecha/hora
-            if ref_dt and m_dt and m_dt >= ref_dt:
-                print(f"  ❌ [EXCLUIDO POR FECHA >=] {m_title} ({m_dt} >= {ref_dt})")
-                continue
-            elif ref_date_only and m_dt and m_dt.date() >= ref_date_only:
-                print(f"  ❌ [EXCLUIDO POR DIA >=] {m_title} ({m_dt.date()} >= {ref_date_only})")
-                continue
+            # Se toma del dominio, de modo que la fecha que se muestra en el H2H
+            # es exactamente la que el cutoff evaluo, no una clave distinta.
+            date_val = record_date(m)
 
             ht_raw = m.get("home_team") or (m.get("match_title", "").split(" vs ")[0] if " vs " in m.get("match_title", "") else "")
             at_raw = m.get("away_team") or (m.get("match_title", "").split(" vs ")[1] if " vs " in m.get("match_title", "") else "")

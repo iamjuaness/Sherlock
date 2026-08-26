@@ -76,11 +76,11 @@ class TestLeagueMathEngine(unittest.TestCase):
 
     def test_pick_hit_rate(self):
         matches = [
-            {"match_title": "Team A vs Team B", "final_score_home": 2, "final_score_away": 1}, # Total 3 > 2.5
-            {"match_title": "Team A vs Team C", "final_score_home": 1, "final_score_away": 0}, # Total 1 < 2.5
-            {"match_title": "Team A vs Team D", "final_score_home": 3, "final_score_away": 0}, # Total 3 > 2.5
+            {"match_title": "Team A vs Team B", "final_score_home": 2, "final_score_away": 1, "date": "2024-01-01"}, # Total 3 > 2.5
+            {"match_title": "Team A vs Team C", "final_score_home": 1, "final_score_away": 0, "date": "2024-01-02"}, # Total 1 < 2.5
+            {"match_title": "Team A vs Team D", "final_score_home": 3, "final_score_away": 0, "date": "2024-01-03"}, # Total 3 > 2.5
         ]
-        res = LeagueMathEngine.compute_pick_hit_rate(matches, "Team A", market_family="goals", line=2.5, is_over=True, role_filter="home")
+        res = LeagueMathEngine.compute_pick_hit_rate(matches, "Team A", market_family="goals", line=2.5, is_over=True, role_filter="home", current_match_date="2024-02-01")
         self.assertEqual(res["sample_size"], 3)
         self.assertEqual(res["hits"], 2)
     def test_compute_h2h_hit_rate(self):
@@ -133,7 +133,8 @@ class TestLeagueMathEngine(unittest.TestCase):
             home_team_name="Independiente Petrolero",
             away_team_name="GV San José",
             market_family="double_chance",
-            target_side="x2"
+            target_side="x2",
+            current_match_date="2024-03-01"
         )
         # Solo debe evaluar el Partido 10 (mismo orden de localía)
         self.assertEqual(res["sample_size"], 1)

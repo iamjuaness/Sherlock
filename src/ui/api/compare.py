@@ -4,12 +4,14 @@ from enum import Enum
 from typing import Optional
 import os, math
 import re
+import logging
+from pathlib import Path
 import numpy as np
 from pydantic import BaseModel, Field, ConfigDict
 from pydantic.alias_generators import to_camel
 from openai import AsyncOpenAI
 from dotenv import load_dotenv
-from typing import Optional, Any, Dict, List
+from typing import Optional, Any, Dict, List, Iterable
 from src.core.pick_rules_engine import (
     evaluate_pick_rules,
     resolve_match_picks_correlation as engine_resolve_match_picks_correlation,
@@ -17,8 +19,22 @@ from src.core.pick_rules_engine import (
     StatSource,
 )
 from datetime import datetime
+from src.domain.settlement import ReturnDistribution, Side
+from src.domain.eligibility import (
+    DEFAULT_THRESHOLDS,
+    BlockReason,
+    EligibilityDecision,
+    PickSnapshot,
+    evaluate_eligibility,
+    hard_blocks_from_flags,
+)
+from src.models.count_negative_binomial import (
+    under_over_probabilities as _nb_under_over_probabilities,
+)
 
 load_dotenv()
+
+logger = logging.getLogger("sherlock.compare")
 
 
 # ───────────────────────────────────────────────────────────────
@@ -554,6 +570,17 @@ class ValueIndicator(BaseModel):
     is_rule_blocked: bool = False
     correlation_blocked: bool = False
     rule_blocked_reason: Optional[str] = None
+    correlation_penalty_applied: bool = False
+    correlation_penalty_reason: Optional[str] = None
+
+    # ── Elegibilidad: registro INMUTABLE de bloqueos ──────────────────────
+    # `eligibility_hard_blocks` solo crece. Cualquier recálculo posterior de
+    # `is_publishable` arrastra estos motivos, así que un pick bloqueado no
+    # puede volver a publicarse. Antes el bloqueo se perdía al recalcular.
+    eligibility_hard_blocks: List[str] = Field(default_factory=list)
+    eligibility_soft_failures: List[str] = Field(default_factory=list)
+    eligibility_reasons: List[str] = Field(default_factory=list)
+    eligibility_policy_version: Optional[str] = None
 
 
 class StatComparison(BaseModel):
@@ -688,20 +715,29 @@ def _nbinom_pmf(k: int, mu: float, r: float) -> float:
     except (ValueError, OverflowError):
         return 0.0
 
-def get_nbinom_under_over_prob(line: float, h_mu: float, h_r: float, a_mu: float, a_r: float, num_sim: int = 10000) -> tuple[float, float, float]:
-    h_p = h_r / (h_r + h_mu)
-    h_sims = np.random.negative_binomial(h_r, h_p, num_sim)
-    
-    a_p = a_r / (a_r + a_mu)
-    a_sims = np.random.negative_binomial(a_r, a_p, num_sim)
-    
-    total_sims = h_sims + a_sims
-    
-    p_under = np.mean(total_sims < line)
-    p_push = np.mean(total_sims == line) if line.is_integer() else 0.0
-    p_over = 1.0 - float(p_under) - float(p_push)
-    
-    return float(p_under) * 100.0, float(p_over) * 100.0, float(p_push) * 100.0
+def get_nbinom_under_over_prob(
+    line: float,
+    h_mu: float,
+    h_r: float,
+    a_mu: float,
+    a_r: float,
+    num_sim: int | None = None,
+) -> tuple[float, float, float]:
+    """
+    Probabilidades Under/Over/Push para un mercado de conteo. DETERMINISTA.
+
+    Antes usaba `np.random.negative_binomial` sin semilla, por lo que dos
+    recálculos idénticos podían producir probabilidades (y picks) distintos.
+    Ahora delega en la convolución exacta de PMF de
+    `src.models.count_negative_binomial`, que además liquida correctamente las
+    líneas de cuarto (un Over 2.25 con total 2 es half-loss, no pérdida total).
+
+    `num_sim` se conserva solo por compatibilidad de firma y se ignora.
+
+    Devuelve (p_under, p_over, p_push) en porcentaje (0-100).
+    """
+    return _nb_under_over_probabilities(line, h_mu, h_r, a_mu, a_r)
+
 
 def get_dispersion_r(mu: float, variance: float) -> float:
     if variance <= mu * 1.01:
@@ -839,16 +875,100 @@ MARKET_REF_ACCURACY = {
 }
 
 
-def apply_calibration(raw_prob: float, odds: float, market_family: str,
-                       league: "LeagueStats | None" = None) -> float:
-    """
-    Retorna la probabilidad del modelo determinista Dixon-Coles / Poisson / Binomial Negativa
-    ponderado con los datos de cada liga.
+# ── Calibración probabilística real (Beta-Binomial jerárquica, sin GLM) ──
+# El artefacto se entrena offline con picks liquidados y se valida walk-forward.
+# Si no existe, `apply_calibration` degrada a la identidad: nunca inventa una
+# corrección que no esté respaldada por evidencia.
+CALIBRATION_ARTIFACT_PATH = os.getenv(
+    "SHERLOCK_CALIBRATION_PATH", "data/calibration/active.json"
+)
 
-    Se elimina el ajuste con GLM/IsotonicRegression redundante para mantener la probabilidad
-    calibrada fiel al modelo determinista segmentado por liga.
+_calibrator_cache: "dict[str, Any]" = {"mtime": None, "obj": None}
+
+
+def get_calibrator():
     """
-    return raw_prob
+    Devuelve el calibrador activo, recargándolo si el artefacto cambió en disco.
+
+    Nunca lanza: un artefacto corrupto o ausente degrada a identidad y se
+    registra en el log. Fallar cerrado aquí significa no tocar la probabilidad.
+    """
+    from src.models.calibration import HierarchicalCalibrator
+
+    path = Path(CALIBRATION_ARTIFACT_PATH)
+    try:
+        mtime = path.stat().st_mtime if path.exists() else None
+    except OSError:
+        mtime = None
+
+    if _calibrator_cache["obj"] is not None and _calibrator_cache["mtime"] == mtime:
+        return _calibrator_cache["obj"]
+
+    if mtime is None:
+        cal = HierarchicalCalibrator.identity()
+    else:
+        try:
+            cal = HierarchicalCalibrator.load(path)
+            logger.info(
+                "Calibrador cargado: version=%s segmentos=%d n=%s",
+                cal.version, len(cal.curves), cal.metadata.get("n_samples"),
+            )
+        except Exception as exc:  # artefacto corrupto o versión incompatible
+            logger.warning(
+                "Artefacto de calibración inválido en %s (%s). Usando identidad.",
+                path, exc,
+            )
+            cal = HierarchicalCalibrator.identity()
+
+    _calibrator_cache["mtime"] = mtime
+    _calibrator_cache["obj"] = cal
+    return cal
+
+
+def reset_calibrator_cache() -> None:
+    """Fuerza la recarga del artefacto en la siguiente llamada (usado en tests)."""
+    _calibrator_cache["mtime"] = None
+    _calibrator_cache["obj"] = None
+
+
+def apply_calibration(raw_prob: float, odds: float, market_family: str,
+                       league: "LeagueStats | None" = None,
+                       league_name: str | None = None) -> float:
+    """
+    Calibra la probabilidad del modelo determinista contra el histórico real.
+
+    Sustituye al GLM/IsotonicRegression retirados. En su lugar usa una
+    Beta-Binomial jerárquica (global -> familia de mercado -> liga × familia)
+    suavizada con isotónica PAVA:
+
+      p̂ = (aciertos + κ·prior_del_padre) / (n + κ)
+
+    Con muestra pequeña p̂ ≈ prior, así que un segmento con 5 picks apenas se
+    mueve de su padre y no puede introducir ruido. Sin artefacto entrenado
+    devuelve `raw_prob` intacta.
+
+    `raw_prob` está en escala 0-100 y el retorno mantiene esa escala.
+    """
+    if raw_prob is None:
+        return raw_prob
+
+    lg_name = league_name
+    if lg_name is None and league is not None:
+        lg_name = getattr(league, "name", None) or getattr(league, "league_name", None)
+
+    try:
+        return get_calibrator().apply(raw_prob, market_family, lg_name)
+    except Exception as exc:
+        logger.warning("Fallo al calibrar (%s). Se usa la probabilidad cruda.", exc)
+        return raw_prob
+
+
+def calibration_is_active() -> bool:
+    """True si hay una curva entrenada gobernando las probabilidades."""
+    try:
+        return get_calibrator().is_trained
+    except Exception:
+        return False
 
 def get_market_confidence_tier(selection: str) -> str:
     family = _market_family(selection)
@@ -909,42 +1029,92 @@ def _calculate_display_score(v: ValueIndicator) -> float:
     final_score = s_prob + s_edge + s_data + (s_stability * 0.2)
     return round(min(100.0, final_score), 1)
 
+def current_eligibility(v: ValueIndicator) -> EligibilityDecision:
+    """
+    Reconstruye la decisión de elegibilidad ya acumulada sobre este pick.
+
+    Une dos fuentes para no perder bloqueos durante la migración:
+      · el registro explícito `eligibility_hard_blocks`;
+      · los flags booleanos legacy (`is_blacklisted`, `is_rule_blocked`,
+        `correlation_blocked`), que siguen persistiendo en BD y usa el frontend.
+
+    Así un pick bloqueado por código antiguo que solo movía el flag continúa
+    bloqueado al pasar por la decisión nueva.
+    """
+    return EligibilityDecision(
+        hard_blocks=frozenset(
+            EligibilityDecision.from_reasons(v.eligibility_hard_blocks).hard_blocks
+        )
+        | hard_blocks_from_flags(
+            is_blacklisted=bool(v.is_blacklisted),
+            is_rule_blocked=bool(v.is_rule_blocked),
+            correlation_blocked=bool(v.correlation_blocked),
+        )
+    )
+
+
+def evaluate_pick_eligibility(
+    v: ValueIndicator,
+    new_hard_blocks: "Iterable[BlockReason | str]" = (),
+) -> EligibilityDecision:
+    """
+    Evalúa la elegibilidad y ESCRIBE el resultado en el pick.
+
+    Es el único punto que decide publicabilidad. Mantiene sincronizados los
+    flags legacy y el registro inmutable, y conserva el centinela
+    `quality_score = -1` de los picks con bloqueo duro.
+
+    Invariante: llamar a esta función repetidamente nunca puede hacer
+    publicable un pick que ya estaba bloqueado.
+    """
+    decision = evaluate_eligibility(
+        PickSnapshot.from_pick(v, market_family=_market_family(v.selection)),
+        previous=current_eligibility(v),
+        hard_blocks=new_hard_blocks,
+        thresholds=DEFAULT_THRESHOLDS,
+    )
+
+    v.eligibility_hard_blocks = sorted(r.value for r in decision.hard_blocks)
+    v.eligibility_soft_failures = sorted(r.value for r in decision.soft_failures)
+    v.eligibility_reasons = list(decision.reasons)
+    v.eligibility_policy_version = decision.policy_version
+
+    # Reflejar los bloqueos duros en los flags legacy (nunca al revés).
+    if BlockReason.BLACKLISTED in decision.hard_blocks:
+        v.is_blacklisted = True
+    if BlockReason.RULE_BLOCKED in decision.hard_blocks:
+        v.is_rule_blocked = True
+    if BlockReason.CORRELATION_BLOCKED in decision.hard_blocks:
+        v.correlation_blocked = True
+
+    v.is_publishable = decision.publishable
+    if decision.is_hard_blocked:
+        v.is_value = False
+        v.quality_score = -1
+
+    return decision
+
+
+def block_pick(v: ValueIndicator, *reasons: "BlockReason | str") -> EligibilityDecision:
+    """
+    Emite uno o más bloqueos duros sobre un pick. Operación irreversible.
+
+    Sustituye al patrón disperso de asignar a mano
+    `is_rule_blocked = True; is_publishable = False; quality_score = -1`,
+    que se deshacía en cuanto otro tramo recalculaba esos campos.
+    """
+    return evaluate_pick_eligibility(v, new_hard_blocks=reasons)
+
+
 def is_publishable_pick(v: ValueIndicator) -> bool:
-    if v.is_blacklisted:
-        return False
-    family = _market_family(v.selection)
+    """
+    True si el pick es publicable AHORA, respetando todo bloqueo previo.
 
-    if v.odds is None or v.odds < 1.4 or v.odds > 2.50:
-        return False
-
-    # Filtro Crítico H2H: Si se evaluaron partidos H2H y el resultado fue 0.0%, no publicar.
-    h2h_hr = getattr(v, "h2h_hit_rate", None)
-    h2h_samp = getattr(v, "h2h_samples", 0) or 0
-    if h2h_hr is not None and h2h_hr == 0.0 and h2h_samp > 0:
-        return False
-
-    prob = v.calibrated_prob if v.calibrated_prob is not None else v.model_prob
-    # Mercados binarios (resultado claro): umbral alto
-    is_binary = family in {"result", "btts", "goals"}
-    # Mercados de alta varianza (over/under sobre magnitudes grandes): umbral reducido
-    is_high_variance = family in {"cards", "shots", "shots_target", "fouls", "corners"}
-
-    if is_binary and prob < 60.0:
-        return False
-    if is_high_variance and prob < 20.0:  # umbral reducido para over/under de tarjetas/tiros
-        return False
-    if not is_binary and not is_high_variance and prob < 35.0:
-        return False
-    if v.edge < 2.5 or v.edge > 25:
-        return False
-
-    if v.data_quality_score is not None and v.data_quality_score < 50:
-        return False
-
-    if v.stake_units is not None and v.stake_units < 1.0:
-        return False
-
-    return True
+    Antes esta función solo comprobaba `is_blacklisted`, así que recalcularla
+    tras un bloqueo por regla o correlación devolvía True y resucitaba el pick.
+    Ahora delega en la decisión única, que arrastra los bloqueos duros.
+    """
+    return evaluate_pick_eligibility(v).publishable
 
 
 def score_pick_quality(v: ValueIndicator) -> int:
@@ -1054,70 +1224,84 @@ def _calculate_kelly_fraction(
     odds: float | None,
     kelly_multiplier: float = 0.25,
     hard_cap: float = 0.25,
+    push_prob: float = 0.0,
+    distribution: "ReturnDistribution | None" = None,
 ) -> float:
     """
-    Kelly fraccional real, basado en probabilidad calibrada y cuota decimal.
+    Kelly fraccional calculado sobre la DISTRIBUCIÓN COMPLETA de retornos.
+
+    Antes se usaba la fórmula Bernoulli (b·p - q)/b con q = 1 - p, lo que
+    contaba los pushes como pérdidas y por tanto subestimaba el stake óptimo.
+    Un push devuelve la apuesta: aporta retorno 0, no -1.
 
     Args:
-        calibrated_prob: probabilidad calibrada del pick. Acepta 0-1 o 0-100
-                          (se detecta automáticamente por el rango).
-        odds: cuota decimal de la casa (>1.0).
-        kelly_multiplier: fracción de Kelly completo a usar (0.25 = 1/4 Kelly,
-                           recomendado para reducir varianza frente a errores
-                           de estimación de probabilidad). Ajustable por
-                           familia de mercado si se quiere ser más/menos
-                           conservador (ver nota al final).
-        hard_cap: techo absoluto de seguridad — nunca recomienda apostar más
-                   de esta fracción del bankroll en un solo pick, sin importar
-                   qué tan alto salga el Kelly matemático (protege contra
-                   errores de calibración extremos / outliers).
+        calibrated_prob: probabilidad de GANAR (0-1 o 0-100, se autodetecta).
+        odds: cuota decimal (>1.0).
+        kelly_multiplier: fracción de Kelly completo (0.25 = 1/4 Kelly).
+        hard_cap: techo absoluto sobre la fracción de bankroll.
+        push_prob: probabilidad de push (0-1 o 0-100). El push no consume banca.
+        distribution: si se pasa, se usa tal cual e ignora los tres primeros
+            argumentos. Es la vía correcta para líneas de cuarto, donde hay
+            masa real en half_win / half_loss.
 
     Returns:
         Fracción del bankroll a apostar (0.0 si no hay valor o inputs inválidos).
     """
+    if distribution is not None:
+        try:
+            return distribution.kelly_fraction(
+                multiplier=kelly_multiplier, hard_cap=hard_cap
+            )
+        except (ValueError, ZeroDivisionError):
+            return 0.0
+
     if odds is None or odds <= 1.0 or calibrated_prob is None:
         return 0.0
 
-    p = calibrated_prob / 100.0 if calibrated_prob > 1.0 else calibrated_prob
-    p = max(0.0, min(1.0, p))
-    q = 1.0 - p
-    b = odds - 1.0
-
-    if b <= 0:
+    try:
+        dist = ReturnDistribution.simple(
+            odds=odds, p_win=calibrated_prob, p_push=push_prob or 0.0
+        )
+        return dist.kelly_fraction(multiplier=kelly_multiplier, hard_cap=hard_cap)
+    except (ValueError, ZeroDivisionError):
         return 0.0
 
-    f_full = (b * p - q) / b  # Kelly completo: puede salir negativo -> sin valor
-
-    if f_full <= 0:
-        return 0.0
-
-    f_fractional = f_full * kelly_multiplier
-
-    return round(min(f_fractional, hard_cap), 4)
 
 def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None, odds_obj: Any = None):
     if odds is None or odds <= 1.0:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
 
     family = _market_family(sel)
-    calibrated_p = apply_calibration(modelp, odds, family)
+    calibrated_p = apply_calibration(
+        modelp, odds, family, league=league, league_name=league_name
+    )
 
-    raw_implied_pre = (1.0 / odds) * 100.0
-    edge_prob_pre = calibrated_p - raw_implied_pre
-    if edge_prob_pre >= 20.0:
-        calibrated_p *= 0.82
+    # Recorte heurístico de respaldo: SOLO cuando no hay curva entrenada.
+    # Antes se aplicaba siempre (`calibrated_p *= 0.82` con edge >= 20), un
+    # factor codificado a mano sin respaldo empírico. Con artefacto entrenado
+    # la curva jerárquica ya corrige la sobreconfianza con evidencia real, y
+    # aplicar ambos castigaría dos veces el mismo sesgo.
+    if not calibration_is_active():
+        raw_implied_pre = (1.0 / odds) * 100.0
+        if calibrated_p - raw_implied_pre >= 20.0:
+            calibrated_p *= 0.82
 
     raw_implied = (1.0 / odds) * 100.0
     margin_factor = (overround / 100.0) if overround > 100 else 1.05
     implied_no_vig = raw_implied / margin_factor
 
-    edge_prob = calibrated_p - raw_implied
-    ev = (calibrated_p / 100.0 * odds) - 1.0
+    # ── EV por distribución de retornos (motor único de settlement) ──────
+    # El cálculo anterior era  ev = (p·odds - 1) · (1 - p_push), que trata el
+    # push como pérdida y luego lo escala. El push devuelve la apuesta: su
+    # retorno es 0. EV correcto:  E[R] = P(win)·(odds-1) - P(loss).
+    ret_dist = ReturnDistribution.simple(
+        odds=odds, p_win=calibrated_p, p_push=push_p or 0.0
+    )
+    ev = ret_dist.expected_value
 
-    if push_p > 0:
-        p_resolve = 1.0 - (push_p / 100.0)
-        ev = ev * p_resolve
-        edge_prob = edge_prob * p_resolve
+    # Edge en probabilidad, condicionado a que la apuesta resuelva.
+    # Sin push esto es idéntico a (calibrated_p - raw_implied).
+    edge_prob = (ret_dist.p_win_effective * 100.0) - raw_implied
 
     # ── League Reliability Score ──────────────────────────────────────────
     # El LRS mide la confiabilidad histórica de la liga.
@@ -1184,6 +1368,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         calibrated_prob=calibrated_p,   # probabilidad PURA, sin distorsión LRS
         odds=odds,
         kelly_multiplier=kelly_multiplier,
+        distribution=ret_dist,          # push = retorno 0, no pérdida
     )
 
     family = _market_family(sel)
@@ -1203,7 +1388,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         calibrated_prob=round(calibrated_p, 1),
         implied_prob=round(raw_implied, 1),
         implied_prob_no_vig=round(implied_no_vig, 1),
-        fair_odds=round(100.0 / calibrated_p, 2) if calibrated_p > 0 else None,
+        fair_odds=round(ret_dist.fair_odds, 2) if ret_dist.fair_odds else None,
         edge=round(edge_prob, 1),
         edge_ev=round(ev, 3),
         push_prob=round(push_p, 1),
@@ -1219,28 +1404,24 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         league_reliability_penalty=lrs_penalty,
     )
 
-    # Check league blacklist
+    # ── Blacklist de liga: bloqueo duro ──────────────────────────────────
     if league_name and is_market_blacklisted_for_league(league_name, sel):
-        v.is_blacklisted = True
-        v.is_publishable = False
-        v.is_value = False
-        v.quality_score = -1
+        block_pick(v, BlockReason.BLACKLISTED)
         v.strategic_score = -1
     else:
-        v.is_publishable = is_publishable_pick(v)
-        v.is_value = is_value_pick(v)
         v.quality_score = score_pick_quality(v)
+        # `evaluate_pick_eligibility` fija is_publishable y, si hay bloqueo
+        # duro, fuerza quality_score = -1. Debe ir DESPUÉS de calcular la
+        # calidad para que el centinela no se sobrescriba.
+        evaluate_pick_eligibility(v)
+        v.is_value = is_value_pick(v) and v.is_publishable
         v.display_score = _calculate_display_score(v)
         v.is_underdog = is_underdog_pick(v)
 
-    # Check stat-based pick rules (if enabled)
+    # ── Reglas estadísticas: bloqueo duro ────────────────────────────────
     if not v.is_blacklisted and h is not None and a is not None:
-        rule_blocked = is_pick_blocked_by_rules(sel, h, a, odds_obj)
-        if rule_blocked:
-            v.is_rule_blocked = True
-            v.is_publishable = False
-            v.is_value = False
-            v.quality_score = -1
+        if is_pick_blocked_by_rules(sel, h, a, odds_obj):
+            block_pick(v, BlockReason.RULE_BLOCKED)
 
     return v
 
@@ -3792,11 +3973,15 @@ async def compare_football(
                         v.empirical_hit_rate = round((tot_hits / tot_samples) * 100.0, 1)
 
         q_score, s_support, p_support, strat_score = _rate_pick_quality(v, h, a, projected_lines)
+        # `_rate_pick_quality` sobrescribía el centinela -1 de los picks
+        # bloqueados y acto seguido `is_publishable_pick` los devolvía a
+        # publicables. Ahora la decisión única conserva el bloqueo y repone el
+        # centinela, así que este recálculo ya no puede resucitar nada.
         v.quality_score   = q_score
         v.strategic_score = strat_score
         v.stat_support    = round(s_support, 1)
         v.proj_support    = round(p_support, 1)
-        v.is_publishable  = is_publishable_pick(v)
+        evaluate_pick_eligibility(v)
         v.is_value        = is_value_pick(v) and v.is_publishable
         v.is_underdog     = is_underdog_pick(v)
 

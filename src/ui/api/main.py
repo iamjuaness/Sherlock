@@ -1358,30 +1358,53 @@ def save_analysis(
     # ── Calcular parámetros previos, ventanas de forma reciente (5, 10, 15) y hit rates empíricos ──
     from datetime import datetime, timezone
     from src.core.math_engine import LeagueMathEngine
-    record_date = req.match_date or datetime.now(timezone.utc)
+    from src.domain.temporal import TemporalCutoff
+
+    # Antes: `req.match_date or datetime.now(timezone.utc)`. Sin fecha de
+    # partido se usaba AHORA como cutoff, lo que admite en el historico todo lo
+    # jugado hasta este instante -- incluidos partidos posteriores al saque
+    # inicial real si el partido aun no se ha jugado. Ahora, sin fecha
+    # utilizable no se calculan parametros retrospectivos: es mejor no tenerlos
+    # que tenerlos contaminados.
+    prior_cutoff = TemporalCutoff.create(req.match_date)
+    record_date = prior_cutoff.kickoff if prior_cutoff else None
     pre_match_data = req.pre_match_stats
     recent_form_data = req.recent_form_stats
     pick_rates_data = req.historical_pick_rates
 
     try:
+        if prior_cutoff is None:
+            raise _SkipPriorParams(
+                "sin fecha de partido utilizable: no se calculan parametros retrospectivos"
+            )
+
         title = req.match_title or ""
         h_name = title.split(" vs ")[0].strip() if " vs " in title else ""
         a_name = title.split(" vs ")[1].strip() if " vs " in title else ""
         comp_name = req.payload.get("competition") if isinstance(req.payload, dict) else ""
+
+        # Sin competicion objetivo no se puede acotar la muestra a una liga, y
+        # mezclar ligas hace que un hit rate no signifique nada. Antes
+        # `if not target_comp` dejaba pasar TODAS las competiciones.
+        if not (comp_name or "").strip():
+            raise _SkipPriorParams(
+                "sin competicion objetivo: el historico mezclaria ligas distintas"
+            )
 
         # Obtener partidos históricos jugados antes de este partido
         q_prior = db.query(AnalysisHistory).filter(
             AnalysisHistory.final_score_home.isnot(None),
             AnalysisHistory.final_score_away.isnot(None)
         )
-        if record_date:
-            q_prior = q_prior.filter(
-                AnalysisHistory.id != req.id,  # Excluir el mismo registro explícitamente
-                or_(
-                    AnalysisHistory.match_date < record_date,
-                    and_(AnalysisHistory.match_date.is_(None), AnalysisHistory.date < record_date)
-                )
-            )
+        # `record_date` esta garantizado a estas alturas. Se exige match_date NO
+        # nula: el fallback anterior a `AnalysisHistory.date` usaba la fecha de
+        # CREACION del registro como si fuese la del partido, y un analisis
+        # creado antes del kickoff puede corresponder a un partido posterior.
+        q_prior = q_prior.filter(
+            AnalysisHistory.id != req.id,  # Excluir el mismo registro explícitamente
+            AnalysisHistory.match_date.isnot(None),
+            AnalysisHistory.match_date < record_date,
+        )
         prior_rows = q_prior.order_by(AnalysisHistory.date.desc()).all()
         prior_records = []
         target_comp = (comp_name or "").strip().lower()
@@ -1393,7 +1416,12 @@ def save_analysis(
                 except Exception:
                     pass
             comp_cand = f"{r_payload.get('competition', '')} {r_payload.get('league', '')} {r.match_title}".lower()
-            if not target_comp or target_comp in comp_cand:
+            # Segundo cinturon: el cutoff del dominio se reaplica en memoria. La
+            # comparacion en SQLite es lexicografica sobre texto y no entiende
+            # zonas horarias, asi que no basta por si sola.
+            if not prior_cutoff.allows(r.match_date or r.date):
+                continue
+            if target_comp and target_comp in comp_cand:
                 prior_records.append({
                     "match_title": r.match_title,
                     "match_date": r.match_date or r.date,
@@ -1419,10 +1447,20 @@ def save_analysis(
                 }
 
             if not pick_rates_data:
+                # `current_match_date` no se pasaba, asi que estas dos hit rates
+                # se calculaban SIN cutoff alguno.
                 pick_rates_data = {
-                    "home_over25_home": LeagueMathEngine.compute_pick_hit_rate(prior_records, h_name, "goals", 2.5, is_over=True, role_filter="home"),
-                    "away_over25_away": LeagueMathEngine.compute_pick_hit_rate(prior_records, a_name, "goals", 2.5, is_over=True, role_filter="away"),
+                    "home_over25_home": LeagueMathEngine.compute_pick_hit_rate(
+                        prior_records, h_name, "goals", 2.5, is_over=True,
+                        role_filter="home", current_match_date=record_date,
+                    ),
+                    "away_over25_away": LeagueMathEngine.compute_pick_hit_rate(
+                        prior_records, a_name, "goals", 2.5, is_over=True,
+                        role_filter="away", current_match_date=record_date,
+                    ),
                 }
+    except _SkipPriorParams as skip:
+        print(f"Parámetros previos omitidos por seguridad temporal: {skip}")
     except Exception as err_p:
         print(f"Error calculando parámetros previos al guardar análisis: {err_p}")
 
@@ -2334,6 +2372,36 @@ def update_analysis_results(
     return _populate_history_extra_fields(history, out)
 
 
+@app.get("/api/v1/competitions/pending-picks", tags=["Competitions"])
+def get_pending_picks_competitions(db: Session = Depends(get_db)):
+    """
+    Retorna las ligas y los event_ids que tienen partidos con resultados pendientes (final_score_home is None).
+    """
+    records = db.query(AnalysisHistory).filter(
+        AnalysisHistory.final_score_home.is_(None)
+    ).all()
+
+    pending_set = set()
+    pending_event_ids = set()
+    for rec in records:
+        if rec.payload:
+            try:
+                p_dict = json.loads(str(rec.payload))
+                comp_name = p_dict.get("competition", {}).get("name") or p_dict.get("league_name")
+                if comp_name:
+                    pending_set.add(comp_name)
+                ext_id = p_dict.get("match", {}).get("external_id") or p_dict.get("event_id") or p_dict.get("eventId")
+                if ext_id:
+                    pending_event_ids.add(str(ext_id))
+            except Exception:
+                pass
+
+    return {
+        "pending_competitions": list(pending_set),
+        "pending_event_ids": list(pending_event_ids),
+    }
+
+
 @app.post("/api/v1/analysis/{analysis_id}/profitability", tags=["Analysis History"])
 def update_analysis_profitability(
     analysis_id: str,
@@ -2432,6 +2500,41 @@ def recalculate_accuracy_fast(db: Session = Depends(get_db)):
         "updated": updated,
     }
 
+@app.get("/api/v1/analysis/recalculate-count", tags=["Analysis History"])
+def get_recalculate_count(
+    threshold_date: str | None = Query(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Retorna la cantidad de registros que serán procesados al llamar a recalculate-all.
+    Útil para estimar el tiempo de recálculo en el frontend.
+    """
+    threshold_dt = None
+    if threshold_date:
+        try:
+            threshold_dt = datetime.strptime(threshold_date, "%Y-%m-%d")
+        except Exception:
+            try:
+                threshold_dt = datetime.fromisoformat(threshold_date)
+            except Exception:
+                pass
+
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.has_odds == False)
+    if threshold_dt:
+        query = query.filter(
+            or_(
+                AnalysisHistory.match_date >= threshold_dt,
+                and_(AnalysisHistory.match_date.is_(None), AnalysisHistory.date >= threshold_dt)
+            )
+        )
+    count = query.count()
+    # Estimación basada en ~3 segundos por partido
+    estimated_seconds = count * 3
+    return {
+        "total": count,
+        "estimated_seconds": estimated_seconds,
+    }
+
 
 @app.post("/api/v1/analysis/recalculate-all", tags=["Analysis History"])
 async def recalculate_all_accuracy(
@@ -2477,6 +2580,7 @@ async def recalculate_all_accuracy(
             )
         )
     history_list = query.all()
+    total_to_process = len(history_list)
     count = 0
     updated_accuracy_count = 0
 
@@ -2603,7 +2707,8 @@ async def recalculate_all_accuracy(
     return {
         "message": f"Se han re-analizado {count} partidos. Se actualizó el acierto en {updated_accuracy_count} de ellos.",
         "total_reanalyzed": count,
-        "accuracy_updated": updated_accuracy_count
+        "accuracy_updated": updated_accuracy_count,
+        "total_to_recalculate": total_to_process,
     }
 
 
@@ -4801,6 +4906,89 @@ def delete_analysis(
     db.commit()
     return None
 
+
+
+class _SkipPriorParams(Exception):
+    """
+    Los parámetros retrospectivos no se pueden calcular sin contaminar los datos.
+
+    Es una excepción de control y no un `return` silencioso para que el motivo
+    quede registrado: un análisis sin estos parámetros es una degradación
+    conocida, no un caso normal.
+    """
+
+
+# ═══════════════════════════════════════════════════════════════════════
+# ENTRENAMIENTO DEL CALIBRADOR
+# ═══════════════════════════════════════════════════════════════════════
+
+class TrainRequest(BaseModel):
+    """
+    Petición de reentrenamiento.
+
+    `records` se acepta y se ignora por compatibilidad con el llamador antiguo
+    (`train_model_retrospective.py`), que enviaba un dataset preparado para el
+    GLM. El calibrador actual extrae sus muestras directamente de los picks ya
+    liquidados en la base de datos, así que un dataset externo no solo es
+    innecesario: aceptarlo como fuente permitiría entrenar con datos que no han
+    pasado por el cutoff temporal.
+    """
+
+    records: list | None = None
+    prior_strength: float | None = None
+    min_samples: float | None = None
+    n_folds: int = 5
+    limit: int | None = None
+    allow_missing_timestamp: bool = False
+    force: bool = False
+    dry_run: bool = False
+
+
+@app.post("/api/v1/ml/train", tags=["ML"])
+def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
+    """
+    Reentrena el calibrador de probabilidades y publica el artefacto.
+
+    Esta ruta faltaba: `src/core/train_model_retrospective.py` la invocaba y
+    recibía 404, de modo que el pipeline de entrenamiento estaba roto de punta a
+    punta.
+
+    Reemplaza al entrenamiento GLM previsto originalmente. El calibrador es la
+    Beta-Binomial jerárquica con isotónica PAVA, y solo se promueve el artefacto
+    si mejora Brier Y log loss fuera de muestra: un reentrenamiento no puede
+    empeorar el sistema por el simple hecho de haberse ejecutado.
+    """
+    from src.core.train_calibration import (
+        DEFAULT_MIN_SAMPLES,
+        DEFAULT_PRIOR_STRENGTH,
+        run_training,
+    )
+    from src.ui.api.compare import reset_calibrator_cache
+
+    try:
+        report = run_training(
+            prior_strength=req.prior_strength if req.prior_strength is not None else DEFAULT_PRIOR_STRENGTH,
+            min_samples=req.min_samples if req.min_samples is not None else DEFAULT_MIN_SAMPLES,
+            n_folds=req.n_folds,
+            limit=req.limit,
+            require_timestamp=not req.allow_missing_timestamp,
+            force=req.force,
+            dry_run=req.dry_run,
+            session=db,
+        )
+    except Exception as err:
+        raise HTTPException(status_code=500, detail=f"Fallo al entrenar el calibrador: {err}")
+
+    if report.promoted and not req.dry_run:
+        # El artefacto en disco cambió; invalidar la cache para que las
+        # siguientes peticiones usen el calibrador nuevo sin reiniciar.
+        reset_calibrator_cache()
+
+    payload = report.as_dict()
+    payload["summary"] = report.summary()
+    payload["ignored_records"] = len(req.records or [])
+    return payload
+
 if __name__ == "__main__":
 
     #----------Contar equipos de liga--------------------------------
@@ -4808,15 +4996,15 @@ if __name__ == "__main__":
     # db = next(get_db())
 
     # try:
-    #     resultado = list_teams_count("Brasileirão Série B", db)
+    #     resultado = list_teams_count("K League 1", db)
     #     print(resultado)
     # finally:
     #     db.close()
 
     
     ##---------Cambiar nombre de liga---------------
-    # old_name = "Bundesliga, Relegation/Promotion Playoffs"
-    # new_name = "Bundesliga"
+    # old_name = "K League 1, Championship Round"
+    # new_name = "K League 1"
     
     # db = next(get_db())
     # try:
@@ -4840,7 +5028,7 @@ if __name__ == "__main__":
 
     db = next(get_db())
     try:
-        resultado = deduplicate_competition_matches("Brasileirão Série B", db)
+        resultado = deduplicate_competition_matches("K League 1", db)
         print(resultado)
     finally:
         db.close()
@@ -4856,31 +5044,22 @@ if __name__ == "__main__":
     #----------Renombra equipos de una liga especifica---------------
     # db = next(get_db())
     # try:
-    #     liga = "Primera A"
+    #     liga = "K League 1"
         
     #     # Arreglar Nacional solo en la liga de Colombia
     #     # rename_team_matches("Deportivo La Equidad", "Inter De Bogotá", competition=liga, db=db)
         
     #     # Puedes ir encadenando las demás correcciones usando kwargs:
-    #     rename_team_matches(old_name="Clube De Regatas Brasil", new_name="CRB", competition=liga, db=db)
-    #     rename_team_matches(old_name="Vila Nova Fc", new_name="Vila Nova", competition=liga, db=db)
-    #     rename_team_matches(old_name="Grêmio Novorizontino", new_name="Novorizontino", competition=liga, db=db)
-    #     rename_team_matches(old_name="Atlético Goianiense", new_name="Atlético-GO", competition=liga, db=db)
-    #     rename_team_matches(old_name="América Mineiro", new_name="América-MG", competition=liga, db=db)
-    #     rename_team_matches(old_name="Athletic Club", new_name="Athletic", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Ca Independiente", new_name="Independiente", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Club Atlético Platense", new_name="Platense", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Club Atlético Unión De Santa Fe", new_name="Unión De Santa Fe", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Defensa Y Justicia", new_name="Def Y Justicia", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Ca Lanús", new_name="Lanús", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Ca Talleres", new_name="Talleres", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Instituto De Córdoba", new_name="Instituto", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Newell'S Old Boys", new_name="Newell'S", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Deportivo Riestra", new_name="Dep. Riestra", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Independiente Rivadavia", new_name="Ind. Rivadavia", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Gimnasia Y Esgrima Mendoza", new_name="Gimnasia Mendoza", competition=liga, db=db)
-    #     # rename_team_matches(old_name="Estudiantes De Río Cuarto", new_name="Estudiantes R.C.", competition=liga, db=db)
-
+    #     rename_team_matches(old_name="Jeju Sk", new_name="Jeju", competition=liga, db=db)
+    #     rename_team_matches(old_name="Jeonbuk Hyundai Motors", new_name="Jeonbuk", competition=liga, db=db)
+    #     rename_team_matches(old_name="Ulsan Hd", new_name="Ulsan", competition=liga, db=db)
+    #     rename_team_matches(old_name="Gangwon Fc", new_name="Gangwon", competition=liga, db=db)
+    #     rename_team_matches(old_name="Daejeon Hana Citizen", new_name="Daejeon Hana", competition=liga, db=db)
+    #     rename_team_matches(old_name="Gwangju Fc", new_name="Gwangju", competition=liga, db=db)
+    #     rename_team_matches(old_name="Incheon United", new_name="Incheon Utd", competition=liga, db=db)
+    #     rename_team_matches(old_name="Gimcheon Sangmu Fc", new_name="Gimcheon", competition=liga, db=db)
+    #     rename_team_matches(old_name="Bucheon Fc 1995", new_name="Bucheon", competition=liga, db=db)
+        
         
     #     print("Equipos renombrados exitosamente.")
         

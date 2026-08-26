@@ -712,39 +712,12 @@
             <div class="card__header" style="margin-bottom: 0.75rem">
               <div>
                 <div class="card__title">
-                  🔀 Descorrelación y Límites por Partido
+                  🔀 Descorrelación entre Picks
                 </div>
                 <div class="card__desc">
                   Evita sobreexposición de varianza por acumular picks
                   dependientes en un mismo evento.
                 </div>
-              </div>
-            </div>
-            <div
-              class="form-row"
-              style="grid-template-columns: 1fr 1fr; margin-bottom: 0.75rem"
-            >
-              <div>
-                <label>Máx. Picks por Partido</label>
-                <input
-                  type="number"
-                  id="corr-max-picks"
-                  min="1"
-                  max="10"
-                  step="1"
-                  value="2"
-                />
-              </div>
-              <div>
-                <label>Máx. Stake Total por Partido</label>
-                <input
-                  type="number"
-                  id="corr-max-stake"
-                  min="0.5"
-                  max="20"
-                  step="0.5"
-                  value="3.5"
-                />
               </div>
             </div>
             <div>
@@ -1149,11 +1122,7 @@
       }
 
       function renderCorrelationRules() {
-        const pInput = document.getElementById("corr-max-picks");
-        const sInput = document.getElementById("corr-max-stake");
         const gInput = document.getElementById("corr-exclusive-groups");
-        if (pInput) pInput.value = correlationRules.max_picks_per_event ?? 2;
-        if (sInput) sInput.value = correlationRules.max_stake_per_event ?? 3.5;
         if (gInput)
           gInput.value = JSON.stringify(
             correlationRules.exclusive_groups || [
@@ -1205,8 +1174,6 @@
       async function saveAllRules() {
         showStatus("Guardando...", "loading", true);
         try {
-          const pInput = document.getElementById("corr-max-picks");
-          const sInput = document.getElementById("corr-max-stake");
           const gInput = document.getElementById("corr-exclusive-groups");
           let groups = correlationRules.exclusive_groups;
           if (gInput) {
@@ -1215,8 +1182,7 @@
             } catch (e) {}
           }
           correlationRules = {
-            max_picks_per_event: pInput ? parseInt(pInput.value) || 2 : 2,
-            max_stake_per_event: sInput ? parseFloat(sInput.value) || 3.5 : 3.5,
+            ...correlationRules,
             exclusive_groups: groups,
           };
 

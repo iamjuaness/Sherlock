@@ -519,6 +519,7 @@ async function handleSendToEndpoint(data) {
   let endpointUrl = settings.endpointUrl;
   if (endpointUrl && !endpointUrl.includes("/api/v1/prefill")) {
     endpointUrl = endpointUrl.replace(/\/+$/, "") + "/api/v1/prefill";
+  }
 
   let payload;
   try {
@@ -1397,13 +1398,20 @@ async function handleBulkExtractResults(data) {
   }
 
   let activeComps = competitions.filter((c) => c.active && c.season);
+  let pendingEventIdsSet = null;
 
-  // Optimización Punto 2: Intentar consultar competiciones con picks pendientes desde Sherlock
+  // Optimización Punto 2: Intentar consultar competiciones y partidos con picks pendientes desde Sherlock
   try {
     const resPending = await fetch(`${baseUrl}/api/v1/competitions/pending-picks`);
     if (resPending.ok) {
       const pendingData = await resPending.json();
       const pendingList = pendingData.pending_competitions || [];
+      const pendingIds = pendingData.pending_event_ids || [];
+
+      if (Array.isArray(pendingIds) && pendingIds.length > 0) {
+        pendingEventIdsSet = new Set(pendingIds.map((id) => String(id)));
+      }
+
       if (Array.isArray(pendingList) && pendingList.length > 0) {
         const pendingSet = new Set(pendingList.map((s) => s.toLowerCase().trim()));
         const filtered = activeComps.filter((c) => pendingSet.has(c.name.toLowerCase().trim()));
@@ -1451,9 +1459,12 @@ async function handleBulkExtractResults(data) {
       );
       const events = eventsData?.events || [];
 
-      // Solo eventos finalizados de hoy o ayer
+      // Solo eventos finalizados que falten según pending_event_ids (o fallback a fecha hoy/ayer)
       const targetEvents = events.filter((e) => {
         if (e.status?.type !== "finished") return false;
+        if (pendingEventIdsSet && pendingEventIdsSet.size > 0) {
+          return pendingEventIdsSet.has(String(e.id));
+        }
         const ts = e.startTimestamp * 1000;
         return ts >= yesterdayStart.getTime() && ts <= now.getTime();
       });

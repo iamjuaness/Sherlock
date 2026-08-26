@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+jobs:
+  watson:
+    name: Watson (sintaxis JS)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      # El audit: `watson/background.js` no parseaba y la extensión no podía
+      # iniciar. Este paso impide que vuelva a ocurrir.
+      - name: node --check en todos los scripts
+        run: |
+          set -e
+          for f in watson/*.js; do
+            echo "checking $f"
+            node --check "$f"
+          done
+
+      - name: Validar manifest.json
+        run: node -e "JSON.parse(require('fs').readFileSync('watson/manifest.json','utf8')); console.log('manifest OK')"
+
+  python:
+    name: Python (import + tests)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      # Criterio de salida del audit: un clon limpio instala, importa y arranca.
+      - name: Instalar
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Validar JSON de configuración
+        run: |
+          python - <<'PY'
+          import json, pathlib
+          for p in pathlib.Path("data").glob("*.json"):
+              json.loads(p.read_text(encoding="utf-8"))
+              print("OK", p)
+          PY
+
+      - name: Lint
+        run: ruff check src tests
+        continue-on-error: true
+
+      - name: Import de la aplicación
+        run: python -c "import src.ui.api.compare; print('import OK')"
+
+      - name: Tests de invariantes
+        run: pytest -q
+
+      - name: Determinismo (misma entrada -> misma salida)
+        run: |
+          python - <<'PY'
+          from src.ui.api.compare import get_nbinom_under_over_prob as f
+          args = (9.25, 4.5, 8.0, 4.0, 7.5)
+          ref = f(*args)
+          for _ in range(50):
+              assert f(*args) == ref, "salida no determinista"
+          print("determinismo OK:", ref)
+          PY
