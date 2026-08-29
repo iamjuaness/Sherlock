@@ -4991,20 +4991,22 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
+    liga = "Serie A"
+
     #----------Contar equipos de liga--------------------------------
 
-    # db = next(get_db())
+    db = next(get_db())
 
-    # try:
-    #     resultado = list_teams_count("K League 1", db)
-    #     print(resultado)
-    # finally:
-    #     db.close()
+    try:
+        resultado = list_teams_count(liga, db)
+        print(resultado)
+    finally:
+        db.close()
 
     
     ##---------Cambiar nombre de liga---------------
-    # old_name = "K League 1, Championship Round"
-    # new_name = "K League 1"
+    # old_name = "Liga 1, Clausura"
+    # new_name = "Liga 1 Te Apuesto"
     
     # db = next(get_db())
     # try:
@@ -5026,14 +5028,14 @@ if __name__ == "__main__":
 
     #------------------Eliminar duplicados-------------------
 
-    db = next(get_db())
-    try:
-        resultado = deduplicate_competition_matches("K League 1", db)
-        print(resultado)
-    finally:
-        db.close()
+    # db = next(get_db())
+    # try:
+    #     resultado = deduplicate_competition_matches(liga, db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
 
-    #-----------------Eliminar partidos--------------------
+    # -----------------Eliminar partidos--------------------
     # db = next(get_db())
     # try:
     #     resultado = delete_incomplete_competition_matches("HNL", dry_run=False, db=db)
@@ -5044,21 +5046,22 @@ if __name__ == "__main__":
     #----------Renombra equipos de una liga especifica---------------
     # db = next(get_db())
     # try:
-    #     liga = "K League 1"
-        
-    #     # Arreglar Nacional solo en la liga de Colombia
-    #     # rename_team_matches("Deportivo La Equidad", "Inter De Bogotá", competition=liga, db=db)
-        
+                       
     #     # Puedes ir encadenando las demás correcciones usando kwargs:
-    #     rename_team_matches(old_name="Jeju Sk", new_name="Jeju", competition=liga, db=db)
-    #     rename_team_matches(old_name="Jeonbuk Hyundai Motors", new_name="Jeonbuk", competition=liga, db=db)
-    #     rename_team_matches(old_name="Ulsan Hd", new_name="Ulsan", competition=liga, db=db)
-    #     rename_team_matches(old_name="Gangwon Fc", new_name="Gangwon", competition=liga, db=db)
-    #     rename_team_matches(old_name="Daejeon Hana Citizen", new_name="Daejeon Hana", competition=liga, db=db)
-    #     rename_team_matches(old_name="Gwangju Fc", new_name="Gwangju", competition=liga, db=db)
-    #     rename_team_matches(old_name="Incheon United", new_name="Incheon Utd", competition=liga, db=db)
-    #     rename_team_matches(old_name="Gimcheon Sangmu Fc", new_name="Gimcheon", competition=liga, db=db)
-    #     rename_team_matches(old_name="Bucheon Fc 1995", new_name="Bucheon", competition=liga, db=db)
+    #     rename_team_matches(old_name="Radomiak Radom", new_name="Radomiak", competition=liga, db=db)
+    #     rename_team_matches(old_name="Pogoń Szczecin", new_name="Pogoń", competition=liga, db=db)
+    #     rename_team_matches(old_name="Legia Warszawa", new_name="Legia", competition=liga, db=db)
+    #     rename_team_matches(old_name="Jagiellonia Białystok", new_name="Jagiellonia", competition=liga, db=db)
+    #     rename_team_matches(old_name="Ks Cracovia", new_name="Cracovia", competition=liga, db=db)
+    #     rename_team_matches(old_name="Raków Częstochowa", new_name="Raków", competition=liga, db=db)
+    #     rename_team_matches(old_name="Motor Lublin", new_name="Motor", competition=liga, db=db)
+    #     rename_team_matches(old_name="Zagłębie Lubin", new_name="Zagłębie", competition=liga, db=db)
+    #     rename_team_matches(old_name="Piast Gliwice", new_name="Piast", competition=liga, db=db)
+    #     rename_team_matches(old_name="Mks Korona Kielce", new_name="Korona", competition=liga, db=db)
+    #     rename_team_matches(old_name="Lech Poznań", new_name="Lech", competition=liga, db=db)
+    #     rename_team_matches(old_name="Widzew Łódź", new_name="Widzew", competition=liga, db=db)
+    #     rename_team_matches(old_name="Śląsk Wrocław", new_name="Śląsk", competition=liga, db=db)
+    #     rename_team_matches(old_name="Wieczysta Kraków", new_name="Wieczysta", competition=liga, db=db)
         
         
     #     print("Equipos renombrados exitosamente.")

@@ -562,6 +562,7 @@ class ValueIndicator(BaseModel):
     away_hit_rate: Optional[float] = None
     empirical_hit_rate: Optional[float] = None
     h2h_hit_rate: Optional[float] = None
+    h2h_raw_hit_rate: Optional[float] = None
     hit_rate_samples: Optional[int] = None
     h2h_samples: Optional[int] = None
     h2h_matches: Optional[List[Dict[str, Any]]] = None
@@ -985,6 +986,9 @@ def get_market_variance_tier(selection: str) -> str:
     return "high"
 
 def get_data_quality_score(selection: str, h: FootballTeamStats, a: FootballTeamStats) -> float:
+    if not h or not a or h.matches_played <= 0 or a.matches_played <= 0:
+        return 0.0
+
     tier = get_market_confidence_tier(selection)
     if tier == "segmented":   base = 92.0
     elif tier == "hybrid":    base = 70.0
@@ -1095,7 +1099,11 @@ def evaluate_pick_eligibility(
     return decision
 
 
-def block_pick(v: ValueIndicator, *reasons: "BlockReason | str") -> EligibilityDecision:
+def block_pick(
+    v: ValueIndicator,
+    *reasons: "BlockReason | str",
+    detail: "str | None" = None,
+) -> EligibilityDecision:
     """
     Emite uno o más bloqueos duros sobre un pick. Operación irreversible.
 
@@ -1103,6 +1111,8 @@ def block_pick(v: ValueIndicator, *reasons: "BlockReason | str") -> EligibilityD
     `is_rule_blocked = True; is_publishable = False; quality_score = -1`,
     que se deshacía en cuanto otro tramo recalculaba esos campos.
     """
+    if detail:
+        v.rule_blocked_reason = detail
     return evaluate_pick_eligibility(v, new_hard_blocks=reasons)
 
 
@@ -1135,10 +1145,13 @@ def is_value_pick(v: Any) -> bool:
     is_blk_rule = v.get("is_rule_blocked", False) if isinstance(v, dict) else getattr(v, "is_rule_blocked", False)
     if is_blk or is_blk_rule:
         return False
-    # Filtro Crítico H2H: Si se evaluaron partidos H2H y el resultado fue 0.0%, no publicar/no considerar valor.
-    h2h_hr = v.get("h2h_hit_rate") if isinstance(v, dict) else getattr(v, "h2h_hit_rate", None)
+    # Filtro Crítico H2H: Solo se bloquea si hay partidos H2H evaluados (h2h_samples > 0) Y el hit rate fue 0.0%.
+    # Los picks sin enfrentamientos H2H previos (h2h_samples == 0) NO se bloquean.
     h2h_samp = (v.get("h2h_samples", 0) or 0) if isinstance(v, dict) else (getattr(v, "h2h_samples", 0) or 0)
-    if h2h_hr is not None and h2h_hr == 0.0 and h2h_samp > 0:
+    h2h_hr = v.get("h2h_hit_rate") if isinstance(v, dict) else getattr(v, "h2h_hit_rate", None)
+    if h2h_hr is None:
+        h2h_hr = v.get("h2h_raw_hit_rate") if isinstance(v, dict) else getattr(v, "h2h_raw_hit_rate", None)
+    if h2h_samp > 0 and h2h_hr is not None and h2h_hr == 0.0:
         return False
 
     odds = v.get("odds") if isinstance(v, dict) else getattr(v, "odds", None)
@@ -1148,9 +1161,16 @@ def is_value_pick(v: Any) -> bool:
     ev_val = ev if ev is not None else 0.0
     stake = v.get("stake_units") if isinstance(v, dict) else getattr(v, "stake_units", None)
     stake_val = stake if stake is not None else 0.0
-    # Umbral EV 0.020 (en lugar de 0.025) para estabilidad entre recálculos:
-    # las cuotas de Betano/Betplay pueden variar mínimamente entre fetches,
-    # lo que hacía que picks near-threshold aparecieran y desaparecieran.
+
+    # Requisito de Edge Prob diferenciado por mercado (planning.txt punto 2):
+    # Doble Oportunidad y Corners exigen edge prob >= 10.0 (10%).
+    sel = v.get("selection", "") if isinstance(v, dict) else getattr(v, "selection", "")
+    fam = _market_family(sel)
+    edge_val = (v.get("edge") if isinstance(v, dict) else getattr(v, "edge", 0.0)) or 0.0
+    if fam in {"double_chance", "corners"} and edge_val < 10.0:
+        return False
+
+    # Umbral EV 0.020 para estabilidad entre recálculos
     return ev_val >= 0.020 and stake_val >= 1.0
 
 
@@ -1161,6 +1181,8 @@ def is_underdog_pick(v: Any) -> bool:
         dq = v.get("data_quality_score")
         stake = v.get("stake_units")
         h2h_hr = v.get("h2h_hit_rate")
+        if h2h_hr is None:
+            h2h_hr = v.get("h2h_raw_hit_rate")
         h2h_samp = v.get("h2h_samples", 0) or 0
     else:
         odds = getattr(v, "odds", None)
@@ -1168,10 +1190,12 @@ def is_underdog_pick(v: Any) -> bool:
         dq = getattr(v, "data_quality_score", None)
         stake = getattr(v, "stake_units", None)
         h2h_hr = getattr(v, "h2h_hit_rate", None)
+        if h2h_hr is None:
+            h2h_hr = getattr(v, "h2h_raw_hit_rate", None)
         h2h_samp = getattr(v, "h2h_samples", 0) or 0
 
-    # Filtro Crítico H2H: Si se evaluaron partidos H2H y el resultado fue 0.0%, descartar
-    if h2h_hr is not None and h2h_hr == 0.0 and h2h_samp > 0:
+    # Filtro Crítico H2H: Solo se bloquea si hay partidos H2H evaluados (h2h_samples > 0) Y el hit rate fue 0.0%.
+    if h2h_samp > 0 and h2h_hr is not None and h2h_hr == 0.0:
         return False
 
     if odds is None or odds <= 2.50 or odds > 4.50:
@@ -1209,8 +1233,8 @@ def _calculate_stake_units(
     hard_max = 3.0
     if (lrs or 0.5) < 0.50:
         hard_max = 2.0
-    if odds >= 3.0:
-        hard_max = min(hard_max, 2.0)
+    # NOTA (planning.txt punto 4): Se elimina la penalización artificial a underdogs (odds >= 3.0)
+    # para permitir que los picks underdog de alto edge reciban su sizing óptimo según Kelly.
     if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         hard_max = min(hard_max, 2.5)
 
@@ -1575,7 +1599,8 @@ def _compute_team_corners_lambda(
         w15 = team_recent.get("last_15", {}).get("corners", avg_team_corners)
         form_avg = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
         form_factor = form_avg / max(avg_team_corners, 0.5)
-        form_factor = max(0.70, min(1.30, form_factor))
+        # Acotar factor de forma para evitar distorsionar el histórico base en mercados de conteo
+        form_factor = max(0.85, min(1.15, form_factor))
 
     lam = lam * form_factor
 
@@ -1720,7 +1745,8 @@ def _compute_team_shots_lambda(
         w15 = team_recent.get("last_15", {}).get("shots", avg_team_shots)
         form_avg = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
         form_factor = form_avg / max(avg_team_shots, 1.0)
-        form_factor = max(0.70, min(1.30, form_factor))
+        # Acotar factor de forma para evitar distorsionar el histórico base en mercados de conteo
+        form_factor = max(0.85, min(1.15, form_factor))
 
     lam = lam * form_factor
 
@@ -1770,12 +1796,13 @@ def _compute_team_shots_target_lambda(
     form_factor = 1.0
     team_recent = getattr(team, "recent_form", None)
     if team_recent and isinstance(team_recent, dict):
-        w5  = team_recent.get("last_5",  {}).get("shots", avg_team_sot)
-        w10 = team_recent.get("last_10", {}).get("shots", avg_team_sot)
-        w15 = team_recent.get("last_15", {}).get("shots", avg_team_sot)
+        w5  = team_recent.get("last_5",  {}).get("shots_target") or team_recent.get("last_5",  {}).get("shots_on_target", avg_team_sot)
+        w10 = team_recent.get("last_10", {}).get("shots_target") or team_recent.get("last_10", {}).get("shots_on_target", avg_team_sot)
+        w15 = team_recent.get("last_15", {}).get("shots_target") or team_recent.get("last_15", {}).get("shots_on_target", avg_team_sot)
         form_avg = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
         form_factor = form_avg / max(avg_team_sot, 0.5)
-        form_factor = max(0.70, min(1.30, form_factor))
+        # Acotar factor de forma para evitar distorsionar el histórico base en mercados de conteo
+        form_factor = max(0.85, min(1.15, form_factor))
 
     lam = lam * form_factor
 
@@ -3876,7 +3903,32 @@ async def compare_football(
 
     from src.core.math_engine import LeagueMathEngine
 
+    # ── Check 6 (planning.txt): Omitir partidos si un equipo solo tiene Rating y Posesión ──
+    def _team_has_only_rating_and_possession(team: Any) -> bool:
+        if team is None:
+            return False
+        goals = (getattr(team, "goals_per_game", 0.0) or getattr(team, "goals_scored", 0.0) or 0.0)
+        xg = getattr(team, "xg_per_game", 0.0) or 0.0
+        shots = (getattr(team, "shots_per_game", 0.0) or getattr(team, "shots", 0.0) or 0.0)
+        corners = (getattr(team, "corners_per_game", 0.0) or getattr(team, "corners", 0.0) or 0.0)
+        cards = (getattr(team, "yellow_cards_per_game", 0.0) or getattr(team, "yellow_cards", 0.0) or 0.0)
+        possession = getattr(team, "possession_pct", 0.0) or 0.0
+        rating = getattr(team, "team_rating", 0.0) or getattr(team, "rating", 0.0) or 0.0
+        no_core_stats = (goals == 0.0 and xg == 0.0 and shots == 0.0 and corners == 0.0 and cards == 0.0)
+        has_basic_info = (possession > 0.0 or rating > 0.0)
+        return no_core_stats and has_basic_info
+
+    match_incomplete_stats = _team_has_only_rating_and_possession(h) or _team_has_only_rating_and_possession(a)
+
     for v in values:
+        if match_incomplete_stats:
+            block_pick(
+                v,
+                BlockReason.RULE_BLOCKED,
+                detail="Partido omitido por datos insuficientes: al menos un equipo solo tiene Rating de equipo y Posesión"
+            )
+            continue
+
         # ── Hit Rate empírico (% de acierto real en partidos históricos para TODOS los mercados) ──
         if historical_records:
             fam = _market_family(v.selection)
@@ -3892,8 +3944,12 @@ async def compare_football(
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
-                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
-                v.h2h_samples = hr_h2h.get("sample_size")
+                h2h_n = hr_h2h.get("sample_size", 0)
+                v.h2h_samples = h2h_n
+                # Ponderación de Hit Rate H2H por tamaño de muestra (planning.txt punto 3):
+                # Si H2H tiene menos de 3 partidos se excluye (ruido), si tiene 3-4 se exige muestra mínima
+                v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if h2h_n >= 3 else None
                 v.h2h_matches = hr_h2h.get("h2h_matches", [])
 
                 tot_samples = hr_h.get("sample_size", 0) + hr_a.get("sample_size", 0)
@@ -3910,8 +3966,10 @@ async def compare_football(
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
-                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
-                v.h2h_samples = hr_h2h.get("sample_size")
+                h2h_n = hr_h2h.get("sample_size", 0)
+                v.h2h_samples = h2h_n
+                v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if h2h_n >= 3 else None
                 v.h2h_matches = hr_h2h.get("h2h_matches", [])
 
                 tot_samples = hr_h.get("sample_size", 0) + hr_a.get("sample_size", 0)
@@ -3928,8 +3986,10 @@ async def compare_football(
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
-                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
-                v.h2h_samples = hr_h2h.get("sample_size")
+                h2h_n = hr_h2h.get("sample_size", 0)
+                v.h2h_samples = h2h_n
+                v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if h2h_n >= 3 else None
                 v.h2h_matches = hr_h2h.get("h2h_matches", [])
 
                 # Si es gana local, el hit rate principal es el del local; si gana visitante, el del visitante
@@ -3954,8 +4014,10 @@ async def compare_football(
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
-                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if hr_h2h.get("sample_size", 0) > 0 else None
-                v.h2h_samples = hr_h2h.get("sample_size")
+                h2h_n = hr_h2h.get("sample_size", 0)
+                v.h2h_samples = h2h_n
+                v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
+                v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if h2h_n >= 3 else None
                 v.h2h_matches = hr_h2h.get("h2h_matches", [])
 
                 # Para 1X el porcentaje clave es el del local (ganó o empató)
@@ -3972,18 +4034,35 @@ async def compare_football(
                         tot_hits = hr_h.get("hits", 0) + hr_a.get("hits", 0)
                         v.empirical_hit_rate = round((tot_hits / tot_samples) * 100.0, 1)
 
+        # Regla de veto post-calibración por brecha (planning.txt punto 1):
+        # En mercados Over/Under de conteo (Tiros, Corners, Tiros a Puerta), si abs(model_prob - empirical_hit_rate) > 15%,
+        # veto estructural del pick por brecha irreconciliable entre el modelo y la evidencia empírica.
+        fam_v = _market_family(v.selection)
+        if fam_v in {"shots", "corners", "shots_target"} and v.empirical_hit_rate is not None and v.model_prob is not None:
+            if abs(v.model_prob - v.empirical_hit_rate) > 15.0:
+                block_pick(
+                    v,
+                    BlockReason.RULE_BLOCKED,
+                    detail=f"Veto por brecha Prob Modelo ({v.model_prob}%) vs Hit Rate Total ({v.empirical_hit_rate}%) > 15 pts"
+                )
+
         q_score, s_support, p_support, strat_score = _rate_pick_quality(v, h, a, projected_lines)
-        # `_rate_pick_quality` sobrescribía el centinela -1 de los picks
-        # bloqueados y acto seguido `is_publishable_pick` los devolvía a
-        # publicables. Ahora la decisión única conserva el bloqueo y repone el
-        # centinela, así que este recálculo ya no puede resucitar nada.
         v.quality_score   = q_score
         v.strategic_score = strat_score
         v.stat_support    = round(s_support, 1)
         v.proj_support    = round(p_support, 1)
         evaluate_pick_eligibility(v)
         v.is_value        = is_value_pick(v) and v.is_publishable
-        v.is_underdog     = is_underdog_pick(v)
+        # Los underdogs tienen cuotas > 2.50 que superan el max_odds del sistema
+        # de eligibilidad (pensado para value picks), por lo que is_publishable
+        # siempre les devuelve False (ODDS_TOO_HIGH). Se verifica únicamente que
+        # no haya bloqueos duros activos.
+        _not_hard_blocked = (
+            not v.is_blacklisted
+            and not v.is_rule_blocked
+            and not getattr(v, "correlation_blocked", False)
+        )
+        v.is_underdog     = is_underdog_pick(v) and _not_hard_blocked
 
     # ── Descorrelación de picks del mismo partido (reglas estructurales) ──
     values = resolve_match_picks_correlation(values)

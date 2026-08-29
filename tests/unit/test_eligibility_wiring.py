@@ -183,3 +183,11 @@ def test_blocked_pick_is_never_value():
     v.is_value = True
     block_pick(v, BlockReason.RULE_BLOCKED)
     assert v.is_value is False
+
+
+def test_block_pick_with_detail():
+    v = make_pick()
+    block_pick(v, BlockReason.RULE_BLOCKED, detail="Veto por brecha irreconciliable")
+    assert v.is_publishable is False
+    assert v.rule_blocked_reason == "Veto por brecha irreconciliable"
+

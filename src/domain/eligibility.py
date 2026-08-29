@@ -81,7 +81,7 @@ class BlockReason(str, Enum):
 HARD_BLOCKS: frozenset[BlockReason] = frozenset({
     BlockReason.BLACKLISTED,
     BlockReason.RULE_BLOCKED,
-    # BlockReason.CORRELATION_BLOCKED,
+    BlockReason.CORRELATION_BLOCKED,
     BlockReason.UNSETTLEABLE,
     BlockReason.MANUAL_BLOCK,
     BlockReason.EXPOSURE_LIMIT,
@@ -153,6 +153,7 @@ class PublicationThresholds:
     min_prob_high_variance: float = 20.0
     min_prob_default: float = 35.0
     min_edge: float = 2.5
+    min_edge_high_threshold: float = 10.0  # Umbral elevado para Doble Oportunidad y Corners (planning.txt punto 2)
     max_edge: float = 25.0
     min_data_quality: float = 50.0
     min_stake_units: float = 1.0
@@ -166,6 +167,12 @@ class PublicationThresholds:
         if fam in HIGH_VARIANCE_FAMILIES:
             return self.min_prob_high_variance
         return self.min_prob_default
+
+    def min_edge_for(self, market_family: str | None) -> float:
+        fam = (market_family or "generic").lower()
+        if fam in {"double_chance", "corners"}:
+            return self.min_edge_high_threshold
+        return self.min_edge
 
 
 DEFAULT_THRESHOLDS = PublicationThresholds()
@@ -192,6 +199,7 @@ class PickSnapshot:
     data_quality_score: float | None = None
     stake_units: float | None = None
     h2h_hit_rate: float | None = None
+    h2h_raw_hit_rate: float | None = None
     h2h_samples: int = 0
     selection: str = ""
 
@@ -230,6 +238,7 @@ class PickSnapshot:
             data_quality_score=_as_float(cls._get(src, "data_quality_score", "dataQualityScore")),
             stake_units=_as_float(cls._get(src, "stake_units", "stakeUnits")),
             h2h_hit_rate=_as_float(cls._get(src, "h2h_hit_rate", "h2hHitRate")),
+            h2h_raw_hit_rate=_as_float(cls._get(src, "h2h_raw_hit_rate", "h2hRawHitRate")),
             h2h_samples=int(_as_float(cls._get(src, "h2h_samples", "h2hSamples", default=0)) or 0),
             selection=str(cls._get(src, "selection", default="") or ""),
         )
@@ -390,7 +399,7 @@ def evaluate_soft_filters(
 
     if snapshot.edge is None:
         fails.add(BlockReason.EDGE_MISSING)
-    elif snapshot.edge < thresholds.min_edge:
+    elif snapshot.edge < thresholds.min_edge_for(snapshot.market_family):
         fails.add(BlockReason.EDGE_TOO_LOW)
     elif snapshot.edge > thresholds.max_edge:
         fails.add(BlockReason.EDGE_TOO_HIGH)
@@ -407,10 +416,11 @@ def evaluate_soft_filters(
     ):
         fails.add(BlockReason.STAKE_TOO_LOW)
 
+    effective_h2h_hr = snapshot.h2h_hit_rate if snapshot.h2h_hit_rate is not None else snapshot.h2h_raw_hit_rate
     if (
         thresholds.block_on_zero_h2h
-        and snapshot.h2h_hit_rate is not None
-        and snapshot.h2h_hit_rate == 0.0
+        and effective_h2h_hr is not None
+        and effective_h2h_hr == 0.0
         and snapshot.h2h_samples > 0
     ):
         fails.add(BlockReason.H2H_ZERO_HIT_RATE)

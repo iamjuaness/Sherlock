@@ -494,10 +494,18 @@ function renderMultiLineCards(values) {
       picksWithH2HMatches.forEach((v) => {
         const hitMatches = v.h2h_matches.filter((m) => m.hit === true);
         const totalMatches = v.h2h_matches.length;
-        const h2hHrText =
+        const effectiveH2hHr =
           v.h2h_hit_rate != null
-            ? `${Number(v.h2h_hit_rate).toFixed(1)}%`
-            : `${Math.round((hitMatches.length / totalMatches) * 100)}%`;
+            ? v.h2h_hit_rate
+            : v.h2h_raw_hit_rate != null
+              ? v.h2h_raw_hit_rate
+              : totalMatches > 0
+                ? Math.round((hitMatches.length / totalMatches) * 100)
+                : null;
+        const h2hHrText =
+          effectiveH2hHr != null
+            ? `${Number(effectiveH2hHr).toFixed(1)}%`
+            : "N/A";
 
         let matchesListHtml = "";
         if (hitMatches.length > 0) {

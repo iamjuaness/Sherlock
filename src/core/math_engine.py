@@ -542,7 +542,7 @@ class LeagueMathEngine:
             return {
                 "sample_size": 0,
                 "hits": 0,
-                "hit_rate_pct": 0.0,
+                "hit_rate_pct": None,
                 "h2h_matches": [],
                 "cutoff_missing": True,
             }
@@ -608,12 +608,12 @@ class LeagueMathEngine:
                     "hit": bool(hit)
                 })
 
-        hit_rate = (hit_count / matching_count * 100.0) if matching_count > 0 else 0.0
+        hit_rate = (hit_count / matching_count * 100.0) if matching_count > 0 else None
 
         return {
             "sample_size": matching_count,
             "hits": hit_count,
-            "hit_rate_pct": round(hit_rate, 1),
+            "hit_rate_pct": round(hit_rate, 1) if hit_rate is not None else None,
             "h2h_matches": h2h_matches_list
         }
 
