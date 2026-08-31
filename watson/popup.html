@@ -589,11 +589,14 @@
           </p>
         </div>
 
-        <div class="actions" style="margin-top: 16px;">
+        <div class="actions" style="margin-top: 16px">
           <button
             class="btn btn-primary"
             id="btnBulkExtractStatsNoMatch"
-            style="background: linear-gradient(135deg, #0ea5e9, #0284c7); width: 100%;"
+            style="
+              background: linear-gradient(135deg, #0ea5e9, #0284c7);
+              width: 100%;
+            "
           >
             <span>🔄 Extraer Partidos del Día</span>
           </button>
@@ -601,7 +604,7 @@
           <button
             class="btn btn-danger"
             id="btnCancelBulkExtract"
-            style="width: 100%; display: none;"
+            style="width: 100%; display: none"
           >
             <span>⏹ Cancelar Extracción del Día</span>
           </button>
@@ -609,7 +612,10 @@
           <button
             class="btn btn-primary"
             id="btnBulkExtractResultsNoMatch"
-            style="background: linear-gradient(135deg, #6366f1, #4f46e5); width: 100%;"
+            style="
+              background: linear-gradient(135deg, #6366f1, #4f46e5);
+              width: 100%;
+            "
           >
             <span>📥 Obtener Resultados del Día</span>
           </button>
@@ -617,16 +623,20 @@
           <button
             class="btn btn-secondary"
             id="btnNoMatchSettings"
-            style="width: 100%; margin-top: 4px;"
+            style="width: 100%; margin-top: 4px"
           >
             ⚙️ Configuración
           </button>
         </div>
 
-        <div class="progress-bar" id="noMatchProgressBar" style="margin-top: 12px; display: none;">
+        <div
+          class="progress-bar"
+          id="noMatchProgressBar"
+          style="margin-top: 12px; display: none"
+        >
           <div class="fill" id="noMatchProgressFill"></div>
         </div>
-        <div class="status" id="noMatchStatus" style="margin-top: 8px;"></div>
+        <div class="status" id="noMatchStatus" style="margin-top: 8px"></div>
       </div>
 
       <!-- SECCIÓN BETANO -->
@@ -808,7 +818,19 @@
         <!-- Selector de Temporada -->
         <div class="endpoint-config" style="margin-top: 8px">
           <label>📅 Temporada a Descargar</label>
-          <select id="seasonSelect" style="width: 100%; padding: 6px 10px; border-radius: 6px; background: rgba(255,255,255,0.08); color: #e2e8f0; border: 1px solid rgba(255,255,255,0.2); margin-top: 4px; font-size: 0.85rem;">
+          <select
+            id="seasonSelect"
+            style="
+              width: 100%;
+              padding: 6px 10px;
+              border-radius: 6px;
+              background: rgba(255, 255, 255, 0.08);
+              color: #e2e8f0;
+              border: 1px solid rgba(255, 255, 255, 0.2);
+              margin-top: 4px;
+              font-size: 0.85rem;
+            "
+          >
             <option value="all">🌐 Todas las temporadas</option>
           </select>
         </div>

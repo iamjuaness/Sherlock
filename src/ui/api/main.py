@@ -104,9 +104,111 @@ def _resolve_stake_from_pick(pick: dict) -> float:
     if kelly > 0:
         return min(MAX_STAKE, max(MIN_STAKE, round(kelly * 100.0)))
     return MIN_STAKE
+
+
+def _extract_competition(payload) -> str | None:
+    """Extract competition name from payload dict, avoiding json.loads in callers."""
+    if not payload:
+        return None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return None
+    comp = payload.get("competition")
+    if comp and isinstance(comp, str) and comp.strip():
+        return comp.strip()
+    tournament = payload.get("tournament")
+    if isinstance(tournament, dict):
+        name = tournament.get("name")
+        if name and isinstance(name, str) and name.strip():
+            return name.strip()
+    return None
+
+
+def _extract_bookmaker(payload) -> str | None:
+    """Extract primary bookmaker from payload dict."""
+    if not payload:
+        return None
+    if isinstance(payload, str):
+        try:
+            payload = json.loads(payload)
+        except Exception:
+            return None
+    bm = payload.get("bookmaker")
+    if bm and isinstance(bm, str):
+        return bm.strip() or None
+    sources = payload.get("sources")
+    if isinstance(sources, list) and sources:
+        bm = sources[0].get("bookmaker") if isinstance(sources[0], dict) else None
+        if bm and isinstance(bm, str):
+            return bm.strip() or None
+    return None
+
+
+def _sum_stake_from_picks(picks_calculados) -> float | None:
+    """Return the sum of stake_units for publishable picks of a match."""
+    if not picks_calculados:
+        return None
+    try:
+        picks = json.loads(picks_calculados) if isinstance(picks_calculados, str) else picks_calculados
+        if not isinstance(picks, list):
+            return None
+        total = 0.0
+        counted = 0
+        for p in picks:
+            if p.get("is_blacklisted") or p.get("is_rule_blocked"):
+                continue
+            is_pub = p.get("is_publishable", False)
+            is_und = p.get("is_underdog", False)
+            if not is_pub and not is_und:
+                if p.get("is_value", False):
+                    is_pub = True
+            if not (is_pub or is_und):
+                continue
+            total += float(p.get("stake_units") or 1.0)
+            counted += 1
+        return round(total, 4) if counted > 0 else None
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------------------------
+# In-memory TTL cache for aggregated stats endpoints
+# ---------------------------------------------------------------------------
+import time
+from threading import Lock
+
+_stats_cache: dict = {}
+_stats_cache_lock = Lock()
+_STATS_TTL: float = 30.0  # seconds — fallback; explicit invalidation is the primary mechanism
+
+
+def _get_cache(key: str):
+    """Return cached value if still fresh, else None."""
+    with _stats_cache_lock:
+        entry = _stats_cache.get(key)
+        if entry and (time.monotonic() - entry["ts"]) < _STATS_TTL:
+            return entry["data"]
+    return None
+
+
+def _set_cache(key: str, data) -> None:
+    """Store value in cache with current timestamp."""
+    with _stats_cache_lock:
+        _stats_cache[key] = {"data": data, "ts": time.monotonic()}
+
+
+def _invalidate_stats_cache() -> None:
+    """Clear all cached stats — called after any AnalysisHistory write."""
+    with _stats_cache_lock:
+        _stats_cache.clear()
+
+
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
+
 
 @app.get("/", tags=["Web UI"])
 def serve_main_dashboard(request: Request):
@@ -199,13 +301,17 @@ def list_competitions():
 @app.get("/api/v1/competitions/pending-picks", tags=["Competitions"])
 def list_competitions_with_pending_picks(db: Session = Depends(get_db)):
     """Return list of competition names that have pending picks (final score not set)."""
-    rows = db.query(AnalysisHistory).filter(
-        AnalysisHistory.final_score_home.is_(None)
-    ).all()
+    from sqlalchemy.orm import load_only
+    rows = (
+        db.query(AnalysisHistory)
+        .options(load_only(AnalysisHistory.competition, AnalysisHistory.payload, AnalysisHistory.final_score_home))
+        .filter(AnalysisHistory.final_score_home.is_(None))
+        .all()
+    )
     comps = set()
     for r in rows:
-        c_name = None
-        if r.payload:
+        c_name = r.competition
+        if not c_name and r.payload:
             try:
                 p = json.loads(r.payload) if isinstance(r.payload, str) else r.payload
                 c_name = p.get("competition") or p.get("tournament", {}).get("name")
@@ -971,6 +1077,8 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
             needs_recalc=True,
             has_real_stats=True,
             count_in_profitability=False,
+            competition=_extract_competition(cleaned_payload),
+            bookmaker=_extract_bookmaker(cleaned_payload),
             final_score_home=payload.get("final_score_home"),
             final_score_away=payload.get("final_score_away"),
             final_corners_home=payload.get("final_corners_home"),
@@ -1041,6 +1149,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
         
         db.add(history)
         db.commit()
+        _invalidate_stats_cache()
         
         return {
             "status": "ok",
@@ -1095,6 +1204,7 @@ def list_matches(
     competition_id: str | None = Query(None),
     date_from: str | None = Query(None, description="ISO format YYYY-MM-DD"),
     date_to: str | None = Query(None, description="ISO format YYYY-MM-DD"),
+    before_date: str | None = Query(None, description="Cursor: traer partidos antes de esta fecha ISO"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: Session = Depends(get_db),
@@ -1121,8 +1231,13 @@ def list_matches(
         query = query.filter(Match.date >= datetime.fromisoformat(date_from))
     if date_to:
         query = query.filter(Match.date <= datetime.fromisoformat(date_to))
+    if before_date:
+        query = query.filter(Match.date < datetime.fromisoformat(before_date))
 
-    query = query.order_by(Match.date.desc()).offset(offset).limit(limit)
+    if before_date:
+        query = query.order_by(Match.date.desc()).limit(limit)
+    else:
+        query = query.order_by(Match.date.desc()).offset(offset).limit(limit)
     return [MatchOut.model_validate(m) for m in query.all()]
 
 
@@ -1519,8 +1634,15 @@ def save_analysis(
             existing.recent_form_stats = json.dumps(recent_form_data) if not isinstance(recent_form_data, str) else recent_form_data
         if pick_rates_data is not None:
             existing.historical_pick_rates = json.dumps(pick_rates_data) if not isinstance(pick_rates_data, str) else pick_rates_data
-        
+
+        # ── Populate denormalized columns ──
+        existing.competition = _extract_competition(req.payload)
+        existing.bookmaker = _extract_bookmaker(req.payload)
+        if req.picks_calculados is not None:
+            existing.stake_units = _sum_stake_from_picks(req.picks_calculados)
+
         db.commit()
+        _invalidate_stats_cache()
         db.refresh(existing)
         out = AnalysisHistoryOut.model_validate(existing)
         return _populate_history_extra_fields(existing, out)
@@ -1535,13 +1657,14 @@ def save_analysis(
     else:
         count_in_prof_val = False if not has_real_stats_val else True
 
+    _picks_json = json.dumps(req.picks_calculados) if req.picks_calculados else None
     history = AnalysisHistory(
         sport=sport_enum,
         match_title=req.match_title,
         payload=json.dumps(req.payload),
         date=record_date,
         match_date=record_date,
-        picks_calculados=json.dumps(req.picks_calculados) if req.picks_calculados else None,
+        picks_calculados=_picks_json,
         user_context=req.user_context,
         llm_response=req.llm_response,
         llm_timestamp=req.llm_timestamp or (datetime.now(timezone.utc) if req.llm_response else None),
@@ -1552,9 +1675,14 @@ def save_analysis(
         pre_match_stats=json.dumps(pre_match_data) if pre_match_data and not isinstance(pre_match_data, str) else (pre_match_data if isinstance(pre_match_data, str) else None),
         recent_form_stats=json.dumps(recent_form_data) if recent_form_data and not isinstance(recent_form_data, str) else (recent_form_data if isinstance(recent_form_data, str) else None),
         historical_pick_rates=json.dumps(pick_rates_data) if pick_rates_data and not isinstance(pick_rates_data, str) else (pick_rates_data if isinstance(pick_rates_data, str) else None),
+        # ── Denormalized columns ──
+        competition=_extract_competition(req.payload),
+        bookmaker=_extract_bookmaker(req.payload),
+        stake_units=_sum_stake_from_picks(_picks_json),
     )
     db.add(history)
     db.commit()
+    _invalidate_stats_cache()
     db.refresh(history)
     out = AnalysisHistoryOut.model_validate(history)
     return _populate_history_extra_fields(history, out)
@@ -1634,7 +1762,10 @@ def quick_save_match(
         existing.payload = json.dumps(cleaned_payload)
         existing.has_real_stats = False
         existing.count_in_profitability = False
+        existing.competition = competition  # already extracted above
+        existing.bookmaker = _extract_bookmaker(cleaned_payload)
         db.commit()
+        _invalidate_stats_cache()
         db.refresh(existing)
         out = AnalysisHistoryOut.model_validate(existing)
         return _populate_history_extra_fields(existing, out)
@@ -1647,10 +1778,13 @@ def quick_save_match(
         match_date=record_date,
         picks_calculados=None,
         has_real_stats=False,
-        count_in_profitability=False
+        count_in_profitability=False,
+        competition=competition,
+        bookmaker=_extract_bookmaker(cleaned_payload),
     )
     db.add(history)
     db.commit()
+    _invalidate_stats_cache()
     db.refresh(history)
     out = AnalysisHistoryOut.model_validate(history)
     return _populate_history_extra_fields(history, out)
@@ -1664,24 +1798,22 @@ def delete_competition_matches(competition_name: str, db: Session = Depends(get_
     deleted_count = 0
     
     for h in history_list:
-        if h.payload:
+        cname = h.competition
+        if not cname and h.payload:
             try:
-                # Decodificar el payload
                 pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                
-                # Extraer el nombre de la competición de la misma forma que lo haces en 'list_analysis'
-                cname = pdata.get("competition") or pdata.get("tournament", {}).get("name") or "Desconocida"
-                
-                # Si coincide (ignorando mayúsculas/minúsculas), se borra el registro
-                if cname.lower() == competition_name.lower():
-                    db.delete(h)
-                    deleted_count += 1
-            except Exception as e:
-                print(f"Error procesando el payload para borrar (ID: {h.id}): {e}")
-                continue
+                cname = pdata.get("competition") or pdata.get("tournament", {}).get("name")
+            except Exception:
+                pass
+        cname = cname or "Desconocida"
+        
+        if cname.lower() == competition_name.lower():
+            db.delete(h)
+            deleted_count += 1
                 
     if deleted_count > 0:
         db.commit()
+        _invalidate_stats_cache()
         
     return {
         "status": "ok", 
@@ -1695,37 +1827,37 @@ class RenameCompetitionRequest(BaseModel):
 @app.put("/api/v1/analysis/competition/{old_name}", tags=["Analysis History"])
 def rename_competition_matches(old_name: str, new_name: str, db: Session = Depends(get_db)):
     """
-    Cambia el nombre de una competición en el payload de todos los partidos asociados.
+    Cambia el nombre de una competición en el payload y en la columna desnormalizada 'competition' de todos los partidos asociados.
     """
     history_list = db.query(AnalysisHistory).all()
     updated_count = 0
     
     for h in history_list:
-        if h.payload:
+        cname = h.competition
+        if not cname and h.payload:
             try:
-                # Decodificar el payload
                 pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                
-                # Extraer el nombre actual
-                cname = pdata.get("competition") or pdata.get("tournament", {}).get("name") or "Desconocida"
-                
-                if cname.lower() == old_name.lower():
-                    # Actualizar campo 'competition' principal
+                cname = pdata.get("competition") or pdata.get("tournament", {}).get("name")
+            except Exception:
+                pass
+        cname = cname or "Desconocida"
+        
+        if cname.lower() == old_name.lower():
+            h.competition = new_name
+            if h.payload:
+                try:
+                    pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
                     pdata["competition"] = new_name
-                    
-                    # Si existe el objeto anidado 'tournament', actualizarlo también para mantener consistencia
                     if "tournament" in pdata and isinstance(pdata["tournament"], dict):
                         pdata["tournament"]["name"] = new_name
-                        
-                    # Guardar el JSON modificado de vuelta en el registro
                     h.payload = json.dumps(pdata)
-                    updated_count += 1
-            except Exception as e:
-                print(f"Error actualizando el nombre de la competición (ID: {h.id}): {e}")
-                continue
+                except Exception as e:
+                    print(f"Error actualizando el payload de la competición (ID: {h.id}): {e}")
+            updated_count += 1
                 
     if updated_count > 0:
         db.commit()
+        _invalidate_stats_cache()
         
     return {
         "status": "ok", 
@@ -1756,7 +1888,7 @@ def rename_team_matches(
                 
                 # Si se especificó competición, validar que coincida antes de modificar
                 if competition:
-                    cname = pdata.get("competition") or pdata.get("tournament", {}).get("name") or "Desconocida"
+                    cname = h.competition or pdata.get("competition") or pdata.get("tournament", {}).get("name") or "Desconocida"
                     if cname.lower() != competition.lower():
                         continue # Si no es de esta liga, saltar
                 
@@ -1804,6 +1936,7 @@ def rename_team_matches(
                 
     if updated_count > 0:
         db.commit()
+        _invalidate_stats_cache()
         
     response_msg = f"Se actualizó el equipo de '{old_name}' a '{new_name}' en {updated_count} partidos"
     if competition:
@@ -1829,24 +1962,24 @@ def deduplicate_competition_matches(competition_name: str, db: Session = Depends
     matches_by_key = {}
     
     for h in history_list:
-        if not h.payload:
-            continue
+        cname = h.competition
+        if not cname and h.payload:
+            try:
+                pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
+                cname = pdata.get("competition") or pdata.get("tournament", {}).get("name")
+            except Exception:
+                pass
+        cname = cname or "Desconocida"
             
-        try:
-            pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-            cname = pdata.get("competition") or pdata.get("tournament", {}).get("name") or "Desconocida"
+        if cname.lower() == competition_name.lower():
+            # Crear una llave única basada en el título y la fecha (YYYY-MM-DD)
+            match_date_str = h.match_date.strftime("%Y-%m-%d") if h.match_date else h.date.strftime("%Y-%m-%d")
+            match_key = f"{h.match_title.lower().strip()}_{match_date_str}"
             
-            if cname.lower() == competition_name.lower():
-                # Crear una llave única basada en el título y la fecha (YYYY-MM-DD)
-                match_date_str = h.match_date.strftime("%Y-%m-%d") if h.match_date else h.date.strftime("%Y-%m-%d")
-                match_key = f"{h.match_title.lower().strip()}_{match_date_str}"
+            if match_key not in matches_by_key:
+                matches_by_key[match_key] = []
                 
-                if match_key not in matches_by_key:
-                    matches_by_key[match_key] = []
-                    
-                matches_by_key[match_key].append(h)
-        except Exception:
-            continue
+            matches_by_key[match_key].append(h)
 
     deleted_count = 0
     
@@ -1888,6 +2021,7 @@ def deduplicate_competition_matches(competition_name: str, db: Session = Depends
 
     if deleted_count > 0:
         db.commit()
+        _invalidate_stats_cache()
 
     return {
         "status": "ok", 
@@ -1901,26 +2035,27 @@ def list_teams_count(competition: str = Query(None, description="Filtra el conte
     Devuelve la lista de todos los equipos en la base de datos (o filtrados por liga) 
     y en cuántos partidos han participado.
     """
-    history_list = db.query(AnalysisHistory).all()
+    cache_key = f"teams_count:{competition or 'all'}"
+    cached = _get_cache(cache_key)
+    if cached:
+        return cached
+
+    from sqlalchemy.orm import load_only
+    query = db.query(AnalysisHistory).options(
+        load_only(AnalysisHistory.match_title, AnalysisHistory.competition)
+    )
+
+    if competition:
+        query = query.filter(AnalysisHistory.competition.ilike(f"%{competition}%"))
+
+    history_list = query.all()
     team_counts = {}
     
     for h in history_list:
-        if not h.match_title or not h.payload:
+        if not h.match_title:
             continue
             
-        # Si se especificó una liga, filtramos leyendo el payload
-        if competition:
-            try:
-                pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                cname = pdata.get("competition") or pdata.get("tournament", {}).get("name") or "Desconocida"
-                
-                # Si la liga no coincide (ignorando mayúsculas), saltamos al siguiente partido
-                if cname.lower() != competition.lower():
-                    continue
-            except Exception:
-                continue
-            
-        # Extraer equipos del matchtitle ("Local vs Visitante" o "Local - Visitante")
+        # Extraer equipos del match_title ("Local vs Visitante" o "Local - Visitante")
         teams = []
         if " vs " in h.match_title:
             teams = [t.strip() for t in h.match_title.split(" vs ")]
@@ -1943,12 +2078,14 @@ def list_teams_count(competition: str = Query(None, description="Filtra el conte
     if competition:
         response_msg += f" en la competición '{competition}'"
         
-    return {
+    res = {
         "status": "ok",
         "message": response_msg,
         "total_unique_teams": len(sorted_teams),
         "teams": sorted_teams
     }
+    _set_cache(cache_key, res)
+    return res
 
 @app.delete(
     "/api/v1/analysis/competition/{competition_name}/incomplete",
@@ -1971,7 +2108,9 @@ def delete_incomplete_competition_matches(
     - Tiene una lista no vacía en pickscalculados.
     """
 
-    def get_competition_name(payload: dict) -> str:
+    def get_competition_name(history: AnalysisHistory, payload: dict) -> str:
+        if history.competition:
+            return history.competition
         tournament = payload.get("tournament")
         tournament_name = (
             tournament.get("name")
@@ -2059,7 +2198,7 @@ def delete_incomplete_competition_matches(
             if not isinstance(payload, dict):
                 continue
 
-            stored_competition = get_competition_name(payload)
+            stored_competition = get_competition_name(history, payload)
 
             if stored_competition.casefold() != competition_name.casefold():
                 continue
@@ -2105,6 +2244,7 @@ def delete_incomplete_competition_matches(
 
     if not dry_run and deleted_count > 0:
         db.commit()
+        _invalidate_stats_cache()
 
     return {
         "status": "ok",
@@ -2135,10 +2275,11 @@ def list_analysis(
     match_date_to: str | None = Query(None),
     competition: str | None = Query(None),
     limit: int = Query(5000, ge=1, le=10000),
+    offset: int = Query(0, ge=0),
     use_stake: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> list[AnalysisHistoryOut]:
-    """List saved analyses with optional filters."""
+    """List saved analyses with optional filters and pagination."""
     query = db.query(AnalysisHistory)
     if sport:
         try:
@@ -2159,25 +2300,45 @@ def list_analysis(
     if match_date_to:
         query = query.filter(AnalysisHistory.match_date <= datetime.fromisoformat(match_date_to))
 
-    query = query.order_by(AnalysisHistory.date.desc())
-    history_list = query.all()
-    
-    # Filter by competition in JSON payload if specified
+    # Competition filter via indexed column
     if competition:
-        filtered_list = []
-        for h in history_list:
-            if h.payload:
-                try:
-                    p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                    c_name = p_data.get("competition") or p_data.get("competition") or "Desconocida"
-                    if c_name.lower() == competition.lower():
-                        filtered_list.append(h)
-                except:
-                    pass
-        history_list = filtered_list
-        
-    # Slice list by limit
-    history_list = history_list[:limit]
+        query = query.filter(AnalysisHistory.competition == competition)
+
+    from sqlalchemy.orm import load_only
+    query = query.options(
+        load_only(
+            AnalysisHistory.id,
+            AnalysisHistory.sport,
+            AnalysisHistory.date,
+            AnalysisHistory.match_date,
+            AnalysisHistory.match_title,
+            AnalysisHistory.competition,
+            AnalysisHistory.payload,
+            AnalysisHistory.picks_calculados,
+            AnalysisHistory.compare_response_snapshot,
+            AnalysisHistory.count_in_profitability,
+            AnalysisHistory.has_real_stats,
+            AnalysisHistory.final_score_home,
+            AnalysisHistory.final_score_away,
+            AnalysisHistory.final_corners_home,
+            AnalysisHistory.final_corners_away,
+            AnalysisHistory.final_yellow_cards_home,
+            AnalysisHistory.final_yellow_cards_away,
+            AnalysisHistory.final_red_cards_home,
+            AnalysisHistory.final_red_cards_away,
+            AnalysisHistory.final_shots_home,
+            AnalysisHistory.final_shots_away,
+            AnalysisHistory.final_shots_on_target_home,
+            AnalysisHistory.final_shots_on_target_away,
+            AnalysisHistory.final_fouls_home,
+            AnalysisHistory.final_fouls_away,
+            AnalysisHistory.final_offsides_home,
+            AnalysisHistory.final_offsides_away,
+        )
+    )
+
+    query = query.order_by(AnalysisHistory.date.desc())
+    history_list = query.offset(offset).limit(limit).all()
     
     results = []
     for h in history_list:
@@ -2195,18 +2356,51 @@ def get_leagues_stats(
     Groups AnalysisHistory by competition inside the JSON payload and calculates stats.
     Also computes per-market hit rates and historical performance data for LRS computation.
     """
-    history = db.query(AnalysisHistory).all()
+    cache_key = f"leagues:{use_stake}"
+    cached = _get_cache(cache_key)
+    if cached:
+        return cached
+
+    from sqlalchemy.orm import load_only
+    history = (
+        db.query(AnalysisHistory)
+        .options(load_only(
+            AnalysisHistory.id,
+            AnalysisHistory.competition,
+            AnalysisHistory.payload,
+            AnalysisHistory.picks_calculados,
+            AnalysisHistory.final_score_home,
+            AnalysisHistory.final_score_away,
+            AnalysisHistory.final_corners_home,
+            AnalysisHistory.final_corners_away,
+            AnalysisHistory.final_yellow_cards_home,
+            AnalysisHistory.final_yellow_cards_away,
+            AnalysisHistory.final_red_cards_home,
+            AnalysisHistory.final_red_cards_away,
+            AnalysisHistory.final_shots_home,
+            AnalysisHistory.final_shots_away,
+            AnalysisHistory.final_shots_on_target_home,
+            AnalysisHistory.final_shots_on_target_away,
+            AnalysisHistory.final_fouls_home,
+            AnalysisHistory.final_fouls_away,
+            AnalysisHistory.final_offsides_home,
+            AnalysisHistory.final_offsides_away,
+        ))
+        .all()
+    )
     leagues_data = {}
     
     for h in history:
-        # Resolve competition name
-        comp_name = "Desconocida"
-        if h.payload:
+        # Resolve competition name using index column first
+        comp_name = h.competition
+        if not comp_name and h.payload:
             try:
                 p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
                 comp_name = p_data.get("competition") or "Desconocida"
             except:
                 pass
+        if not comp_name:
+            comp_name = "Desconocida"
                 
         if comp_name not in leagues_data:
             leagues_data[comp_name] = {
@@ -2318,6 +2512,7 @@ def get_leagues_stats(
         
         results.append(league)
         
+    _set_cache(cache_key, results)
     return results
 
 @app.post("/api/v1/analysis/{analysis_id}/results", response_model=AnalysisHistoryOut, tags=["Analysis History"])
@@ -2366,7 +2561,12 @@ def update_analysis_results(
         except Exception as e:
             print(f"Error calculating accuracy: {e}")
 
+    # Refresh stake_units from picks_calculados after result is set
+    if history.picks_calculados:
+        history.stake_units = _sum_stake_from_picks(history.picks_calculados)
+
     db.commit()
+    _invalidate_stats_cache()
     db.refresh(history)
     out = AnalysisHistoryOut.model_validate(history)
     return _populate_history_extra_fields(history, out)
@@ -2377,19 +2577,37 @@ def get_pending_picks_competitions(db: Session = Depends(get_db)):
     """
     Retorna las ligas y los event_ids que tienen partidos con resultados pendientes (final_score_home is None).
     """
-    records = db.query(AnalysisHistory).filter(
-        AnalysisHistory.final_score_home.is_(None)
-    ).all()
+    from sqlalchemy.orm import load_only
+    records = (
+        db.query(AnalysisHistory)
+        .options(load_only(
+            AnalysisHistory.competition,
+            AnalysisHistory.payload,
+            AnalysisHistory.final_score_home,
+        ))
+        .filter(AnalysisHistory.final_score_home.is_(None))
+        .all()
+    )
 
     pending_set = set()
     pending_event_ids = set()
     for rec in records:
-        if rec.payload:
+        # Use pre-extracted competition column; fall back to payload only for event_id
+        comp_name = rec.competition
+        if comp_name:
+            pending_set.add(comp_name)
+        elif rec.payload:
             try:
                 p_dict = json.loads(str(rec.payload))
                 comp_name = p_dict.get("competition", {}).get("name") or p_dict.get("league_name")
                 if comp_name:
                     pending_set.add(comp_name)
+            except Exception:
+                pass
+
+        if rec.payload:
+            try:
+                p_dict = json.loads(str(rec.payload))
                 ext_id = p_dict.get("match", {}).get("external_id") or p_dict.get("event_id") or p_dict.get("eventId")
                 if ext_id:
                     pending_event_ids.add(str(ext_id))
@@ -2414,6 +2632,7 @@ def update_analysis_profitability(
         raise HTTPException(status_code=404, detail="Analysis not found")
     history.count_in_profitability = count_in_profitability
     db.commit()
+    _invalidate_stats_cache()
     db.refresh(history)
     out = AnalysisHistoryOut.model_validate(history)
     return _populate_history_extra_fields(history, out)
@@ -3300,7 +3519,42 @@ def get_global_stats(
     db: Session = Depends(get_db)
 ):
     """Calculate global performance metrics across all sports with advanced analytics."""
-    query = db.query(AnalysisHistory)
+    cache_key = f"global:{date_from}:{date_to}:{use_stake}"
+    cached = _get_cache(cache_key)
+    if cached:
+        return cached
+
+    from sqlalchemy.orm import load_only
+    query = db.query(AnalysisHistory).options(
+        load_only(
+            AnalysisHistory.id,
+            AnalysisHistory.sport,
+            AnalysisHistory.date,
+            AnalysisHistory.match_date,
+            AnalysisHistory.match_title,
+            AnalysisHistory.competition,
+            AnalysisHistory.payload,
+            AnalysisHistory.picks_calculados,
+            AnalysisHistory.compare_response_snapshot,
+            AnalysisHistory.count_in_profitability,
+            AnalysisHistory.final_score_home,
+            AnalysisHistory.final_score_away,
+            AnalysisHistory.final_corners_home,
+            AnalysisHistory.final_corners_away,
+            AnalysisHistory.final_yellow_cards_home,
+            AnalysisHistory.final_yellow_cards_away,
+            AnalysisHistory.final_red_cards_home,
+            AnalysisHistory.final_red_cards_away,
+            AnalysisHistory.final_shots_home,
+            AnalysisHistory.final_shots_away,
+            AnalysisHistory.final_shots_on_target_home,
+            AnalysisHistory.final_shots_on_target_away,
+            AnalysisHistory.final_fouls_home,
+            AnalysisHistory.final_fouls_away,
+            AnalysisHistory.final_offsides_home,
+            AnalysisHistory.final_offsides_away,
+        )
+    )
     if date_from:
         try:
             query = query.filter(AnalysisHistory.date >= datetime.fromisoformat(date_from))
@@ -3415,12 +3669,14 @@ def get_global_stats(
                     sport_stats[sport] = {"picks": 0, "hits": 0}
                 
                 # Extract league info
-                league = "Desconocida"
-                if h.payload:
+                league = h.competition
+                if not league and h.payload:
                     try:
                         p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
                         league = p_data.get("competition") or "Desconocida"
                     except: pass
+                if not league:
+                    league = "Desconocida"
                 
                 # Extract team info
                 teams = []
@@ -3728,7 +3984,7 @@ def get_global_stats(
             "cumulative": round(cumulative, 2)
         })
 
-    return {
+    res = {
         "total_matches": total_matches,
         "total_matches_with_results": matches_with_results,
         "total_picks": total_picks,
@@ -3752,6 +4008,8 @@ def get_global_stats(
         "confidence_buckets": bucket_to_list(conf_b_stats),
         "category_stats": category_stats_out
     }
+    _set_cache(cache_key, res)
+    return res
 
 def build_equity_curve(df_match_level: pd.DataFrame, bankroll_units: float = 100.0):
     """
@@ -4992,7 +5250,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-    liga = "Allsvenskan"
+    liga = "Scottish Premiership"
 
     #----------Contar equipos de liga--------------------------------
 
@@ -5006,8 +5264,8 @@ if __name__ == "__main__":
 
     
     ##---------Cambiar nombre de liga---------------
-    # old_name = "Allsvenskan, Relegation/Promotion"
-    # new_name = "Allsvenskan"
+    # old_name = "Scottish Premiership, Relegation Round"
+    # new_name = "Scottish Premiership"
     
     # db = next(get_db())
     # try:
@@ -5049,25 +5307,8 @@ if __name__ == "__main__":
     # try:
                        
     #     # Puedes ir encadenando las demás correcciones usando kwargs:
-    #     rename_team_matches(old_name="Malmö Ff", new_name="Malmö", competition=liga, db=db)
-    #     rename_team_matches(old_name="Malmo Ff", new_name="Malmö", competition=liga, db=db)
-    #     rename_team_matches(old_name="Ifk Göteborg", new_name="Göteborg", competition=liga, db=db)
-    #     rename_team_matches(old_name="Djurgårdens If", new_name="Djurgården", competition=liga, db=db)
-    #     rename_team_matches(old_name="Djurgardens If", new_name="Djurgården", competition=liga, db=db)
-    #     rename_team_matches(old_name="If Brommapojkarna", new_name="Brommapojkarna", competition=liga, db=db)
-    #     rename_team_matches(old_name="Bp", new_name="Brommapojkarna", competition=liga, db=db)
-    #     rename_team_matches(old_name="Ik Sirius", new_name="Sirius", competition=liga, db=db)
-    #     rename_team_matches(old_name="Bk Häcken", new_name="Häcken", competition=liga, db=db)
-    #     rename_team_matches(old_name="Halmstads Bk", new_name="Halmstad", competition=liga, db=db)
-    #     rename_team_matches(old_name="If Elfsborg", new_name="Elfsborg", competition=liga, db=db)
-    #     rename_team_matches(old_name="Hammarby If", new_name="Hammarby", competition=liga, db=db)
-    #     rename_team_matches(old_name="Mjällby Aif", new_name="Mjällby", competition=liga, db=db)
-    #     rename_team_matches(old_name="Kalmar Ff", new_name="Kalmar", competition=liga, db=db)
-    #     rename_team_matches(old_name="Degerfors If", new_name="Degerfors", competition=liga, db=db)
-    #     rename_team_matches(old_name="Västerås Sk", new_name="Västerås", competition=liga, db=db)
-    #     rename_team_matches(old_name="Vsk", new_name="Västerås", competition=liga, db=db)
-    #     rename_team_matches(old_name="Örgryte Is", new_name="Örgryte", competition=liga, db=db)
-    #     rename_team_matches(old_name="Orgryte Is", new_name="Örgryte", competition=liga, db=db)
+    #     rename_team_matches(old_name="Heart Of Midlothian", new_name="Hearts", competition=liga, db=db)
+    #     rename_team_matches(old_name="Dundee Fc", new_name="Dundee", competition=liga, db=db)
 
     #     print("Equipos renombrados exitosamente.")
         

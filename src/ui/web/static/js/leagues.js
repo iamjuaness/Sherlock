@@ -185,19 +185,39 @@ async function deleteCurrentLeague() {
   }
 }
 
-async function fetchMatchesForLeague(name) {
+let currentOffset = 0;
+let hasMoreMatches = true;
+
+async function fetchMatchesForLeague(name, isLoadMore = false) {
   const matchesContainer = document.getElementById("matches-list");
   if (!matchesContainer) return;
 
-  matchesContainer.innerHTML = `<div class="dashboard-loader"><div class="spinner"></div><span>Cargando partidos...</span></div>`;
+  if (!isLoadMore) {
+    currentOffset = 0;
+    hasMoreMatches = true;
+    currentMatchesCache = [];
+    visibleMatchesLimit = 50;
+    matchesContainer.innerHTML = `<div class="dashboard-loader"><div class="spinner"></div><span>Cargando partidos...</span></div>`;
+  }
 
   try {
     const useStake = localStorage.getItem("use_stake_system") === "true";
     const res = await fetch(
-      `/api/v1/analysis?competition=${encodeURIComponent(name)}&use_stake=${useStake}`,
+      `/api/v1/analysis?competition=${encodeURIComponent(name)}&use_stake=${useStake}&limit=50&offset=${currentOffset}`,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    currentMatchesCache = await res.json();
+    const newMatches = await res.json();
+
+    if (newMatches.length < 50) {
+      hasMoreMatches = false;
+    }
+
+    currentMatchesCache = currentMatchesCache.concat(newMatches);
+    currentOffset += newMatches.length;
+
+    if (isLoadMore) {
+      visibleMatchesLimit += newMatches.length;
+    }
 
     // Populate Season selector dropdown
     populateSeasonDropdown();
@@ -205,7 +225,9 @@ async function fetchMatchesForLeague(name) {
     renderFilteredMatches();
   } catch (error) {
     console.error("Error cargando partidos:", error);
-    matchesContainer.innerHTML = `<div style="color: var(--red); padding: 2rem; text-align: center;">❌ Error al cargar partidos: ${escapeHtml(error.message)}</div>`;
+    if (!isLoadMore) {
+      matchesContainer.innerHTML = `<div style="color: var(--red); padding: 2rem; text-align: center;">❌ Error al cargar partidos: ${escapeHtml(error.message)}</div>`;
+    }
   }
 }
 
@@ -296,7 +318,7 @@ function renderFilteredMatches() {
     renderMatchesView(paginated, matchesContainer);
 
     // Add load-more button if there are remaining matches
-    if (filtered.length > visibleMatchesLimit) {
+    if (hasMoreMatches || filtered.length > visibleMatchesLimit) {
       const loadMoreContainer = document.createElement("div");
       loadMoreContainer.style.cssText = "text-align: center; margin: 1.5rem 0;";
 
@@ -304,10 +326,16 @@ function renderFilteredMatches() {
       loadMoreBtn.className = "tab-btn";
       loadMoreBtn.style.cssText =
         "background: rgba(99,102,241,0.15); border: 1px solid var(--accent); color: var(--accent-light); padding: 0.5rem 2rem; border-radius: 6px; font-weight: 600; cursor: pointer; transition: all 0.2s;";
-      loadMoreBtn.textContent = `⚡ Cargar más partidos (mostrando ${visibleMatchesLimit} de ${filtered.length})`;
-      loadMoreBtn.onclick = () => {
-        visibleMatchesLimit += 50;
-        renderFilteredMatches();
+      loadMoreBtn.textContent = `⚡ Cargar más partidos (cargados ${filtered.length})`;
+      loadMoreBtn.onclick = async () => {
+        if (hasMoreMatches) {
+          loadMoreBtn.disabled = true;
+          loadMoreBtn.textContent = "Cargando más partidos...";
+          await fetchMatchesForLeague(activeLeague, true);
+        } else {
+          visibleMatchesLimit += 50;
+          renderFilteredMatches();
+        }
       };
 
       loadMoreContainer.appendChild(loadMoreBtn);
@@ -466,8 +494,15 @@ function renderMatchesView(filtered, matchesContainer) {
 
           // Hit rate badge if present
           let hrHtml = "";
-          if (pick.empirical_hit_rate != null || pick.home_hit_rate != null || pick.away_hit_rate != null) {
-            const hrVal = pick.empirical_hit_rate != null ? pick.empirical_hit_rate : (pick.home_hit_rate || pick.away_hit_rate);
+          if (
+            pick.empirical_hit_rate != null ||
+            pick.home_hit_rate != null ||
+            pick.away_hit_rate != null
+          ) {
+            const hrVal =
+              pick.empirical_hit_rate != null
+                ? pick.empirical_hit_rate
+                : pick.home_hit_rate || pick.away_hit_rate;
             hrHtml = `<span style="font-size:0.72rem; background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); padding:1px 5px; border-radius:4px; margin-left:4px;" title="Hit rate histórico del pick">🎯 ${Number(hrVal).toFixed(0)}%</span>`;
           }
 
@@ -753,6 +788,24 @@ function escapeAttr(str) {
 }
 
 function updateStatsSummaryForFiltered(filteredMatches) {
+  // If activeSeason is 'all', keep the official backend aggregated stats for the league
+  if (activeSeason === "all" && activeLeague) {
+    const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
+    if (leagueInfo) {
+      document.getElementById("lbl-total-matches").textContent =
+        leagueInfo.total_matches;
+      document.getElementById("lbl-total-picks").textContent =
+        leagueInfo.total_picks;
+      document.getElementById("lbl-accuracy").textContent =
+        `${leagueInfo.accuracy}%`;
+      const profitEl = document.getElementById("lbl-profit");
+      profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
+      profitEl.style.color =
+        leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
+      return;
+    }
+  }
+
   let visibleMatches = filteredMatches.length; // all matches in view
   let totalPicks = 0; // resolved non-void picks (same as backend)
   let hits = 0;

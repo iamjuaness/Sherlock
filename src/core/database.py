@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sqlalchemy import create_engine, text, inspect
+from sqlalchemy import create_engine, event, text, inspect
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
 from src.config import settings
@@ -19,6 +19,19 @@ engine = create_engine(
 )
 
 SessionLocal = sessionmaker(bind=engine, class_=Session, expire_on_commit=False)
+
+
+# ── SQLite performance PRAGMAs ─────────────────────────────────────────────
+if "sqlite" in settings.database_url:
+    @event.listens_for(engine, "connect")
+    def _set_sqlite_pragma(dbapi_conn, _connection_record):
+        """Apply performance PRAGMAs on every new SQLite connection."""
+        cursor = dbapi_conn.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")      # WAL: concurrent reads + writes
+        cursor.execute("PRAGMA synchronous=NORMAL")    # safe + faster than FULL
+        cursor.execute("PRAGMA cache_size=-32000")     # ~32 MB page cache
+        cursor.execute("PRAGMA temp_store=MEMORY")     # temp tables in RAM
+        cursor.close()
 
 
 def _column_exists(conn, table: str, column: str) -> bool:
@@ -180,6 +193,22 @@ def init_db() -> None:
                 except Exception as e:
                     print(f"DB migration warning for {col}: {e}")
 
+        # ── Denormalized columns for stats queries (avoid json_extract per request) ──
+        denorm_fields = [
+            ("competition", "TEXT"),
+            ("bookmaker",   "TEXT"),
+            ("stake_units", "REAL"),
+        ]
+        for col, dtype in denorm_fields:
+            if not _column_exists(conn, "analysis_history", col):
+                try:
+                    conn.execute(text(
+                        f"ALTER TABLE analysis_history ADD COLUMN {col} {dtype}"
+                    ))
+                    print(f"DB migrated: {col} added to analysis_history.")
+                except Exception as e:
+                    print(f"DB migration warning for {col}: {e}")
+
         # Idempotent backfill of has_odds for historical records
         try:
             conn.execute(text(
@@ -187,6 +216,34 @@ def init_db() -> None:
             ))
         except Exception as e:
             print(f"DB backfill warning for has_odds: {e}")
+
+        # ── Backfill: competition via json_extract (single SQL UPDATE, no Python loop) ──
+        try:
+            conn.execute(text("""
+                UPDATE analysis_history
+                SET competition = COALESCE(
+                    NULLIF(TRIM(json_extract(payload, '$.competition')), ''),
+                    json_extract(payload, '$.tournament.name')
+                )
+                WHERE competition IS NULL AND payload IS NOT NULL
+            """))
+            print("DB backfill: competition populated via json_extract.")
+        except Exception as e:
+            print(f"DB backfill warning for competition: {e}")
+
+        # ── Backfill: bookmaker via json_extract ──
+        try:
+            conn.execute(text("""
+                UPDATE analysis_history
+                SET bookmaker = COALESCE(
+                    json_extract(payload, '$.bookmaker'),
+                    json_extract(payload, '$.sources[0].bookmaker')
+                )
+                WHERE bookmaker IS NULL AND payload IS NOT NULL
+            """))
+            print("DB backfill: bookmaker populated via json_extract.")
+        except Exception as e:
+            print(f"DB backfill warning for bookmaker: {e}")
 
         conn.commit()
         print("Database initialization complete.")
@@ -202,8 +259,9 @@ def get_db():
         db.close()
 
 def create_indexes():
-    """Create indexes for analysis_history table."""
+    """Create indexes for analysis_history and related tables."""
     with engine.connect() as conn:
+        # ── analysis_history existing indexes ──
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_analysis_history_sport_title ON analysis_history(sport, match_title);"
         ))
@@ -215,5 +273,39 @@ def create_indexes():
         ))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_analysis_history_needs_recalc ON analysis_history(needs_recalc);"
+        ))
+        # ── New denormalized column indexes ──
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ah_competition ON analysis_history(competition);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ah_stake_units ON analysis_history(stake_units);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ah_bookmaker ON analysis_history(bookmaker);"
+        ))
+        # Índice compuesto y "covering" para pending-picks:
+        # cubre WHERE final_score_home IS NULL AND competition IS NOT NULL
+        # sin tener que ir a la tabla a leer las columnas.
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ah_pending_picks "
+            "ON analysis_history(final_score_home, competition);"
+        ))
+        # ── FK indexes missing on matches table ──
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_matches_competition_id ON matches(competition_id);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_matches_home_team_id ON matches(home_team_id);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_matches_away_team_id ON matches(away_team_id);"
+        ))
+        # ── FK indexes missing on stat_lines tables ──
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_stat_team_team_id ON stat_lines_team(team_id);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_stat_player_player_id ON stat_lines_player(player_id);"
         ))
         conn.commit()
