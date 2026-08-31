@@ -2519,7 +2519,7 @@ def get_recalculate_count(
             except Exception:
                 pass
 
-    query = db.query(AnalysisHistory).filter(AnalysisHistory.has_odds == False)
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.has_odds == True)
     if threshold_dt:
         query = query.filter(
             or_(
@@ -2528,8 +2528,8 @@ def get_recalculate_count(
             )
         )
     count = query.count()
-    # Estimación basada en ~3 segundos por partido
-    estimated_seconds = count * 3
+    # Estimación basada en ~0.29 segundos por partido
+    estimated_seconds = count * 0.29
     return {
         "total": count,
         "estimated_seconds": estimated_seconds,
@@ -2584,12 +2584,27 @@ async def recalculate_all_accuracy(
     count = 0
     updated_accuracy_count = 0
 
-    for history in history_list:
+    from sqlalchemy import text as _sql_text
+    _q_hist_batch = _sql_text("""
+        SELECT id, match_title, match_date,
+               final_score_home, final_score_away,
+               final_corners_home, final_corners_away,
+               final_yellow_cards_home, final_yellow_cards_away,
+               final_shots_home, final_shots_away,
+               final_shots_on_target_home, final_shots_on_target_away,
+               final_fouls_home, final_fouls_away
+        FROM analysis_history
+        WHERE final_score_home IS NOT NULL AND final_score_away IS NOT NULL
+        ORDER BY match_date DESC
+    """)
+    shared_historical_records = [dict(r) for r in db.execute(_q_hist_batch).mappings().all()]
+
+    for idx, history in enumerate(history_list, start=1):
+        m_date = history.match_date or history.date
         try:
             if not history.payload:
                 continue
 
-            # Double-check odds validity
             if not _check_payload_has_odds(history.payload):
                 history.has_odds = False
                 continue
@@ -2598,11 +2613,9 @@ async def recalculate_all_accuracy(
             local_payload = dict(payload_dict)
             sport = history.sport
 
-            # Determine correct use_general_stats based on parameter and threshold
             target_use_gen = False
             if use_general_stats:
                 if threshold_dt:
-                    m_date = history.match_date or history.date
                     if m_date:
                         target_use_gen = m_date.date() >= threshold_dt.date()
                     else:
@@ -2612,22 +2625,18 @@ async def recalculate_all_accuracy(
 
             local_payload["use_general_stats"] = target_use_gen
 
-            # Re-ejecutar el motor de comparación según el deporte
             new_response = None
             bookmaker_map: dict = {}
             try:
                 if sport == Sport.FOOTBALL:
                     req = FootballCompareRequest(**local_payload)
-                    # ── Line shopping: si el payload guardó cuotas de varias
-                    # casas (odds.sources), recalcula la mejor cuota por
-                    # mercado ANTES de correr el motor, igual que en el
-                    # análisis original. ──
                     req, bookmaker_map = _apply_line_shopping(req)
                     new_response = await compare_football(
                         req,
                         db=db,
                         exclude_match_id=history.id,
-                        current_match_date=history.match_date or history.date,
+                        current_match_date=m_date,
+                        precomputed_historical_records=shared_historical_records,
                     )
             except Exception as comp_err:
                 print(f"Error en motor de comparación para {history.id} ({sport}): {comp_err}")
@@ -2657,7 +2666,6 @@ async def recalculate_all_accuracy(
                 history.picks_calculados = json.dumps(picks)
                 history.compare_response_snapshot = json.dumps(new_response.model_dump() if hasattr(new_response, 'model_dump') else new_response.__dict__)
 
-                # 2. Si tiene resultados, recalcular acierto
                 if history.final_score_home is not None:
                     results_dict = {
                         "final_score_home": history.final_score_home,
@@ -2676,32 +2684,25 @@ async def recalculate_all_accuracy(
 
                     hits = 0
                     total = 0
-
                     for pick in picks:
                         if pick.get("is_blacklisted") or pick.get("is_rule_blocked"):
                             continue
-                        # Filtro: Solo picks de valor cuentan para la estadística oficial
                         if not (pick.get("is_publishable", pick.get("is_value", False))):
                             continue
-
                         success = _check_pick_success(pick, results_dict)
                         if success is not None and success != "void":
                             total += 1
                             if _is_pick_hit(success):
                                 hits += 1
 
-                    if total > 0:
-                        history.accuracy_percentage = (hits / total) * 100
-                    else:
-                        history.accuracy_percentage = None
-
+                    history.accuracy_percentage = (hits / total) * 100 if total > 0 else None
                     updated_accuracy_count += 1
 
                 history.last_recalculated_at = datetime.utcnow()
                 history.needs_recalc = False
                 count += 1
         except Exception as e:
-            print(f"Error re-analizando registro {history.id}: {e}")
+            print(f"Error re-analizando registro {history.id}: {e}", flush=True)
 
     db.commit()
     return {
@@ -4991,22 +4992,22 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-    liga = "Serie A"
+    liga = "Allsvenskan"
 
     #----------Contar equipos de liga--------------------------------
 
-    db = next(get_db())
+    # db = next(get_db())
 
-    try:
-        resultado = list_teams_count(liga, db)
-        print(resultado)
-    finally:
-        db.close()
+    # try:
+    #     resultado = list_teams_count(liga, db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
 
     
     ##---------Cambiar nombre de liga---------------
-    # old_name = "Liga 1, Clausura"
-    # new_name = "Liga 1 Te Apuesto"
+    # old_name = "Allsvenskan, Relegation/Promotion"
+    # new_name = "Allsvenskan"
     
     # db = next(get_db())
     # try:
@@ -5028,12 +5029,12 @@ if __name__ == "__main__":
 
     #------------------Eliminar duplicados-------------------
 
-    # db = next(get_db())
-    # try:
-    #     resultado = deduplicate_competition_matches(liga, db)
-    #     print(resultado)
-    # finally:
-    #     db.close()
+    db = next(get_db())
+    try:
+        resultado = deduplicate_competition_matches(liga, db)
+        print(resultado)
+    finally:
+        db.close()
 
     # -----------------Eliminar partidos--------------------
     # db = next(get_db())
@@ -5048,22 +5049,26 @@ if __name__ == "__main__":
     # try:
                        
     #     # Puedes ir encadenando las demás correcciones usando kwargs:
-    #     rename_team_matches(old_name="Radomiak Radom", new_name="Radomiak", competition=liga, db=db)
-    #     rename_team_matches(old_name="Pogoń Szczecin", new_name="Pogoń", competition=liga, db=db)
-    #     rename_team_matches(old_name="Legia Warszawa", new_name="Legia", competition=liga, db=db)
-    #     rename_team_matches(old_name="Jagiellonia Białystok", new_name="Jagiellonia", competition=liga, db=db)
-    #     rename_team_matches(old_name="Ks Cracovia", new_name="Cracovia", competition=liga, db=db)
-    #     rename_team_matches(old_name="Raków Częstochowa", new_name="Raków", competition=liga, db=db)
-    #     rename_team_matches(old_name="Motor Lublin", new_name="Motor", competition=liga, db=db)
-    #     rename_team_matches(old_name="Zagłębie Lubin", new_name="Zagłębie", competition=liga, db=db)
-    #     rename_team_matches(old_name="Piast Gliwice", new_name="Piast", competition=liga, db=db)
-    #     rename_team_matches(old_name="Mks Korona Kielce", new_name="Korona", competition=liga, db=db)
-    #     rename_team_matches(old_name="Lech Poznań", new_name="Lech", competition=liga, db=db)
-    #     rename_team_matches(old_name="Widzew Łódź", new_name="Widzew", competition=liga, db=db)
-    #     rename_team_matches(old_name="Śląsk Wrocław", new_name="Śląsk", competition=liga, db=db)
-    #     rename_team_matches(old_name="Wieczysta Kraków", new_name="Wieczysta", competition=liga, db=db)
-        
-        
+    #     rename_team_matches(old_name="Malmö Ff", new_name="Malmö", competition=liga, db=db)
+    #     rename_team_matches(old_name="Malmo Ff", new_name="Malmö", competition=liga, db=db)
+    #     rename_team_matches(old_name="Ifk Göteborg", new_name="Göteborg", competition=liga, db=db)
+    #     rename_team_matches(old_name="Djurgårdens If", new_name="Djurgården", competition=liga, db=db)
+    #     rename_team_matches(old_name="Djurgardens If", new_name="Djurgården", competition=liga, db=db)
+    #     rename_team_matches(old_name="If Brommapojkarna", new_name="Brommapojkarna", competition=liga, db=db)
+    #     rename_team_matches(old_name="Bp", new_name="Brommapojkarna", competition=liga, db=db)
+    #     rename_team_matches(old_name="Ik Sirius", new_name="Sirius", competition=liga, db=db)
+    #     rename_team_matches(old_name="Bk Häcken", new_name="Häcken", competition=liga, db=db)
+    #     rename_team_matches(old_name="Halmstads Bk", new_name="Halmstad", competition=liga, db=db)
+    #     rename_team_matches(old_name="If Elfsborg", new_name="Elfsborg", competition=liga, db=db)
+    #     rename_team_matches(old_name="Hammarby If", new_name="Hammarby", competition=liga, db=db)
+    #     rename_team_matches(old_name="Mjällby Aif", new_name="Mjällby", competition=liga, db=db)
+    #     rename_team_matches(old_name="Kalmar Ff", new_name="Kalmar", competition=liga, db=db)
+    #     rename_team_matches(old_name="Degerfors If", new_name="Degerfors", competition=liga, db=db)
+    #     rename_team_matches(old_name="Västerås Sk", new_name="Västerås", competition=liga, db=db)
+    #     rename_team_matches(old_name="Vsk", new_name="Västerås", competition=liga, db=db)
+    #     rename_team_matches(old_name="Örgryte Is", new_name="Örgryte", competition=liga, db=db)
+    #     rename_team_matches(old_name="Orgryte Is", new_name="Örgryte", competition=liga, db=db)
+
     #     print("Equipos renombrados exitosamente.")
         
     # finally:

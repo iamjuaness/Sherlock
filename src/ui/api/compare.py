@@ -3507,6 +3507,7 @@ async def compare_football(
     db: Any = None,
     exclude_match_id: Optional[Any] = None,
     current_match_date: Optional[Any] = None,
+    precomputed_historical_records: Optional[list] = None,
 ) -> CompareResponse:
     """
     NOTA DE FIX:
@@ -3842,12 +3843,13 @@ async def compare_football(
 
     curr_date_only = current_match_time.date() if current_match_time else None
     historical_records = []
-    if db is not None:
+    if precomputed_historical_records is not None:
+        source_rows = precomputed_historical_records
+    elif db is not None:
         try:
             from sqlalchemy import text
-            comp_name = req.competition or ""
             q_hist = text("""
-                SELECT id, match_title, match_date, payload,
+                SELECT id, match_title, match_date,
                        final_score_home, final_score_away,
                        final_corners_home, final_corners_away,
                        final_yellow_cards_home, final_yellow_cards_away,
@@ -3858,50 +3860,45 @@ async def compare_football(
                 WHERE final_score_home IS NOT NULL AND final_score_away IS NOT NULL
                 ORDER BY match_date DESC
             """)
-            rows = db.execute(q_hist).mappings().all()
-            target_l = comp_name.strip().lower()
-            for r in rows:
-                r_dict = dict(r)
-                m_id = r_dict.get("id")
-
-                # 1) Exclusión por ID (el propio partido que se está recalculando)
-                if exclude_analysis_id and m_id and str(m_id).strip() == str(exclude_analysis_id).strip():
-                    continue
-
-                # 2) Parseo de la fecha de ESTA fila ANTES de usarla.
-                # FIX: antes este cálculo ocurría después del chequeo "current_match_time and m_dt",
-                # lo que hacía que m_dt fuera el de la fila ANTERIOR (o estuviera indefinido en la
-                # primera iteración), permitiendo que el propio partido u otros posteriores se
-                # filtraran incorrectamente. Ahora se calcula primero y se usa de inmediato.
-                m_date = r_dict.get("match_date")
-                m_dt = None
-                if m_date:
-                    try:
-                        if isinstance(m_date, datetime):
-                            m_dt = m_date
-                        else:
-                            m_s = str(m_date).replace("Z", "+00:00")
-                            if "T" in m_s or " " in m_s:
-                                m_dt = datetime.fromisoformat(m_s)
-                            elif len(m_s) >= 10:
-                                m_dt = datetime.strptime(m_s[:10], "%Y-%m-%d")
-                    except Exception:
-                        m_dt = None
-
-                # 3) Exclusión por fecha/hora exacta (data leakage a nivel de instante)
-                if current_match_time and m_dt and m_dt >= current_match_time:
-                    continue
-
-                # 4) Filtrado temporal estricto por día si se conoce la fecha del partido actual
-                if curr_date_only and m_dt and m_dt.date() >= curr_date_only:
-                    continue
-
-                # Incluir registros de la base de datos histórica para evaluación de hit rates
-                historical_records.append(r_dict)
+            source_rows = [dict(r) for r in db.execute(q_hist).mappings().all()]
         except Exception:
-            pass
+            source_rows = []
+    else:
+        source_rows = []
+
+    if source_rows:
+        for r_dict in source_rows:
+            m_id = r_dict.get("id")
+
+            if exclude_analysis_id and m_id and str(m_id).strip() == str(exclude_analysis_id).strip():
+                continue
+
+            m_date = r_dict.get("match_date")
+            m_dt = None
+            if m_date:
+                try:
+                    if isinstance(m_date, datetime):
+                        m_dt = m_date
+                    else:
+                        m_s = str(m_date).replace("Z", "+00:00")
+                        if "T" in m_s or " " in m_s:
+                            m_dt = datetime.fromisoformat(m_s)
+                        elif len(m_s) >= 10:
+                            m_dt = datetime.strptime(m_s[:10], "%Y-%m-%d")
+                except Exception:
+                    m_dt = None
+
+            if current_match_time and m_dt and m_dt >= current_match_time:
+                continue
+
+            if curr_date_only and m_dt and m_dt.date() >= curr_date_only:
+                continue
+
+            historical_records.append(r_dict)
 
     from src.core.math_engine import LeagueMathEngine
+    from src.domain.temporal import TemporalCutoff
+    _shared_cutoff = TemporalCutoff.create(current_match_time)
 
     # ── Check 6 (planning.txt): Omitir partidos si un equipo solo tiene Rating y Posesión ──
     def _team_has_only_rating_and_possession(team: Any) -> bool:
@@ -3920,6 +3917,21 @@ async def compare_football(
 
     match_incomplete_stats = _team_has_only_rating_and_possession(h) or _team_has_only_rating_and_possession(a)
 
+    # ── Filtro de relevancia: solo records que involucren a H o A ──
+    _h_lower = h.name.strip().lower()
+    _a_lower = a.name.strip().lower()
+
+    def _record_involves_team(rec: dict) -> bool:
+        title = rec.get("match_title", "") or ""
+        ht = (rec.get("home_team") or (title.split(" vs ")[0] if " vs " in title else "")).strip().lower()
+        at = (rec.get("away_team") or (title.split(" vs ")[1] if " vs " in title else "")).strip().lower()
+        return (
+            _h_lower == ht or _h_lower == at or _h_lower in ht or _h_lower in at
+            or _a_lower == ht or _a_lower == at or _a_lower in ht or _a_lower in at
+        )
+
+    relevant_records = [r for r in historical_records if _record_involves_team(r)]
+
     for v in values:
         if match_incomplete_stats:
             block_pick(
@@ -3930,7 +3942,7 @@ async def compare_football(
             continue
 
         # ── Hit Rate empírico (% de acierto real en partidos históricos para TODOS los mercados) ──
-        if historical_records:
+        if relevant_records:
             fam = _market_family(v.selection)
             side = _market_side(v.selection)
             line = _extract_line_number(v.selection)
@@ -3938,9 +3950,9 @@ async def compare_football(
 
             # Mapeo según familia de mercado
             if fam in {"goals", "corners", "cards", "shots", "shots_target", "fouls"} and line is not None:
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, fam, line=line, is_over=is_ov, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(relevant_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(relevant_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, fam, line=line, is_over=is_ov, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
@@ -3960,9 +3972,9 @@ async def compare_football(
 
             elif fam in {"btts", "btts_yes", "btts_no"}:
                 btts_fam = "btts_no" if "no" in side or "no" in v.selection.lower() else "btts_yes"
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, btts_fam, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(relevant_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(relevant_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, btts_fam, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
@@ -3980,9 +3992,9 @@ async def compare_football(
 
             elif fam in {"result", "moneyline", "1x2"}:
                 t_side = "home" if side == "home" or "local" in v.selection.lower() else ("away" if side == "away" or "visitante" in v.selection.lower() else "draw")
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, "1x2", role_filter="home", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, "1x2", role_filter="away", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, "1x2", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(relevant_records, h.name, "1x2", role_filter="home", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(relevant_records, a.name, "1x2", role_filter="away", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, "1x2", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
@@ -4008,9 +4020,9 @@ async def compare_football(
 
             elif fam == "double_chance":
                 t_side = "1x" if "1x" in v.selection.lower() or side == "home_draw" else ("x2" if "x2" in v.selection.lower() or side == "draw_away" else "12")
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(historical_records, h.name, "double_chance", role_filter="home", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(historical_records, a.name, "double_chance", role_filter="away", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
-                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(historical_records, h.name, a.name, "double_chance", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(relevant_records, h.name, "double_chance", role_filter="home", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(relevant_records, a.name, "double_chance", role_filter="away", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, "double_chance", target_side=t_side, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
