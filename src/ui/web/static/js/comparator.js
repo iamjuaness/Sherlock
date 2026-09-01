@@ -5,6 +5,7 @@
 const MAX_STAKE = 3;
 const MIN_STAKE = 1;
 let visibleHistoryLimit = 50;
+window._prefillSeason = null; // Populated by Watson prefill; included in every compare payload
 
 function renderMarkdown(text) {
   return (
@@ -2474,6 +2475,10 @@ function populateAppForm(sport, data) {
     if (data.competition) {
       setSafeValue("fb-competition", data.competition);
     }
+    // Persist season from prefill (no form field; kept in memory)
+    if (data.season != null) {
+      window._prefillSeason = data.season;
+    }
     if (data.league_stats) {
       setSafeValue("fb-league-goals", data.league_stats.avg_goals_per_game);
       setSafeValue("fb-league-corners", data.league_stats.avg_corners_per_game);
@@ -3144,6 +3149,7 @@ function buildFootballPayloadFromForm() {
     league_stats,
     use_general_stats,
     matchDate: loadedHistoryEntryDate,
+    season: window._prefillSeason || null,
   };
 }
 

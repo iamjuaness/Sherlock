@@ -854,11 +854,14 @@ async function handleExtractHistoricalData(data) {
   if (targetSeasonId && targetSeasonId !== "all") {
     seasons = seasons.filter((s) => String(s.id) === String(targetSeasonId));
     if (seasons.length === 0) {
-      throw new Error(`Temporada especificada (ID: ${targetSeasonId}) no encontrada`);
+      throw new Error(
+        `Temporada especificada (ID: ${targetSeasonId}) no encontrada`,
+      );
     }
   }
 
-  const currentSeasonId = seasonsData.seasons.length > 0 ? String(seasonsData.seasons[0].id) : null;
+  const currentSeasonId =
+    seasonsData.seasons.length > 0 ? String(seasonsData.seasons[0].id) : null;
   const pendingCount = seasons.filter(
     (s) => !completedSeasons.has(String(s.id)),
   ).length;
@@ -892,7 +895,9 @@ async function handleExtractHistoricalData(data) {
     const season = seasons[si];
     const seasonKey = String(season.id);
 
-    const isSingleSeasonMode = Boolean(targetSeasonId && targetSeasonId !== "all");
+    const isSingleSeasonMode = Boolean(
+      targetSeasonId && targetSeasonId !== "all",
+    );
 
     if (!isSingleSeasonMode && completedSeasons.has(seasonKey)) {
       sendProgress({
@@ -1232,7 +1237,12 @@ async function handleBulkExtractStats(data) {
 
   const activeComps = competitions.filter((c) => c.active && c.season);
 
-  sendBulkProgress({ phase: "start", message: `Procesando ${activeComps.length} competiciones activas...`, total: activeComps.length, done: 0 });
+  sendBulkProgress({
+    phase: "start",
+    message: `Procesando ${activeComps.length} competiciones activas...`,
+    total: activeComps.length,
+    done: 0,
+  });
 
   // Calcular timestamps del día siguiente (inicio y fin en UTC)
   const now = new Date();
@@ -1255,8 +1265,20 @@ async function handleBulkExtractStats(data) {
 
   for (let ci = 0; ci < activeComps.length; ci++) {
     if (_bulkCancelled) {
-      sendBulkProgress({ phase: "cancelled", message: "Cancelado por el usuario", totalProcessed, totalSaved, totalErrors });
-      return { success: false, cancelled: true, totalProcessed, totalSaved, totalErrors };
+      sendBulkProgress({
+        phase: "cancelled",
+        message: "Cancelado por el usuario",
+        totalProcessed,
+        totalSaved,
+        totalErrors,
+      });
+      return {
+        success: false,
+        cancelled: true,
+        totalProcessed,
+        totalSaved,
+        totalErrors,
+      };
     }
 
     const comp = activeComps[ci];
@@ -1271,7 +1293,7 @@ async function handleBulkExtractStats(data) {
     try {
       // Obtener los próximos partidos de la competición (solo necesitamos page 0, son ~30)
       const eventsData = await fetchSofaScore(
-        `/api/v1/unique-tournament/${comp.id}/season/${comp.season}/events/next/0`
+        `/api/v1/unique-tournament/${comp.id}/season/${comp.season}/events/next/0`,
       );
       const events = eventsData?.events || [];
 
@@ -1280,7 +1302,8 @@ async function handleBulkExtractStats(data) {
         if (e.status?.type !== "notstarted") return false;
         const ts = e.startTimestamp * 1000;
         // Día siguiente
-        if (ts >= tomorrowStart.getTime() && ts <= tomorrowEnd.getTime()) return true;
+        if (ts >= tomorrowStart.getTime() && ts <= tomorrowEnd.getTime())
+          return true;
         // Hoy (no empezados todavía)
         if (ts >= now.getTime() && ts >= todayStart.getTime()) return true;
         return false;
@@ -1305,8 +1328,10 @@ async function handleBulkExtractStats(data) {
           if (_bulkCancelled) break;
 
           const event = targetEvents[ei];
-          const homeName = event.homeTeam?.shortName || event.homeTeam?.name || "";
-          const awayName = event.awayTeam?.shortName || event.awayTeam?.name || "";
+          const homeName =
+            event.homeTeam?.shortName || event.homeTeam?.name || "";
+          const awayName =
+            event.awayTeam?.shortName || event.awayTeam?.name || "";
 
           sendBulkProgress({
             phase: "event_processing",
@@ -1337,10 +1362,22 @@ async function handleBulkExtractStats(data) {
 
               if (sendResult?.success) {
                 totalSaved++;
-                sendBulkProgress({ phase: "event_saved", message: `  ✅ ${homeName} vs ${awayName} guardado`, totalProcessed, totalSaved, totalErrors });
+                sendBulkProgress({
+                  phase: "event_saved",
+                  message: `  ✅ ${homeName} vs ${awayName} guardado`,
+                  totalProcessed,
+                  totalSaved,
+                  totalErrors,
+                });
               } else {
                 totalErrors++;
-                sendBulkProgress({ phase: "event_error", message: `  ❌ ${homeName} vs ${awayName}: ${sendResult?.error || "error"}`, totalProcessed, totalSaved, totalErrors });
+                sendBulkProgress({
+                  phase: "event_error",
+                  message: `  ❌ ${homeName} vs ${awayName}: ${sendResult?.error || "error"}`,
+                  totalProcessed,
+                  totalSaved,
+                  totalErrors,
+                });
               }
             } else {
               totalErrors++;
@@ -1349,7 +1386,10 @@ async function handleBulkExtractStats(data) {
           } catch (e) {
             totalErrors++;
             totalProcessed++;
-            console.warn(`[Bulk Stats] Error en evento ${event.id}:`, e.message);
+            console.warn(
+              `[Bulk Stats] Error en evento ${event.id}:`,
+              e.message,
+            );
           }
 
           // Espera entre partidos (mínimo 3 segundos)
@@ -1360,7 +1400,12 @@ async function handleBulkExtractStats(data) {
       }
     } catch (e) {
       console.warn(`[Bulk Stats] Error en liga ${comp.name}:`, e.message);
-      sendBulkProgress({ phase: "league_error", message: `${comp.name}: Error — ${e.message}`, done: ci + 1, total: activeComps.length });
+      sendBulkProgress({
+        phase: "league_error",
+        message: `${comp.name}: Error — ${e.message}`,
+        done: ci + 1,
+        total: activeComps.length,
+      });
     }
 
     // Espera entre ligas (5 segundos) para evitar bloqueos de IP
@@ -1402,7 +1447,9 @@ async function handleBulkExtractResults(data) {
 
   // Optimización Punto 2: Intentar consultar competiciones y partidos con picks pendientes desde Sherlock
   try {
-    const resPending = await fetch(`${baseUrl}/api/v1/competitions/pending-picks`);
+    const resPending = await fetch(
+      `${baseUrl}/api/v1/competitions/pending-picks`,
+    );
     if (resPending.ok) {
       const pendingData = await resPending.json();
       const pendingList = pendingData.pending_competitions || [];
@@ -1412,20 +1459,41 @@ async function handleBulkExtractResults(data) {
         pendingEventIdsSet = new Set(pendingIds.map((id) => String(id)));
       }
 
-      if (Array.isArray(pendingList) && pendingList.length > 0) {
-        const pendingSet = new Set(pendingList.map((s) => s.toLowerCase().trim()));
-        const filtered = activeComps.filter((c) => pendingSet.has(c.name.toLowerCase().trim()));
-        if (filtered.length > 0) {
-          activeComps = filtered;
-          console.log(`[Bulk Results] Optimizado: Filtradas ${activeComps.length} ligas con picks pendientes.`);
-        }
+      if (Array.isArray(pendingList)) {
+        const pendingSet = new Set(
+          pendingList.map((s) => s.toLowerCase().trim()),
+        );
+        activeComps = activeComps.filter((c) =>
+          pendingSet.has(c.name.toLowerCase().trim()),
+        );
+        console.log(
+          `[Bulk Results] Optimizado: ${activeComps.length} ligas con picks pendientes para hoy/ayer.`,
+        );
       }
     }
   } catch (e) {
-    console.warn("[Bulk Results] No se pudo obtener ligas pendientes de Sherlock, buscando en todas las activas:", e.message);
+    console.warn(
+      "[Bulk Results] No se pudo obtener ligas pendientes de Sherlock, buscando en todas las activas:",
+      e.message,
+    );
   }
 
-  sendBulkProgress({ phase: "start", message: `Buscando resultados en ${activeComps.length} competiciones...`, total: activeComps.length, done: 0 });
+  if (activeComps.length === 0) {
+    sendBulkProgress({
+      phase: "complete",
+      message: "Sin ligas activas con picks pendientes para hoy ni ayer.",
+      total: 0,
+      done: 0,
+    });
+    return { success: true, totalProcessed: 0, totalSaved: 0, totalErrors: 0 };
+  }
+
+  sendBulkProgress({
+    phase: "start",
+    message: `Buscando resultados en ${activeComps.length} competiciones...`,
+    total: activeComps.length,
+    done: 0,
+  });
 
   // Calcular timestamps para hoy y ayer
   const now = new Date();
@@ -1440,8 +1508,20 @@ async function handleBulkExtractResults(data) {
 
   for (let ci = 0; ci < activeComps.length; ci++) {
     if (_bulkCancelled) {
-      sendBulkProgress({ phase: "cancelled", message: "Cancelado por el usuario", totalProcessed, totalSaved, totalErrors });
-      return { success: false, cancelled: true, totalProcessed, totalSaved, totalErrors };
+      sendBulkProgress({
+        phase: "cancelled",
+        message: "Cancelado por el usuario",
+        totalProcessed,
+        totalSaved,
+        totalErrors,
+      });
+      return {
+        success: false,
+        cancelled: true,
+        totalProcessed,
+        totalSaved,
+        totalErrors,
+      };
     }
 
     const comp = activeComps[ci];
@@ -1455,18 +1535,21 @@ async function handleBulkExtractResults(data) {
 
     try {
       const eventsData = await fetchSofaScore(
-        `/api/v1/unique-tournament/${comp.id}/season/${comp.season}/events/last/0`
+        `/api/v1/unique-tournament/${comp.id}/season/${comp.season}/events/last/0`,
       );
       const events = eventsData?.events || [];
 
-      // Solo eventos finalizados que falten según pending_event_ids (o fallback a fecha hoy/ayer)
+      // Solo eventos finalizados de hoy/ayer que falten según pending_event_ids
       const targetEvents = events.filter((e) => {
         if (e.status?.type !== "finished") return false;
+        const ts = e.startTimestamp * 1000;
+        const isTodayOrYesterday =
+          ts >= yesterdayStart.getTime() && ts <= now.getTime();
+        if (!isTodayOrYesterday) return false;
         if (pendingEventIdsSet && pendingEventIdsSet.size > 0) {
           return pendingEventIdsSet.has(String(e.id));
         }
-        const ts = e.startTimestamp * 1000;
-        return ts >= yesterdayStart.getTime() && ts <= now.getTime();
+        return true;
       });
 
       if (targetEvents.length === 0) {
@@ -1488,8 +1571,10 @@ async function handleBulkExtractResults(data) {
           if (_bulkCancelled) break;
 
           const event = targetEvents[ei];
-          const homeName = event.homeTeam?.shortName || event.homeTeam?.name || "";
-          const awayName = event.awayTeam?.shortName || event.awayTeam?.name || "";
+          const homeName =
+            event.homeTeam?.shortName || event.homeTeam?.name || "";
+          const awayName =
+            event.awayTeam?.shortName || event.awayTeam?.name || "";
 
           sendBulkProgress({
             phase: "event_processing",
@@ -1500,14 +1585,28 @@ async function handleBulkExtractResults(data) {
           });
 
           try {
-            const result = await handleExtractResults({ eventId: String(event.id) });
+            const result = await handleExtractResults({
+              eventId: String(event.id),
+            });
 
             if (result?.success) {
               totalSaved++;
-              sendBulkProgress({ phase: "event_saved", message: `  ✅ ${homeName} vs ${awayName}`, totalProcessed, totalSaved, totalErrors });
+              sendBulkProgress({
+                phase: "event_saved",
+                message: `  ✅ ${homeName} vs ${awayName}`,
+                totalProcessed,
+                totalSaved,
+                totalErrors,
+              });
             } else {
               totalErrors++;
-              sendBulkProgress({ phase: "event_error", message: `  ❌ ${homeName} vs ${awayName}: ${result?.error || "error"}`, totalProcessed, totalSaved, totalErrors });
+              sendBulkProgress({
+                phase: "event_error",
+                message: `  ❌ ${homeName} vs ${awayName}: ${result?.error || "error"}`,
+                totalProcessed,
+                totalSaved,
+                totalErrors,
+              });
             }
             totalProcessed++;
           } catch (e) {
@@ -1524,7 +1623,12 @@ async function handleBulkExtractResults(data) {
       }
     } catch (e) {
       console.warn(`[Bulk Results] Error liga ${comp.name}:`, e.message);
-      sendBulkProgress({ phase: "league_error", message: `${comp.name}: Error — ${e.message}`, done: ci + 1, total: activeComps.length });
+      sendBulkProgress({
+        phase: "league_error",
+        message: `${comp.name}: Error — ${e.message}`,
+        done: ci + 1,
+        total: activeComps.length,
+      });
     }
 
     // Espera entre ligas (5 segundos)

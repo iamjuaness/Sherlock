@@ -1109,6 +1109,7 @@ function buildSherlockPayload(extractedData) {
     user_context: "",
     has_real_stats: !!(homeStats && awayStats),
     start_timestamp: match.startTimestamp,
+    season: match.season?.year || match.season?.name || null,
   };
 }
 

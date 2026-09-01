@@ -277,6 +277,14 @@ class AnalysisHistory(Base):
     recent_form_stats = Column(Text, nullable=True)    # JSON: Ventanas de últimos 5, 10 y 15 partidos de A y B
     historical_pick_rates = Column(Text, nullable=True) # JSON: Frecuencia de acierto (% hit rate) por mercado/equipo
 
+    # ── Columnas desnormalizadas para evitar json_extract en queries de stats ──
+    competition = Column(String(200), nullable=True, index=True)
+    # Extraído de payload.competition (o payload.tournament.name como fallback)
+    bookmaker = Column(String(100), nullable=True, index=True)
+    # Casa de apuestas principal (payload.bookmaker o payload.sources[0].bookmaker)
+    stake_units = Column(Float, nullable=True, index=True)
+    # Suma de stake_units de los picks publicables del partido
+
 
     # Final Results
     final_score_home = Column(Integer, nullable=True)

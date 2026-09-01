@@ -445,6 +445,7 @@ class LeagueMathEngine:
         target_side: str = "home",
         exclude_match_id: Optional[int] = None,
         current_match_date: Optional[Any] = None,
+        cutoff: Optional[TemporalCutoff] = None,  # <-- NUEVO: reutilizable entre llamadas
     ) -> Dict[str, Any]:
         """
         Calcula el porcentaje histórico de acierto de cualquier pick para un equipo.
@@ -455,12 +456,11 @@ class LeagueMathEngine:
         matching_count = 0
         hit_count = 0
 
-        # Cutoff temporal en UTC, obligatorio. `create` devuelve None si el
-        # kickoff no es utilizable y entonces NO se admite ningun registro: sin
-        # kickoff no hay forma de demostrar que un partido sea anterior. Antes,
-        # esa misma situacion DESACTIVABA el filtro y dejaba entrar el historico
-        # completo, incluidos partidos posteriores al que se analiza.
-        cutoff = TemporalCutoff.create(current_match_date)
+        # Si el llamador ya construyó el cutoff (recomendado cuando se hacen
+        # múltiples llamadas para el mismo partido), lo reutiliza en vez de
+        # reparsear current_match_date en cada una de las ~30 llamadas por partido.
+        if cutoff is None:
+            cutoff = TemporalCutoff.create(current_match_date)
         if cutoff is None:
             return {"sample_size": 0, "hits": 0, "hit_rate_pct": 0.0, "cutoff_missing": True}
 
@@ -470,10 +470,6 @@ class LeagueMathEngine:
                 if m_id is not None and str(m_id) == str(exclude_match_id):
                     continue
 
-            # Se compara el instante completo en UTC, no solo el dia: dos
-            # partidos de la misma jornada son distinguibles y una zona horaria
-            # distinta ya no puede desplazar la fecha. Un registro sin fecha
-            # utilizable se DESCARTA en lugar de admitirse.
             if not cutoff.allows_record(m):
                 continue
 
@@ -520,6 +516,7 @@ class LeagueMathEngine:
         target_side: str = "home",
         exclude_match_id: Optional[Any] = None,
         current_match_date: Optional[Any] = None,
+        cutoff: Optional[TemporalCutoff] = None,  # <-- NUEVO
     ) -> Dict[str, Any]:
         """
         Calcula el Hit Rate específico en los enfrentamientos directos previos (H2H)
@@ -532,12 +529,8 @@ class LeagueMathEngine:
         hit_count = 0
         h2h_matches_list = []
 
-        # Cutoff temporal en UTC, obligatorio. `create` devuelve None si el
-        # kickoff no es utilizable y entonces NO se admite ningun registro: sin
-        # kickoff no hay forma de demostrar que un partido sea anterior. Antes,
-        # esa misma situacion DESACTIVABA el filtro y dejaba entrar el historico
-        # completo, incluidos partidos posteriores al que se analiza.
-        cutoff = TemporalCutoff.create(current_match_date)
+        if cutoff is None:
+            cutoff = TemporalCutoff.create(current_match_date)
         if cutoff is None:
             return {
                 "sample_size": 0,
@@ -549,23 +542,14 @@ class LeagueMathEngine:
 
         for m in matches:
             m_id = m.get("id") or m.get("match_id")
-            m_title = m.get("match_title", "")
 
-            # 1. Validación de Exclusión por ID
             if exclude_match_id is not None and m_id is not None:
                 if str(m_id).strip() == str(exclude_match_id).strip():
-                    print(f"  ❌ [EXCLUIDO POR ID] match_id={m_id} coincide con exclude_match_id={exclude_match_id}")
                     continue
 
-            # 2. Validación de Exclusión por Fecha (cutoff UTC estricto)
-            # La comparacion anterior `m_dt >= ref_dt` mezclaba datetimes con y
-            # sin zona horaria, lo que lanza TypeError sin capturar. Normalizar
-            # ambos a UTC en el dominio elimina ese fallo latente.
             if not cutoff.allows_record(m):
                 continue
 
-            # Se toma del dominio, de modo que la fecha que se muestra en el H2H
-            # es exactamente la que el cutoff evaluo, no una clave distinta.
             date_val = record_date(m)
 
             ht_raw = m.get("home_team") or (m.get("match_title", "").split(" vs ")[0] if " vs " in m.get("match_title", "") else "")

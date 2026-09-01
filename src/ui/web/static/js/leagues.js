@@ -466,8 +466,15 @@ function renderMatchesView(filtered, matchesContainer) {
 
           // Hit rate badge if present
           let hrHtml = "";
-          if (pick.empirical_hit_rate != null || pick.home_hit_rate != null || pick.away_hit_rate != null) {
-            const hrVal = pick.empirical_hit_rate != null ? pick.empirical_hit_rate : (pick.home_hit_rate || pick.away_hit_rate);
+          if (
+            pick.empirical_hit_rate != null ||
+            pick.home_hit_rate != null ||
+            pick.away_hit_rate != null
+          ) {
+            const hrVal =
+              pick.empirical_hit_rate != null
+                ? pick.empirical_hit_rate
+                : pick.home_hit_rate || pick.away_hit_rate;
             hrHtml = `<span style="font-size:0.72rem; background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); padding:1px 5px; border-radius:4px; margin-left:4px;" title="Hit rate histórico del pick">🎯 ${Number(hrVal).toFixed(0)}%</span>`;
           }
 

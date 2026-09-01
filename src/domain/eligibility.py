@@ -50,7 +50,7 @@ from typing import Any, Iterable, Mapping
 
 # Versión de la política de publicación. Cambiar un umbral obliga a subirla:
 # sin esto no se puede saber con qué reglas se publicó un pick histórico.
-POLICY_VERSION = "elig-v1"
+POLICY_VERSION = "elig-v2"
 
 
 class BlockReason(str, Enum):
@@ -76,6 +76,11 @@ class BlockReason(str, Enum):
     DATA_QUALITY_TOO_LOW = "data_quality_too_low"
     STAKE_TOO_LOW = "stake_too_low"
     H2H_ZERO_HIT_RATE = "h2h_zero_hit_rate"
+    # ── Filtros estadísticos de rendimiento (datos empíricos) ────────
+    HOME_HIT_RATE_TOO_LOW = "home_hit_rate_too_low"
+    TOTAL_HIT_RATE_TOO_LOW = "total_hit_rate_too_low"
+    EV_REAL_TOO_HIGH = "ev_real_too_high"
+    EDGE_OVERCONFIDENT_LOW_ODDS = "edge_overconfident_low_odds"
 
 
 HARD_BLOCKS: frozenset[BlockReason] = frozenset({
@@ -115,6 +120,10 @@ REASON_LABELS: dict[BlockReason, str] = {
     BlockReason.DATA_QUALITY_TOO_LOW: "Calidad de dato insuficiente",
     BlockReason.STAKE_TOO_LOW: "Stake por debajo del mínimo",
     BlockReason.H2H_ZERO_HIT_RATE: "0% de acierto en H2H con muestra disponible",
+    BlockReason.HOME_HIT_RATE_TOO_LOW: "Hit Rate Local < 30%: tendencia histórica local fría",
+    BlockReason.TOTAL_HIT_RATE_TOO_LOW: "Hit Rate Total < 35%: rendimiento histórico insuficiente",
+    BlockReason.EV_REAL_TOO_HIGH: "EV Real > 40%: probable anomalía de calibración, no valor real",
+    BlockReason.EDGE_OVERCONFIDENT_LOW_ODDS: "Edge > 12% en cuota baja (< 1.80): sobreconfianza del modelo",
 }
 
 
@@ -158,6 +167,12 @@ class PublicationThresholds:
     min_data_quality: float = 50.0
     min_stake_units: float = 1.0
     block_on_zero_h2h: bool = True
+    # ── Filtros estadísticos de rendimiento empírico ─────────────────
+    min_home_hit_rate: float = 30.0   # Hit Rate Local: si <30% el modelo sobreestima la recuperación
+    min_total_hit_rate: float = 35.0  # Hit Rate Total: si <35% el rendimiento histórico es negativo
+    max_ev_real_pct: float = 40.0     # EV Real: si >40% es probable anomalía de calibración
+    max_edge_low_odds_threshold: float = 12.0   # Edge > 12% en cuotas bajas = sobreconfianza
+    low_odds_threshold: float = 1.80  # Cuota "baja" para el filtro de sobreconfianza
     version: str = POLICY_VERSION
 
     def min_prob_for(self, market_family: str | None) -> float:
@@ -202,6 +217,10 @@ class PickSnapshot:
     h2h_raw_hit_rate: float | None = None
     h2h_samples: int = 0
     selection: str = ""
+    # ── Campos de rendimiento empírico ───────────────────────────────
+    home_hit_rate: float | None = None   # Hit Rate Local (%)
+    total_hit_rate: float | None = None  # Hit Rate Total / empirical_hit_rate (%)
+    ev_real_pct: float | None = None     # EV Real (%), calculado como edge_ev * 100
 
     @staticmethod
     def _get(src: Any, *names: str, default=None):
@@ -230,6 +249,10 @@ class PickSnapshot:
 
         fam = market_family or cls._get(src, "market_family", "marketFamily") or "generic"
 
+        # EV Real: edge_ev es la fracción (p*odds - 1). Multiplicar x100 para obtener %
+        raw_edge_ev = _as_float(cls._get(src, "edge_ev", "edgeEv"))
+        ev_real_pct = raw_edge_ev * 100.0 if raw_edge_ev is not None else None
+
         return cls(
             market_family=str(fam),
             odds=_as_float(cls._get(src, "odds")),
@@ -241,6 +264,9 @@ class PickSnapshot:
             h2h_raw_hit_rate=_as_float(cls._get(src, "h2h_raw_hit_rate", "h2hRawHitRate")),
             h2h_samples=int(_as_float(cls._get(src, "h2h_samples", "h2hSamples", default=0)) or 0),
             selection=str(cls._get(src, "selection", default="") or ""),
+            home_hit_rate=_as_float(cls._get(src, "home_hit_rate", "homeHitRate")),
+            total_hit_rate=_as_float(cls._get(src, "empirical_hit_rate", "empiricalHitRate", "total_hit_rate")),
+            ev_real_pct=ev_real_pct,
         )
 
 
@@ -424,6 +450,37 @@ def evaluate_soft_filters(
         and snapshot.h2h_samples > 0
     ):
         fails.add(BlockReason.H2H_ZERO_HIT_RATE)
+
+    # ── Filtros estadísticos de rendimiento empírico ─────────────────
+    # 1. Hit Rate Local < 30%: tendencia histórica local fría → ROI negativo
+    if (
+        snapshot.home_hit_rate is not None
+        and snapshot.home_hit_rate < thresholds.min_home_hit_rate
+    ):
+        fails.add(BlockReason.HOME_HIT_RATE_TOO_LOW)
+
+    # 2. Hit Rate Total < 35%: rendimiento histórico global insuficiente
+    if (
+        snapshot.total_hit_rate is not None
+        and snapshot.total_hit_rate < thresholds.min_total_hit_rate
+    ):
+        fails.add(BlockReason.TOTAL_HIT_RATE_TOO_LOW)
+
+    # 3. EV Real > 40%: EV desproporcionado → anomalía de calibración, no valor real
+    if (
+        snapshot.ev_real_pct is not None
+        and snapshot.ev_real_pct > thresholds.max_ev_real_pct
+    ):
+        fails.add(BlockReason.EV_REAL_TOO_HIGH)
+
+    # 4. Edge > 12% en cuotas bajas (< 1.80): sobreconfianza → win rate cae a ~48%
+    if (
+        snapshot.edge is not None
+        and snapshot.odds is not None
+        and snapshot.odds < thresholds.low_odds_threshold
+        and snapshot.edge > thresholds.max_edge_low_odds_threshold
+    ):
+        fails.add(BlockReason.EDGE_OVERCONFIDENT_LOW_ODDS)
 
     return frozenset(fails)
 
