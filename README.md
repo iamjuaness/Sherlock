@@ -106,7 +106,7 @@ Las estadísticas se segmentan por condición del partido:
 
 Esto evita mezclar rendimiento doméstico con rendimiento fuera de casa.
 
-> **Nota**: A partir del `2026-07-01` (configurable via `match_date` y `use_general_stats`), se pueden usar stats generales (sin segmentar) para ligas con poca muestra.
+> **Nota**: A partir del `2026-01-01` (configurable via `match_date` y `use_general_stats`), se pueden usar stats generales (sin segmentar) para ligas con poca muestra.
 
 ---
 

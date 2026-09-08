@@ -1877,7 +1877,7 @@ def rename_team_matches(
     de todos los partidos históricos asociados. Opcionalmente filtrado por liga.
     """
     # Filtrar solo los partidos cuyo título contenga el nombre antiguo
-    history_list = db.query(AnalysisHistory).filter(AnalysisHistory.match_title.ilike(f"%{old_name}%")).all()
+    history_list = db.query(AnalysisHistory).filter(AnalysisHistory.match_title == old_name).all()
     updated_count = 0
     
     for h in history_list:
@@ -2046,7 +2046,7 @@ def list_teams_count(competition: str = Query(None, description="Filtra el conte
     )
 
     if competition:
-        query = query.filter(AnalysisHistory.competition.ilike(f"%{competition}%"))
+        query = query.filter(AnalysisHistory.competition == competition)
 
     history_list = query.all()
     team_counts = {}
@@ -2274,20 +2274,21 @@ def list_analysis(
     match_date_from: str | None = Query(None),
     match_date_to: str | None = Query(None),
     competition: str | None = Query(None),
+    has_odds: bool | None = Query(None),  # Filtro para optimizar la carga en mercados
     limit: int = Query(5000, ge=1, le=10000),
     offset: int = Query(0, ge=0),
     use_stake: bool = Query(False),
     db: Session = Depends(get_db),
 ) -> list[AnalysisHistoryOut]:
     """List saved analyses with optional filters and pagination."""
-    query = db.query(AnalysisHistory)
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.picks_calculados != None)
     if sport:
         try:
             sport_enum = Sport(sport)
             query = query.filter(AnalysisHistory.sport == sport_enum)
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid sport: {sport}")
-
+    
     # Created date filters
     if date_from:
         query = query.filter(AnalysisHistory.date >= datetime.fromisoformat(date_from))
@@ -2304,6 +2305,9 @@ def list_analysis(
     if competition:
         query = query.filter(AnalysisHistory.competition == competition)
 
+    if has_odds is not None:
+        query = query.filter(AnalysisHistory.has_odds == has_odds)
+
     from sqlalchemy.orm import load_only
     query = query.options(
         load_only(
@@ -2315,25 +2319,10 @@ def list_analysis(
             AnalysisHistory.competition,
             AnalysisHistory.payload,
             AnalysisHistory.picks_calculados,
-            AnalysisHistory.compare_response_snapshot,
             AnalysisHistory.count_in_profitability,
             AnalysisHistory.has_real_stats,
             AnalysisHistory.final_score_home,
             AnalysisHistory.final_score_away,
-            AnalysisHistory.final_corners_home,
-            AnalysisHistory.final_corners_away,
-            AnalysisHistory.final_yellow_cards_home,
-            AnalysisHistory.final_yellow_cards_away,
-            AnalysisHistory.final_red_cards_home,
-            AnalysisHistory.final_red_cards_away,
-            AnalysisHistory.final_shots_home,
-            AnalysisHistory.final_shots_away,
-            AnalysisHistory.final_shots_on_target_home,
-            AnalysisHistory.final_shots_on_target_away,
-            AnalysisHistory.final_fouls_home,
-            AnalysisHistory.final_fouls_away,
-            AnalysisHistory.final_offsides_home,
-            AnalysisHistory.final_offsides_away,
         )
     )
 
@@ -2414,6 +2403,7 @@ def get_leagues_stats(
                 "has_pending_matches": False,
                 # Per-market tracking: {family: {"hits": 0, "total": 0}}
                 "_market_stats": {},
+                "_detailed_markets": {},
             }
             
         leagues_data[comp_name]["total_matches"] += 1
@@ -2472,18 +2462,71 @@ def get_leagues_stats(
                                     if is_hit:
                                         leagues_data[comp_name]["total_hits"] += 1
                                     
-                                    # Track per-market hit rate
+                                    # Track per-market stats and detailed breakdown
                                     sel_text = pick.get("selection", "")
                                     try:
                                         family = _market_family(sel_text)
                                     except Exception:
                                         family = "generic"
+                                    
+                                    # Normalizar selKey para mercados (Over Córners, Under Tarjetas, etc)
+                                    lower_sel = sel_text.strip().lower()
+                                    category = ""
+                                    if "corner" in lower_sel or "córner" in lower_sel:
+                                        category = "Córners"
+                                    elif "tarjeta" in lower_sel or "card" in lower_sel or "amarilla" in lower_sel:
+                                        category = "Tarjetas"
+                                    elif "foul" in lower_sel or "falta" in lower_sel:
+                                        category = "Faltas"
+                                    elif "shot_target" in lower_sel or "tiro_a_puerta" in lower_sel or "shots_target" in lower_sel or "pta" in lower_sel:
+                                        category = "Tiros a puerta"
+                                    elif "shot" in lower_sel or "tiro" in lower_sel or "remate" in lower_sel:
+                                        category = "Tiros"
+                                    elif "goal" in lower_sel or "gol" in lower_sel:
+                                        category = "Goles"
+                                    
+                                    sel_key = sel_text.strip()
+                                    if category:
+                                        if "over" in lower_sel or "más de" in lower_sel or "mas de" in lower_sel:
+                                            sel_key = f"Over {category}"
+                                        elif "under" in lower_sel or "menos de" in lower_sel:
+                                            sel_key = f"Under {category}"
+                                            
                                     mkt = leagues_data[comp_name]["_market_stats"]
                                     if family not in mkt:
                                         mkt[family] = {"hits": 0, "total": 0}
                                     mkt[family]["total"] += 1
                                     if is_hit:
                                         mkt[family]["hits"] += 1
+
+                                    # Detailed market map by sel_key
+                                    det_map = leagues_data[comp_name]["_detailed_markets"]
+                                    if sel_key not in det_map:
+                                        det_map[sel_key] = {
+                                            "name": sel_key,
+                                            "totalPicks": 0,
+                                            "ganados": 0,
+                                            "perdidos": 0,
+                                            "nulos": 0,
+                                            "profit": 0.0,
+                                            "oddsSum": 0.0,
+                                            "oddsCount": 0,
+                                        }
+                                    m_entry = det_map[sel_key]
+                                    m_entry["totalPicks"] += 1
+                                    odds_val = float(pick.get("odds", 0.0) or 0.0)
+                                    if odds_val > 0:
+                                        m_entry["oddsSum"] += odds_val
+                                        m_entry["oddsCount"] += 1
+                                    
+                                    if success is True:
+                                        m_entry["ganados"] += 1
+                                        m_entry["profit"] += pick_profit
+                                    elif success is False:
+                                        m_entry["perdidos"] += 1
+                                        m_entry["profit"] += pick_profit # pick_profit es negativo
+                                    elif success == "void":
+                                        m_entry["nulos"] += 1
                         else:
                             leagues_data[comp_name]["has_pending_matches"] = True
             except:
@@ -2504,6 +2547,12 @@ def get_leagues_stats(
                 market_hit_rates[family] = round(stats["hits"] / stats["total"], 3)
         league["market_hit_rates"] = market_hit_rates
         
+        # Detailed markets list
+        det_markets_map = league.pop("_detailed_markets", {})
+        detailed_markets = list(det_markets_map.values())
+        detailed_markets.sort(key=lambda x: x["totalPicks"], reverse=True)
+        league["markets"] = detailed_markets
+
         # Historical data for LRS
         league["historical_matches"] = league["total_matches"]
         league["historical_picks"] = picks_cnt
@@ -2514,6 +2563,150 @@ def get_leagues_stats(
         
     _set_cache(cache_key, results)
     return results
+
+
+@app.get("/api/v1/leagues/{league_name}/markets", tags=["Leagues"])
+def get_league_markets(
+    league_name: str,
+    use_stake: bool = Query(False),
+    db: Session = Depends(get_db)
+):
+    """
+    Obtiene las estadísticas agregadas de mercados (desglose por tipo)
+    para una única competición directamente filtrada en BD.
+    """
+    from sqlalchemy.orm import load_only
+    history = (
+        db.query(AnalysisHistory)
+        .filter(AnalysisHistory.competition == league_name)
+        .options(load_only(
+            AnalysisHistory.id,
+            AnalysisHistory.picks_calculados,
+            AnalysisHistory.compare_response_snapshot,
+            AnalysisHistory.count_in_profitability,
+            AnalysisHistory.final_score_home,
+            AnalysisHistory.final_score_away,
+            AnalysisHistory.final_corners_home,
+            AnalysisHistory.final_corners_away,
+            AnalysisHistory.final_yellow_cards_home,
+            AnalysisHistory.final_yellow_cards_away,
+            AnalysisHistory.final_red_cards_home,
+            AnalysisHistory.final_red_cards_away,
+            AnalysisHistory.final_shots_home,
+            AnalysisHistory.final_shots_away,
+            AnalysisHistory.final_shots_on_target_home,
+            AnalysisHistory.final_shots_on_target_away,
+            AnalysisHistory.final_fouls_home,
+            AnalysisHistory.final_fouls_away,
+            AnalysisHistory.final_offsides_home,
+            AnalysisHistory.final_offsides_away,
+        ))
+        .all()
+    )
+
+    det_map = {}
+    for h in history:
+        if getattr(h, "count_in_profitability", True) is False:
+            continue
+        if not h.picks_calculados:
+            continue
+        try:
+            picks = json.loads(h.picks_calculados) if isinstance(h.picks_calculados, str) else h.picks_calculados
+            if not isinstance(picks, list):
+                continue
+
+            res_dict = {
+                "final_score_home": h.final_score_home,
+                "final_score_away": h.final_score_away,
+                "final_corners_home": h.final_corners_home,
+                "final_corners_away": h.final_corners_away,
+                "final_yellow_cards_home": h.final_yellow_cards_home,
+                "final_yellow_cards_away": h.final_yellow_cards_away,
+                "final_red_cards_home": h.final_red_cards_home,
+                "final_red_cards_away": h.final_red_cards_away,
+                "final_shots_home": h.final_shots_home,
+                "final_shots_away": h.final_shots_away,
+                "final_shots_on_target_home": h.final_shots_on_target_home,
+                "final_shots_on_target_away": h.final_shots_on_target_away,
+                "final_fouls_home": h.final_fouls_home,
+                "final_fouls_away": h.final_fouls_away,
+                "final_offsides_home": h.final_offsides_home,
+                "final_offsides_away": h.final_offsides_away,
+            }
+            has_result = h.final_score_home is not None
+
+            for pick in picks:
+                if pick.get("is_blacklisted") or pick.get("is_rule_blocked"):
+                    continue
+                is_pub = pick.get("is_publishable", False)
+                is_und = pick.get("is_underdog", False)
+                if not is_pub and not is_und:
+                    if pick.get("is_value", False):
+                        is_pub = True
+                if not (is_pub or is_und):
+                    continue
+
+                if has_result:
+                    success = _check_pick_success(pick, res_dict)
+                    if success is not None:
+                        stake = _resolve_stake_from_pick(pick) if use_stake else MIN_STAKE
+                        pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
+
+                        sel_text = pick.get("selection", "")
+                        lower_sel = sel_text.strip().lower()
+                        category = ""
+                        if "corner" in lower_sel or "córner" in lower_sel:
+                            category = "Córners"
+                        elif "tarjeta" in lower_sel or "card" in lower_sel or "amarilla" in lower_sel:
+                            category = "Tarjetas"
+                        elif "foul" in lower_sel or "falta" in lower_sel:
+                            category = "Faltas"
+                        elif "shot_target" in lower_sel or "tiro_a_puerta" in lower_sel or "shots_target" in lower_sel or "pta" in lower_sel:
+                            category = "Tiros a puerta"
+                        elif "shot" in lower_sel or "tiro" in lower_sel or "remate" in lower_sel:
+                            category = "Tiros"
+                        elif "goal" in lower_sel or "gol" in lower_sel:
+                            category = "Goles"
+
+                        sel_key = sel_text.strip()
+                        if category:
+                            if "over" in lower_sel or "más de" in lower_sel or "mas de" in lower_sel:
+                                sel_key = f"Over {category}"
+                            elif "under" in lower_sel or "menos de" in lower_sel:
+                                sel_key = f"Under {category}"
+
+                        if sel_key not in det_map:
+                            det_map[sel_key] = {
+                                "name": sel_key,
+                                "totalPicks": 0,
+                                "ganados": 0,
+                                "perdidos": 0,
+                                "nulos": 0,
+                                "profit": 0.0,
+                                "oddsSum": 0.0,
+                                "oddsCount": 0,
+                            }
+                        m_entry = det_map[sel_key]
+                        m_entry["totalPicks"] += 1
+                        odds_val = float(pick.get("odds", 0.0) or 0.0)
+                        if odds_val > 0:
+                            m_entry["oddsSum"] += odds_val
+                            m_entry["oddsCount"] += 1
+
+                        if success is True:
+                            m_entry["ganados"] += 1
+                            m_entry["profit"] += pick_profit
+                        elif success is False:
+                            m_entry["perdidos"] += 1
+                            m_entry["profit"] += pick_profit
+                        elif success == "void":
+                            m_entry["nulos"] += 1
+        except Exception:
+            pass
+
+    detailed_markets = list(det_map.values())
+    detailed_markets.sort(key=lambda x: x["totalPicks"], reverse=True)
+    return detailed_markets
 
 @app.post("/api/v1/analysis/{analysis_id}/results", response_model=AnalysisHistoryOut, tags=["Analysis History"])
 def update_analysis_results(
@@ -2778,6 +2971,7 @@ async def recalculate_all_accuracy(
             except Exception:
                 pass
 
+
     from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
     rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "pick_rules.json")
     enabled_rules = []
@@ -2790,7 +2984,8 @@ async def recalculate_all_accuracy(
         except Exception:
             pass
 
-    query = db.query(AnalysisHistory).filter(AnalysisHistory.has_odds == True)
+
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.picks_calculados != None)
     if threshold_dt:
         query = query.filter(
             or_(
@@ -2802,6 +2997,7 @@ async def recalculate_all_accuracy(
     total_to_process = len(history_list)
     count = 0
     updated_accuracy_count = 0
+
 
     from sqlalchemy import text as _sql_text
     _q_hist_batch = _sql_text("""
@@ -2818,19 +3014,48 @@ async def recalculate_all_accuracy(
     """)
     shared_historical_records = [dict(r) for r in db.execute(_q_hist_batch).mappings().all()]
 
+
+    # ── Índice por equipo: O(1) lookup en vez de escanear todo el histórico
+    # 1.428 veces. Se construye UNA sola vez para todo el batch. ──
+    _team_index: dict[str, list] = {}
+    for r in shared_historical_records:
+        title = r.get("match_title", "") or ""
+        ht = (r.get("home_team") or (title.split(" vs ")[0] if " vs " in title else "")).strip().lower()
+        at = (r.get("away_team") or (title.split(" vs ")[1] if " vs " in title else "")).strip().lower()
+        if ht:
+            _team_index.setdefault(ht, []).append(r)
+        if at:
+            _team_index.setdefault(at, []).append(r)
+
+
+    import time, sys
+    _timings = {"payload_load": 0.0, "engine_calc": 0.0, "eligibility": 0.0, "db_write": 0.0}
+    _slowest = []
+
+
     for idx, history in enumerate(history_list, start=1):
         m_date = history.match_date or history.date
+        print(
+            f"[{idx}/{total_to_process}] Analizando: {history.match_title} "
+            f"({m_date.strftime('%Y-%m-%d') if m_date else 'sin fecha'}) — id={history.id}",
+            flush=True,
+        )
         try:
             if not history.payload:
                 continue
+
 
             if not _check_payload_has_odds(history.payload):
                 history.has_odds = False
                 continue
 
+
+            t0 = time.perf_counter()
             payload_dict = json.loads(str(history.payload))
             local_payload = dict(payload_dict)
             sport = history.sport
+            _timings["payload_load"] += time.perf_counter() - t0
+
 
             target_use_gen = False
             if use_general_stats:
@@ -2842,10 +3067,13 @@ async def recalculate_all_accuracy(
                 else:
                     target_use_gen = True
 
+
             local_payload["use_general_stats"] = target_use_gen
+
 
             new_response = None
             bookmaker_map: dict = {}
+            t0 = time.perf_counter()
             try:
                 if sport == Sport.FOOTBALL:
                     req = FootballCompareRequest(**local_payload)
@@ -2856,19 +3084,27 @@ async def recalculate_all_accuracy(
                         exclude_match_id=history.id,
                         current_match_date=m_date,
                         precomputed_historical_records=shared_historical_records,
+                        precomputed_team_index=_team_index,
                     )
             except Exception as comp_err:
-                print(f"Error en motor de comparación para {history.id} ({sport}): {comp_err}")
+                print(f"  -> Error en motor de comparación para {history.id} ({sport}): {comp_err}", flush=True)
                 continue
+            finally:
+                dt = time.perf_counter() - t0
+                _timings["engine_calc"] += dt
+                _slowest.append((dt, history.id, history.match_title))
+                print(f"  -> Terminado en {dt:.2f}s", flush=True)
+
 
             if new_response:
                 if bookmaker_map:
                     _annotate_best_bookmaker(new_response, bookmaker_map, req.home.name, req.away.name)
 
-                # 1. Actualizar picks_calculados y snapshot
+
+                t0 = time.perf_counter()
                 picks = [v.model_dump() if hasattr(v, 'model_dump') else v.__dict__ for v in new_response.values]
-                
-                # Evaluar reglas estatísticas de pick_rules.json
+
+
                 if enabled_rules:
                     home_stats = local_payload.get("home", {})
                     away_stats = local_payload.get("away", {})
@@ -2881,9 +3117,13 @@ async def recalculate_all_accuracy(
                             pick["is_publishable"] = False
                             pick["is_value"] = False
                             pick["quality_score"] = -1
+                _timings["eligibility"] += time.perf_counter() - t0
 
+
+                t0 = time.perf_counter()
                 history.picks_calculados = json.dumps(picks)
                 history.compare_response_snapshot = json.dumps(new_response.model_dump() if hasattr(new_response, 'model_dump') else new_response.__dict__)
+
 
                 if history.final_score_home is not None:
                     results_dict = {
@@ -2901,6 +3141,7 @@ async def recalculate_all_accuracy(
                         "final_shots_on_target_away": history.final_shots_on_target_away,
                     }
 
+
                     hits = 0
                     total = 0
                     for pick in picks:
@@ -2914,21 +3155,30 @@ async def recalculate_all_accuracy(
                             if _is_pick_hit(success):
                                 hits += 1
 
+
                     history.accuracy_percentage = (hits / total) * 100 if total > 0 else None
                     updated_accuracy_count += 1
+
 
                 history.last_recalculated_at = datetime.utcnow()
                 history.needs_recalc = False
                 count += 1
+                _timings["db_write"] += time.perf_counter() - t0
         except Exception as e:
             print(f"Error re-analizando registro {history.id}: {e}", flush=True)
 
+
     db.commit()
+    _slowest.sort(reverse=True)
+    print("TIMINGS TOTALES:", _timings, flush=True)
+    print("TOP 10 MÁS LENTOS:", _slowest[:10], flush=True)
     return {
         "message": f"Se han re-analizado {count} partidos. Se actualizó el acierto en {updated_accuracy_count} de ellos.",
         "total_reanalyzed": count,
         "accuracy_updated": updated_accuracy_count,
         "total_to_recalculate": total_to_process,
+        "timings_debug": _timings,
+        "slowest_5": [{"seconds": s, "id": i, "match": m} for s, i, m in _slowest[:5]],
     }
 
 
@@ -3069,6 +3319,7 @@ def apply_blacklist(db: Session = Depends(get_db)):
 
     if updated_count > 0:
         db.commit()
+        _invalidate_stats_cache()
 
     return {
         "status": "ok",
@@ -3126,9 +3377,9 @@ def update_league_profitability(
     """
     Actualiza la rentabilidad de una liga completa y todos sus partidos en el historial.
     """
+    history_list = db.query(AnalysisHistory).filter(AnalysisHistory.competition == league_name).all()
     profitable = get_profitable_leagues()
     if not os.path.exists(PROFITABLE_LEAGUES_PATH):
-        history_list = db.query(AnalysisHistory).all()
         for h in history_list:
             if h.payload and getattr(h, "count_in_profitability", True):
                 try:
@@ -3146,7 +3397,6 @@ def update_league_profitability(
 
     save_profitable_leagues(profitable)
 
-    history_list = db.query(AnalysisHistory).all()
     updated_count = 0
     for h in history_list:
         if h.payload:
@@ -5250,11 +5500,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-<<<<<<< HEAD
-    liga = "Allsvenskan"
-=======
-    liga = "Scottish Premiership"
->>>>>>> d69fcc614fdc00fb85d0d3d6fd3dc0eade385512
+    liga = "VriendenLoterij Eredivisie"
 
     #----------Contar equipos de liga--------------------------------
 
@@ -5268,13 +5514,8 @@ if __name__ == "__main__":
 
     
     ##---------Cambiar nombre de liga---------------
-<<<<<<< HEAD
-    # old_name = "Allsvenskan, Relegation/Promotion"
-    # new_name = "Allsvenskan"
-=======
-    # old_name = "Scottish Premiership, Relegation Round"
-    # new_name = "Scottish Premiership"
->>>>>>> d69fcc614fdc00fb85d0d3d6fd3dc0eade385512
+    # old_name = "VriendenLoterij Eredivisie, Europa Playoffs"
+    # new_name = "VriendenLoterij Eredivisie"
     
     # db = next(get_db())
     # try:
@@ -5316,30 +5557,12 @@ if __name__ == "__main__":
     # try:
                        
     #     # Puedes ir encadenando las demás correcciones usando kwargs:
-<<<<<<< HEAD
-    #     rename_team_matches(old_name="Malmö Ff", new_name="Malmö", competition=liga, db=db)
-    #     rename_team_matches(old_name="Malmo Ff", new_name="Malmö", competition=liga, db=db)
-    #     rename_team_matches(old_name="Ifk Göteborg", new_name="Göteborg", competition=liga, db=db)
-    #     rename_team_matches(old_name="Djurgårdens If", new_name="Djurgården", competition=liga, db=db)
-    #     rename_team_matches(old_name="Djurgardens If", new_name="Djurgården", competition=liga, db=db)
-    #     rename_team_matches(old_name="If Brommapojkarna", new_name="Brommapojkarna", competition=liga, db=db)
-    #     rename_team_matches(old_name="Bp", new_name="Brommapojkarna", competition=liga, db=db)
-    #     rename_team_matches(old_name="Ik Sirius", new_name="Sirius", competition=liga, db=db)
-    #     rename_team_matches(old_name="Bk Häcken", new_name="Häcken", competition=liga, db=db)
-    #     rename_team_matches(old_name="Halmstads Bk", new_name="Halmstad", competition=liga, db=db)
-    #     rename_team_matches(old_name="If Elfsborg", new_name="Elfsborg", competition=liga, db=db)
-    #     rename_team_matches(old_name="Hammarby If", new_name="Hammarby", competition=liga, db=db)
-    #     rename_team_matches(old_name="Mjällby Aif", new_name="Mjällby", competition=liga, db=db)
-    #     rename_team_matches(old_name="Kalmar Ff", new_name="Kalmar", competition=liga, db=db)
-    #     rename_team_matches(old_name="Degerfors If", new_name="Degerfors", competition=liga, db=db)
-    #     rename_team_matches(old_name="Västerås Sk", new_name="Västerås", competition=liga, db=db)
-    #     rename_team_matches(old_name="Vsk", new_name="Västerås", competition=liga, db=db)
-    #     rename_team_matches(old_name="Örgryte Is", new_name="Örgryte", competition=liga, db=db)
-    #     rename_team_matches(old_name="Orgryte Is", new_name="Örgryte", competition=liga, db=db)
-=======
-    #     rename_team_matches(old_name="Heart Of Midlothian", new_name="Hearts", competition=liga, db=db)
-    #     rename_team_matches(old_name="Dundee Fc", new_name="Dundee", competition=liga, db=db)
->>>>>>> d69fcc614fdc00fb85d0d3d6fd3dc0eade385512
+    #     rename_team_matches(old_name="Red Bull Bragantino", new_name="Rb Bragantino", competition=liga, db=db)
+    #     rename_team_matches(old_name="Ca Lanús", new_name="Lanús", competition=liga, db=db)
+    #     rename_team_matches(old_name="Vasco Da Gama", new_name="Vasco", competition=liga, db=db)
+    #     rename_team_matches(old_name="Caracas F.C.", new_name="Caracas", competition=liga, db=db)
+    #     rename_team_matches(old_name="Club Sporting Cristal", new_name="Sporting Cristal", competition=liga, db=db)
+    #     rename_team_matches(old_name="River", new_name="River Plate", competition=liga, db=db)
 
     #     print("Equipos renombrados exitosamente.")
         

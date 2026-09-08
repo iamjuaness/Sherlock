@@ -251,15 +251,43 @@
         <h1 class="header__title">Sherlock</h1>
         <span class="header__tag">Ligas</span>
       </div>
-      <div style="display:flex; align-items:center; gap:0.75rem;">
-        <a href="/rules" style="text-decoration:none; color:var(--text-secondary,#94a3b8); font-size:0.85rem; font-weight:600; padding:0.4rem 0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06); transition:0.2s;" onmouseover="this.style.color='#a5b4fc'" onmouseout="this.style.color='var(--text-secondary,#94a3b8)'">📐 Reglas de Picks</a>
-        <a href="/compare" style="text-decoration:none; color:var(--text-secondary,#94a3b8); font-size:0.85rem; font-weight:600; padding:0.4rem 0.75rem; border-radius:6px; background:rgba(255,255,255,0.03); border:1px solid rgba(255,255,255,0.06);">⚽ Comparador</a>
+      <div style="display: flex; align-items: center; gap: 0.75rem">
+        <a
+          href="/rules"
+          style="
+            text-decoration: none;
+            color: var(--text-secondary, #94a3b8);
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            transition: 0.2s;
+          "
+          onmouseover="this.style.color = '#a5b4fc'"
+          onmouseout="this.style.color = 'var(--text-secondary,#94a3b8)'"
+          >📐 Reglas de Picks</a
+        >
+        <a
+          href="/compare"
+          style="
+            text-decoration: none;
+            color: var(--text-secondary, #94a3b8);
+            font-size: 0.85rem;
+            font-weight: 600;
+            padding: 0.4rem 0.75rem;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+          "
+          >⚽ Comparador</a
+        >
       </div>
       <p class="header__subtitle">
         Desglose detallado por competición, partidos y cuotas evaluadas
       </p>
     </header>
-
 
     <div class="leagues-container">
       <div id="leagues-loader" class="dashboard-loader">
@@ -360,17 +388,79 @@
         <!-- Columna Derecha: Detalles de la Liga seleccionada -->
         <div id="league-detail-section">
           <div class="detail-header">
-            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem;">
-              <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-                <div class="detail-header__title" id="selected-league-name" style="margin-bottom: 0;">
+            <div
+              style="
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 1rem;
+                margin-bottom: 1rem;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 0.75rem;
+                  flex-wrap: wrap;
+                "
+              >
+                <div
+                  class="detail-header__title"
+                  id="selected-league-name"
+                  style="margin-bottom: 0"
+                >
                   Selecciona una liga
                 </div>
-                <label id="league-profit-toggle-card" style="display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.85rem; font-weight: 600; color: var(--text-muted); cursor: pointer; user-select: none; background: rgba(255,255,255,0.03); padding: 5px 12px; border-radius: 6px; border: 1px solid var(--border);">
-                  <input type="checkbox" id="chk-league-profitability" style="width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer;" onchange="toggleActiveLeagueProfitability(this.checked)" />
+                <label
+                  id="league-profit-toggle-card"
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 0.4rem;
+                    font-size: 0.85rem;
+                    font-weight: 600;
+                    color: var(--text-muted);
+                    cursor: pointer;
+                    user-select: none;
+                    background: rgba(255, 255, 255, 0.03);
+                    padding: 5px 12px;
+                    border-radius: 6px;
+                    border: 1px solid var(--border);
+                  "
+                >
+                  <input
+                    type="checkbox"
+                    id="chk-league-profitability"
+                    style="
+                      width: 15px;
+                      height: 15px;
+                      accent-color: var(--accent);
+                      cursor: pointer;
+                    "
+                    onchange="toggleActiveLeagueProfitability(this.checked)"
+                  />
                   <span>Contar en Rentabilidad</span>
                 </label>
               </div>
-              <button id="btn-delete-league" onclick="deleteCurrentLeague()" style="background: rgba(239, 68, 68, 0.15); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.3); padding: 0.4rem 0.85rem; border-radius: 6px; font-weight: 600; font-size: 0.8rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.3)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.15)'">
+              <button
+                id="btn-delete-league"
+                onclick="deleteCurrentLeague()"
+                style="
+                  background: rgba(239, 68, 68, 0.15);
+                  color: var(--red);
+                  border: 1px solid rgba(239, 68, 68, 0.3);
+                  padding: 0.4rem 0.85rem;
+                  border-radius: 6px;
+                  font-weight: 600;
+                  font-size: 0.8rem;
+                  cursor: pointer;
+                  transition: 0.2s;
+                "
+                onmouseover="this.style.background = 'rgba(239, 68, 68, 0.3)'"
+                onmouseout="this.style.background = 'rgba(239, 68, 68, 0.15)'"
+              >
                 🗑️ Eliminar competición
               </button>
             </div>

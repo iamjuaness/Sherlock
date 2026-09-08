@@ -1,162 +1,189 @@
 """
-audit_calibration_tail.py
-
-Diagnóstico de calibración probabilística de Sherlock, enfocado en detectar
-en qué segmento (mercado / liga) se concentra la sobreconfianza del bin
-90-100%, y cuánto la corrige el HierarchicalCalibrator ya existente.
-
-Reutiliza exactamente la misma extracción que usa el entrenamiento oficial
-(`src.core.train_calibration`), para no duplicar lógica de resolución de
-mercados ni de settlement.
-
-Uso:
-    python audit_calibration_tail.py
-    python audit_calibration_tail.py --limit 5000 --tail-threshold 0.9
+Script para eliminar parámetros de cuotas (odds, sources, bookmaker, markets, etc.)
+en analysis_history para partidos anteriores al 1 de julio de 2026 
+donde (has_odds == 1 O el payload contiene cuotas).
 """
 
 from __future__ import annotations
 
-import argparse
 import json
-from collections import defaultdict
+import logging
+from datetime import datetime
 
-from src.core.train_calibration import load_rows_from_db, extract_samples
-from src.models.calibration import (
-    CalibrationSample,
-    HierarchicalCalibrator,
-    reliability_table,
-    walk_forward_calibrate,
-)
+from src.core.database import SessionLocal
+from src.core.domain import AnalysisHistory
 
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logger = logging.getLogger("clean_odds")
 
-def print_reliability_table(title: str, probs, outcomes, n_bins: int = 10) -> None:
-    print(f"\n=== {title} ===")
-    table = reliability_table(probs, outcomes, n_bins=n_bins)
-    print(f"{'bin':<12}{'n':>6}{'confianza':>12}{'acierto real':>14}{'gap':>10}")
-    for row in table:
-        if row["n"] == 0:
-            continue
-        bin_label = f"({row['lo']*100:.0f},{row['hi']*100:.0f}]"
-        print(
-            f"{bin_label:<12}{row['n']:>6}{row['confidence']*100:>11.1f}%"
-            f"{row['accuracy']*100:>13.1f}%{row['gap']*100:>9.1f}pp"
-        )
+CUTOFF_DATE = datetime(2026, 7, 1, 0, 0, 0)
+
+ODDS_KEYS_PATTERNS = {
+    "odds", "cuotas", "sources", "bookmaker", "bookmakers",
+    "betting_lines", "betting", "markets", "picks_odds",
+    "prematchodds", "liveodds", "lines"
+}
 
 
-def top_bin_breakdown_by_family(samples: list[CalibrationSample], lo: float = 0.90) -> None:
-    """
-    Descompone el bin de probabilidad >= `lo` por market_family, para ver si
-    la sobreconfianza se concentra en un mercado puntual (ej. favoritos en
-    'result' o 'double_chance') o es transversal a todos los mercados.
-    """
-    by_family: dict[str, list[CalibrationSample]] = defaultdict(list)
-    for s in samples:
-        if s.normalized_prob() >= lo:
-            by_family[s.market_family or "generic"].append(s)
+def parse_any_date(val) -> datetime | None:
+    """Parsea formatos de fecha en string, timestamps o datetimes."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val
+    if isinstance(val, (int, float)):
+        if val > 1e11:
+            val = val / 1000.0
+        try:
+            return datetime.utcfromtimestamp(val)
+        except Exception:
+            return None
+    if isinstance(val, str):
+        val_clean = val.strip().replace("Z", "")
+        if val_clean.isdigit():
+            ts = float(val_clean)
+            if ts > 1e11:
+                ts = ts / 1000.0
+            try:
+                return datetime.utcfromtimestamp(ts)
+            except Exception:
+                pass
 
-    print(f"\n=== Desglose del bin >= {lo*100:.0f}% por market_family ===")
-    print(f"{'family':<18}{'n':>6}{'confianza':>12}{'acierto real':>14}{'gap':>10}")
-    rows = []
-    for fam, subset in by_family.items():
-        n = len(subset)
-        conf = sum(s.normalized_prob() for s in subset) / n
-        acc = sum(s.hit_value for s in subset) / n
-        rows.append((fam, n, conf, acc))
-    rows.sort(key=lambda r: -r[1])
-    for fam, n, conf, acc in rows:
-        gap = acc - conf
-        print(f"{fam:<18}{n:>6}{conf*100:>11.1f}%{acc*100:>13.1f}%{gap*100:>9.1f}pp")
+        date_formats = [
+            "%Y-%m-%d %H:%M:%S.%f",
+            "%Y-%m-%d %H:%M:%S",
+            "%Y-%m-%dT%H:%M:%S.%f",
+            "%Y-%m-%dT%H:%M:%S",
+            "%Y-%m-%d",
+            "%d/%m/%Y %H:%M:%S",
+            "%d/%m/%Y %H:%M",
+            "%d/%m/%Y",
+            "%m/%d/%Y %H:%M:%S",
+            "%m/%d/%Y",
+        ]
+        for fmt in date_formats:
+            try:
+                return datetime.strptime(val_clean, fmt)
+            except Exception:
+                pass
+        try:
+            return datetime.fromisoformat(val_clean)
+        except Exception:
+            pass
+    return None
 
 
-def top_bin_breakdown_by_league(samples: list[CalibrationSample], lo: float = 0.90) -> None:
-    """
-    Igual que arriba pero por liga: si son 3-4 ligas las que concentran el
-    problema, la corrección debería ir a nivel liga×familia, no global.
-    """
-    by_league: dict[str, list[CalibrationSample]] = defaultdict(list)
-    for s in samples:
-        if s.normalized_prob() >= lo:
-            by_league[s.league or "?"].append(s)
-
-    print(f"\n=== Desglose del bin >= {lo*100:.0f}% por liga ===")
-    print(f"{'liga':<28}{'n':>6}{'confianza':>12}{'acierto real':>14}{'gap':>10}")
-    rows = []
-    for lg, subset in by_league.items():
-        n = len(subset)
-        conf = sum(s.normalized_prob() for s in subset) / n
-        acc = sum(s.hit_value for s in subset) / n
-        rows.append((lg, n, conf, acc))
-    rows.sort(key=lambda r: -r[1])
-    for lg, n, conf, acc in rows:
-        gap = acc - conf
-        print(f"{lg:<28}{n:>6}{conf*100:>11.1f}%{acc*100:>13.1f}%{gap*100:>9.1f}pp")
+def payload_contains_odds(obj) -> bool:
+    """Verifica recursivamente si el payload contiene alguna clave de cuotas."""
+    if isinstance(obj, dict):
+        for k, v in obj.items():
+            if k.lower() in ODDS_KEYS_PATTERNS:
+                return True
+            if payload_contains_odds(v):
+                return True
+    elif isinstance(obj, list):
+        for item in obj:
+            if payload_contains_odds(item):
+                return True
+    return False
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser(description="Audita la calibración en la cola 90-100%.")
-    ap.add_argument("--limit", type=int, default=None)
-    ap.add_argument("--allow-missing-timestamp", action="store_true")
-    ap.add_argument("--tail-threshold", type=float, default=0.90,
-                     help="Umbral de probabilidad RAW que define 'la cola alta' (0-1).")
-    ap.add_argument("--folds", type=int, default=5)
-    ap.add_argument("--prior-strength", type=float, default=25.0)
-    ap.add_argument("--min-samples", type=float, default=40.0)
-    args = ap.parse_args()
+def purge_odds_recursively(obj) -> bool:
+    """Recorre recursivamente un dict/list y elimina claves relacionadas a cuotas."""
+    changed = False
+    if isinstance(obj, dict):
+        keys_to_del = [k for k in obj if k.lower() in ODDS_KEYS_PATTERNS]
+        for k in keys_to_del:
+            del obj[k]
+            changed = True
+        for v in obj.values():
+            if purge_odds_recursively(v):
+                changed = True
+    elif isinstance(obj, list):
+        for item in obj:
+            if purge_odds_recursively(item):
+                changed = True
+    return changed
 
-    print("Cargando picks liquidados desde analysis_history...")
-    rows = load_rows_from_db(limit=args.limit)
-    samples, stats = extract_samples(rows, require_timestamp=not args.allow_missing_timestamp)
-    print(stats.summary())
 
-    if not samples:
-        print("Sin muestras suficientes para auditar. Revisa la extracción.")
-        return
+def purge_odds_before_cutoff(cutoff_date: datetime = CUTOFF_DATE, dry_run: bool = False) -> int:
+    """Limpia registros previos a cutoff_date donde has_odds == 1 O el payload contenga cuotas."""
+    session = SessionLocal()
+    records_updated = 0
 
-    raw_probs = [s.normalized_prob() for s in samples]
-    outcomes = [s.hit_value for s in samples]
+    try:
+        records = session.query(AnalysisHistory).all()
+        logger.info("Total registros evaluados en base de datos: %d", len(records))
 
-    # 1. Tabla de reliability cruda (equivalente a la tabla que ya calculaste).
-    print_reliability_table("Reliability cruda (sin calibrar), 10 bins", raw_probs, outcomes)
+        for record in records:
+            payload_data = {}
+            if record.payload:
+                try:
+                    payload_data = (
+                        json.loads(record.payload)
+                        if isinstance(record.payload, str)
+                        else record.payload
+                    )
+                except Exception:
+                    pass
 
-    # 2. Desglose del bin problemático por mercado y por liga.
-    top_bin_breakdown_by_family(samples, lo=args.tail_threshold)
-    top_bin_breakdown_by_league(samples, lo=args.tail_threshold)
+            # 1. Extraer y evaluar fecha
+            m_date = (
+                parse_any_date(record.match_date)
+                or parse_any_date(record.date)
+                or (isinstance(payload_data, dict) and parse_any_date(payload_data.get("match_date")))
+                or (isinstance(payload_data, dict) and parse_any_date(payload_data.get("date")))
+                or (isinstance(payload_data, dict) and parse_any_date(payload_data.get("startTimestamp")))
+            )
 
-    # 3. Validación walk-forward: ¿el calibrador jerárquico corrige la cola
-    #    fuera de muestra, sin fuga temporal?
-    print("\n=== Walk-forward out-of-fold (curva entrenada solo con datos previos) ===")
-    wf = walk_forward_calibrate(
-        samples, n_folds=args.folds,
-        prior_strength=args.prior_strength, min_samples=args.min_samples,
-        min_train=args.min_samples,
-    )
-    metrics = wf.metrics()
-    print(json.dumps(metrics, indent=2, ensure_ascii=False))
+            # Filtro 1: Debe ser anterior al 1 de julio de 2026
+            if m_date and m_date >= cutoff_date:
+                continue
 
-    if wf.outcomes:
-        print_reliability_table(
-            "Reliability CALIBRADA out-of-fold, 10 bins",
-            wf.calibrated_probs, wf.outcomes,
-        )
+            # Filtro 2: has_odds == 1 (o True) O el payload contiene cuotas
+            has_odds_flag = bool(record.has_odds == 1 or record.has_odds is True)
+            has_odds_in_payload = payload_contains_odds(payload_data)
 
-    # 4. Curva final ajustada con TODO el histórico (solo para inspección;
-    #    la promoción real a producción la hace src/core/train_calibration.py
-    #    con su propia regla de mejora Brier + log loss).
-    calibrator = HierarchicalCalibrator.fit(
-        samples, prior_strength=args.prior_strength, min_samples=args.min_samples,
-    )
-    print("\n=== Segmentos con curva propia (>= min_samples) ===")
-    for key in sorted(calibrator.curves):
-        curve = calibrator.curves[key]
-        if curve.is_identity:
-            continue
-        print(f"  {key}  (n={curve.n_samples:.0f})")
+            if not (has_odds_flag or has_odds_in_payload):
+                continue
 
-    print("\n=== Ejemplo: aplicar calibración a un pick con prob=0.95 ===")
-    for fam in ("result", "double_chance", "goals", "generic"):
-        corrected = calibrator.apply(0.95, market_family=fam, league=None)
-        print(f"  familia={fam:<15} 95% -> {corrected*100:.1f}%")
+            # 3. Limpiar recursivamente el payload
+            purge_odds_recursively(payload_data)
+
+            records_updated += 1
+            logger.info(
+                "Limpiando ID: %s | Partido: %s | Fecha: %s | has_odds: %s | en_payload: %s",
+                record.id,
+                record.match_title,
+                m_date.strftime("%Y-%m-%d") if m_date else "Sin fecha",
+                has_odds_flag,
+                has_odds_in_payload,
+            )
+
+            if not dry_run:
+                record.payload = json.dumps(payload_data, ensure_ascii=False)
+                record.has_odds = False
+                record.bookmaker = None
+                record.stake_units = None
+                record.needs_recalc = True
+
+        if not dry_run:
+            session.commit()
+            logger.info("Operación exitosa: %d registros limpiados y guardados.", records_updated)
+        else:
+            session.rollback()
+            logger.info("[DRY RUN] Se habrían actualizado %d registros (sin guardar cambios).", records_updated)
+
+    except Exception as exc:
+        session.rollback()
+        logger.exception("Error durante la eliminación de cuotas: %s", exc)
+        raise
+    finally:
+        session.close()
+
+    return records_updated
 
 
 if __name__ == "__main__":
-    main()
+    # Cambia dry_run a False para ejecutar y persistir los cambios
+    purge_odds_before_cutoff(dry_run=True)

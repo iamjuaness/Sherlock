@@ -46,8 +46,8 @@ document.addEventListener("DOMContentLoaded", () => {
       if (savedDate) {
         generalStatsDate.value = savedDate;
       } else {
-        generalStatsDate.value = "2026-07-01";
-        localStorage.setItem("general_stats_threshold_date", "2026-07-01");
+        generalStatsDate.value = "2026-01-01";
+        localStorage.setItem("general_stats_threshold_date", "2026-01-01");
       }
       generalStatsDate.style.display = useGeneralCheck.checked
         ? "inline-block"
@@ -159,7 +159,7 @@ async function triggerRecalculateAndFetch() {
   const useGeneral = useGeneralCheck ? useGeneralCheck.checked : false;
   const thresholdDate = generalStatsDate
     ? generalStatsDate.value
-    : "2026-07-01";
+    : "2026-01-01";
 
   const loader = document.getElementById("loader");
   const content = document.getElementById("dashboard-content");

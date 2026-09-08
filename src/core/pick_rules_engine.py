@@ -42,7 +42,9 @@ que el notebook midió. Dos particularidades a tener en cuenta:
 
 from __future__ import annotations
 
+import json
 import logging
+import os
 import re
 from dataclasses import dataclass
 from typing import Any, Callable, Optional, Union
@@ -333,16 +335,14 @@ DEFAULT_FALLBACK_EXCLUSIVE_GROUPS: list[list[str]] = [
 ]
 
 DEFAULT_CORRELATION_RULES: dict[str, Any] = {
-    "max_picks_per_event": 2,
-    "max_stake_per_event": 3.5,
     # Nueva fuente de verdad: matriz medida sobre el histórico real, con
     # claves familia_lado (ver market_group()).
     "correlation_matrix_path": "data/market_correlation.json",
-    "block_above_abs_rho": 0.6,
-    "penalize_above_abs_rho": 0.3,
+    "block_above_abs_rho": 0.3,
+    "penalize_above_abs_rho": 0.2,
     # Factor por el que se multiplica el stake cuando el par cae en zona de
-    # penalización (no de bloqueo). 0.5 = recorta el stake a la mitad.
-    "penalty_stake_factor": 0.5,
+    # penalización (no de bloqueo). 0.25 = recorta el stake a 25%.
+    "penalty_stake_factor": 0.25,
     # Se usa solo cuando NO hay rho medido con muestra confiable para el par
     # (evaluado sobre la familia gruesa, no sobre familia_lado).
     "fallback_exclusive_groups": DEFAULT_FALLBACK_EXCLUSIVE_GROUPS,
@@ -354,35 +354,37 @@ DEFAULT_CORRELATION_RULES: dict[str, Any] = {
 
 _correlation_matrix_cache: dict[str, dict[tuple[str, str], float]] = {}
 
+def _resolve_data_path(relative_or_abs_path: Optional[str]) -> str:
+    if relative_or_abs_path and os.path.isabs(relative_or_abs_path) and os.path.exists(relative_or_abs_path):
+        return relative_or_abs_path
+
+    # Posibles rutas relativas al proyecto Sherlock
+    candidates = [
+        relative_or_abs_path,
+        os.path.join(os.path.dirname(__file__), "..", "..", relative_or_abs_path or "data/market_correlation.json"),
+        os.path.join(os.path.dirname(__file__), "..", relative_or_abs_path or "data/market_correlation.json"),
+        os.path.join(os.getcwd(), relative_or_abs_path or "data/market_correlation.json"),
+        os.path.join(os.getcwd(), "data", "market_correlation.json"),
+    ]
+
+    for cand in candidates:
+        if cand and os.path.exists(cand):
+            return os.path.abspath(cand)
+
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "data", "market_correlation.json"))
+
 
 def load_market_correlation_matrix(path: Optional[str] = None) -> dict[tuple[str, str], float]:
-    """
-    Carga `data/market_correlation.json` (exportado por
-    `sherlock_picks_audit_notebook.ipynb`) y devuelve un dict
-    {(group_a, group_b): rho} con ambos órdenes de clave disponibles.
-    Las claves del JSON son familia_lado (ej. "goals_over", "btts_yes"),
-    generadas por `market_group_key()` en el notebook — deben construirse
-    igual en este módulo vía `market_group()` para que las búsquedas calcen.
+    resolved_path = _resolve_data_path(path)
+    cache_key = resolved_path
 
-    Cacheado en memoria por ruta: este archivo se regenera corriendo el
-    notebook, no en cada request, así que no hace falta releerlo en cada
-    llamada. Si el archivo no existe o está corrupto, devuelve un dict vacío
-    y el llamador cae en `fallback_exclusive_groups` para todos los pares.
-    """
-    import os
-    import json
-
-    if path is None:
-        path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "market_correlation.json")
-
-    cache_key = os.path.abspath(path)
     if cache_key in _correlation_matrix_cache:
         return _correlation_matrix_cache[cache_key]
 
     matrix: dict[tuple[str, str], float] = {}
-    if os.path.exists(path):
+    if os.path.exists(resolved_path):
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(resolved_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
             for pair in data.get("pairs", []):
                 rho = pair.get("rho")
@@ -393,12 +395,11 @@ def load_market_correlation_matrix(path: Optional[str] = None) -> dict[tuple[str
                 matrix[(fam_a, fam_b)] = float(rho)
                 matrix[(fam_b, fam_a)] = float(rho)
         except Exception as e:
-            logger.error("Error cargando matriz de correlación desde %s: %s", path, e)
+            logger.error("Error cargando matriz de correlación desde %s: %s", resolved_path, e)
     else:
         logger.warning(
-            "pick_rules: no se encontró %s. Corre sherlock_picks_audit_notebook.ipynb "
-            "(sección de correlación) para generarlo. Usando solo fallback_exclusive_groups.",
-            path,
+            "pick_rules: no se encontró archivo de correlación en %s. Usando fallback_exclusive_groups.",
+            resolved_path,
         )
 
     _correlation_matrix_cache[cache_key] = matrix
@@ -411,7 +412,6 @@ def clear_correlation_matrix_cache() -> None:
 
 
 def market_correlation_rho(group_a: str, group_b: str, matrix: dict[tuple[str, str], float]) -> Optional[float]:
-    """rho medido entre dos claves familia_lado, o None si no hay dato confiable."""
     if group_a == group_b:
         return 1.0
     return matrix.get((group_a, group_b))
@@ -424,25 +424,9 @@ def classify_correlation_severity(
     family_b: str,
     matrix: dict[tuple[str, str], float],
     fallback_exclusive_groups: list[list[str]],
-    block_above_abs_rho: float = 0.5,
-    penalize_above_abs_rho: float = 0.3,
+    block_above_abs_rho: float = 0.3,
+    penalize_above_abs_rho: float = 0.2,
 ) -> tuple[str, Optional[float]]:
-    """
-    Decide qué hacer con un par de picks presentes en el mismo evento.
-
-    group_a / group_b: clave fina familia_lado (market_group()), usada para
-    buscar el rho medido en la matriz — es la que de verdad importa para la
-    decisión cuando hay evidencia.
-
-    family_a / family_b: familia gruesa (market_family()), usada SOLO como
-    respaldo cuando no hay rho medido para el par fino — el fallback nunca
-    tuvo, ni tiene ahora, granularidad de lado.
-
-    Devuelve (severidad, rho) donde severidad es una de:
-      - "block"     -> bloqueo duro (rho medido alto, o par en fallback list sin dato)
-      - "penalize"  -> reducir stake, no bloquear (rho medido moderado)
-      - "ok"        -> sin restricción (rho medido bajo)
-    """
     rho = market_correlation_rho(group_a, group_b, matrix)
 
     if rho is not None:
@@ -452,6 +436,13 @@ def classify_correlation_severity(
         if abs_rho >= penalize_above_abs_rho:
             return "penalize", rho
         return "ok", rho
+
+    # Fallback por familia si no hay correlación empírica calculada
+    for group in fallback_exclusive_groups:
+        if family_a in group and family_b in group and family_a != family_b:
+            return "block", None
+
+    return "ok", None
 
     # Sin dato confiable a nivel fino: cae en la lista de familias aún no
     # confirmadas/descartadas con datos (evaluada a nivel de familia gruesa).
@@ -494,11 +485,10 @@ def load_pick_rules_data(rules_path: Optional[str] = None) -> tuple[list[dict], 
 
 
 def _risk_imports():
-    """Import diferido para no crear un ciclo con la capa de dominio."""
     from src.domain.eligibility import BlockReason, is_hard_blocked, record_hard_block
     from src.domain.risk import load_risk_limits
-
     return BlockReason, is_hard_blocked, record_hard_block, load_risk_limits
+
 
 
 def resolve_match_picks_correlation(
@@ -507,24 +497,6 @@ def resolve_match_picks_correlation(
     max_picks_per_match: Optional[int] = None,
     max_total_stake: Optional[float] = None,
 ) -> list[Any]:
-    """
-    Filtra picks correlacionados en un mismo evento garantizando
-    la máxima expectativa matemática sin sobreexposición de varianza.
-
-    Soporta tanto objetos (ValueIndicator) como diccionarios.
-
-    Regla A (misma familia gruesa) sigue operando sobre `market_family()`:
-    Over 2.5 y Under 2.5 de goles son la misma "familia" y no pueden
-    convivir, sea cual sea su correlación medida — apostar ambos lados del
-    mismo mercado no es diversificación, es una contradicción.
-
-    Regla B (correlación cruzada) ahora usa `market_group()` (familia_lado)
-    para consultar `data/market_correlation.json`: goals_over↔btts_yes tiene
-    un rho medido distinto de goals_under↔btts_yes, y agregarlos bajo la
-    misma familia gruesa diluía esa diferencia real. Solo cuando no hay rho
-    medido para el par fino se cae en `fallback_exclusive_groups`, evaluado
-    sobre la familia gruesa.
-    """
     if not candidates:
         return candidates
 
@@ -533,9 +505,6 @@ def resolve_match_picks_correlation(
 
     BlockReason, is_hard_blocked, record_hard_block, load_risk_limits = _risk_imports()
 
-    # Los topes salen de la politica de riesgo, no directamente del JSON: alli
-    # se recortan contra el techo duro del codigo, de modo que editar
-    # pick_rules.json solo puede apretar la exposicion, nunca ampliarla.
     limits = load_risk_limits(correlation_rules)
     max_picks = max_picks_per_match if max_picks_per_match is not None else limits.max_picks_per_event
     max_stake = max_total_stake if max_total_stake is not None else limits.max_stake_per_event
@@ -544,21 +513,21 @@ def resolve_match_picks_correlation(
         "fallback_exclusive_groups",
         correlation_rules.get("exclusive_groups", DEFAULT_FALLBACK_EXCLUSIVE_GROUPS),
     )
-    block_above_abs_rho = float(correlation_rules.get("block_above_abs_rho", 0.5))
-    penalize_above_abs_rho = float(correlation_rules.get("penalize_above_abs_rho", 0.3))
-    penalty_stake_factor = float(correlation_rules.get("penalty_stake_factor", 0.5))
+    # Umbrales consistentes con DEFAULT_CORRELATION_RULES (0.3 y 0.2)
+    block_above_abs_rho = float(correlation_rules.get("block_above_abs_rho", 0.3))
+    penalize_above_abs_rho = float(correlation_rules.get("penalize_above_abs_rho", 0.2))
+    penalty_stake_factor = float(correlation_rules.get("penalty_stake_factor", 0.25))
+
     correlation_matrix = load_market_correlation_matrix(
         correlation_rules.get("correlation_matrix_path")
     )
 
-    # Kill switch: si la publicacion esta detenida, ningun pick sale de aqui
-    # marcado como publicable.
     if not limits.allows_publication:
         for pick in candidates:
             record_hard_block(
                 pick,
                 BlockReason.MANUAL_BLOCK,
-                detail="Publicacion detenida por kill switch",
+                detail="Publicación detenida por kill switch",
             )
         return candidates
 
@@ -576,12 +545,7 @@ def resolve_match_picks_correlation(
             except (AttributeError, ValueError):
                 pass
 
-    # 1. Filtrar solo picks activos/publicables que no estén ya bloqueados por blacklist o reglas
     def is_candidate_valid(v: Any) -> bool:
-        # Antes solo se descartaban is_blacklisted e is_rule_blocked, asi que un
-        # pick ya bloqueado por correlacion volvia a competir si esta funcion se
-        # ejecutaba dos veces sobre la misma lista. `is_hard_blocked` cubre todos
-        # los motivos duros de una vez, incluidos los que se anadan despues.
         if is_hard_blocked(v):
             return False
         pub = get_attr(v, "is_publishable", False)
@@ -593,7 +557,6 @@ def resolve_match_picks_correlation(
     if len(valid_picks) <= 1 and max_picks >= 1:
         return candidates
 
-    # 2. Ordenar por mérito (Display Score, Edge EV, Edge, Quality Score descendente + Desempate por Selección)
     def pick_merit_score(x: Any) -> tuple[float, float, float, float, str]:
         ds = get_attr(x, "display_score") or 0.0
         ev = get_attr(x, "edge_ev") or 0.0
@@ -605,7 +568,7 @@ def resolve_match_picks_correlation(
     valid_picks.sort(key=pick_merit_score, reverse=True)
 
     selected_families: set[str] = set()
-    selected_items: list[tuple[str, str, str, Optional[float]]] = []  # (family, group, side, line) de picks ya aceptados
+    selected_items: list[tuple[str, str, str, Optional[float]]] = []  # (family, group, side, line)
     accepted_picks: list[Any] = []
     current_stake: float = 0.0
 
@@ -622,7 +585,11 @@ def resolve_match_picks_correlation(
         for sfam, sgrp, sside, sline in selected_items:
             if family == sfam:
                 if line is not None and sline is not None and line == sline:
-                    opposite_pairs = {("over", "under"), ("under", "over"), ("yes", "no"), ("no", "yes"), ("home", "away"), ("away", "home")}
+                    opposite_pairs = {
+                        ("over", "under"), ("under", "over"),
+                        ("yes", "no"), ("no", "yes"),
+                        ("home", "away"), ("away", "home"),
+                    }
                     if (side, sside) in opposite_pairs:
                         is_same_line_opposite = True
                         break
@@ -635,10 +602,7 @@ def resolve_match_picks_correlation(
             )
             continue
 
-        # Regla B: Correlación cruzada entre picks, basada en evidencia medida
-        # a nivel familia_lado (market_group). Prioridad: rho real de
-        # data/market_correlation.json. Si no hay dato confiable para el par
-        # fino, se consulta fallback_exclusive_groups sobre la familia gruesa.
+        # Regla B: Correlación cruzada entre picks
         is_excluded = False
         excluded_reason = ""
         applied_penalty = False
@@ -682,9 +646,6 @@ def resolve_match_picks_correlation(
             continue
 
         if applied_penalty:
-            # No se bloquea: se reduce el stake para reflejar que este pick
-            # comparte riesgo con otro ya aceptado en el evento, en vez de
-            # descartar un pick que sigue teniendo EV propio.
             penalized_stake = round(stake * penalty_stake_factor, 4)
             set_attr(pick, "stake_units", penalized_stake)
             set_attr(pick, "correlation_penalty_applied", True)
@@ -697,7 +658,6 @@ def resolve_match_picks_correlation(
             )
             stake = penalized_stake
 
-        # Pick aceptado
         selected_families.add(family)
         selected_items.append((family, group, side, line))
         accepted_picks.append(pick)

@@ -33,6 +33,22 @@ function switchView(view) {
     tabMatches && tabMatches.classList.add("active");
   } else {
     tabMarkets && tabMarkets.classList.add("active");
+    // Si entramos a mercados y la liga activa no tiene los mercados cargados en memory, pedirlos de forma rápida
+    if (activeLeague) {
+      const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
+      if (leagueInfo && !leagueInfo.markets) {
+        const useStake = localStorage.getItem("use_stake_system") === "true";
+        fetch(
+          `/api/v1/leagues/${encodeURIComponent(activeLeague)}/markets?use_stake=${useStake}`,
+        )
+          .then((r) => r.json())
+          .then((m) => {
+            leagueInfo.markets = m;
+            if (activeView === "markets") renderFilteredMatches();
+          })
+          .catch(() => {});
+      }
+    }
   }
   renderFilteredMatches();
 }
@@ -125,17 +141,17 @@ function selectLeague(name) {
 
   // Render stats DIRECTAMENTE desde leaguesData (backend)
   document.getElementById("selected-league-name").textContent = leagueInfo.name;
-  document.getElementById("lbl-total-matches").textContent =
-    leagueInfo.total_matches;
-  document.getElementById("lbl-total-picks").textContent =
-    leagueInfo.total_picks;
-  document.getElementById("lbl-accuracy").textContent =
-    `${leagueInfo.accuracy}%`;
+  // document.getElementById("lbl-total-matches").textContent =
+  //   leagueInfo.total_matches;
+  // document.getElementById("lbl-total-picks").textContent =
+  //   leagueInfo.total_picks;
+  // document.getElementById("lbl-accuracy").textContent =
+  //   `${leagueInfo.accuracy}%`;
 
-  const profitEl = document.getElementById("lbl-profit");
-  profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
-  profitEl.style.color =
-    leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
+  // const profitEl = document.getElementById("lbl-profit");
+  // profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
+  // profitEl.style.color =
+  //   leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
 
   const chkProf = document.getElementById("chk-league-profitability");
   if (chkProf) {
@@ -566,135 +582,157 @@ function renderMatchesView(filtered, matchesContainer) {
 
 function renderMarketsView(filtered, matchesContainer) {
   const useStake = localStorage.getItem("use_stake_system") === "true";
-  const marketMap = {};
+  let markets = [];
 
-  filtered.forEach((match) => {
-    // Build success map
-    const successMap = {};
-    try {
-      const snap = match.compare_response_snapshot;
-      if (snap && snap.values && Array.isArray(snap.values)) {
-        snap.values.forEach((v) => {
-          const key = (v.selection || "").toLowerCase();
-          if (key) successMap[key] = v.success;
-        });
-      }
-    } catch (_) {}
+  if (activeSeason === "all" && activeLeague) {
+    const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
+    if (
+      leagueInfo &&
+      Array.isArray(leagueInfo.markets) &&
+      leagueInfo.markets.length > 0
+    ) {
+      markets = leagueInfo.markets;
+    }
+  }
 
-    const rawPicks = Array.isArray(match.picks_calculados)
-      ? match.picks_calculados
-      : [];
+  if (!markets || markets.length === 0) {
+    const marketMap = {};
 
-    const visiblePicks = rawPicks.filter(
-      (p) => p.is_publishable || p.is_underdog || p.is_value,
-    );
+    filtered.forEach((match) => {
+      // Si el partido está excluido de rentabilidad, no incluir sus picks en la data de mercado (al igual que la cabecera)
+      if (match.count_in_profitability === false) return;
 
-    visiblePicks.forEach((pick) => {
-      const originalSel = pick.selection || "N/A";
-      let selKey = originalSel.trim();
-      const lowerSel = selKey.toLowerCase();
-
-      // Determine category for Over/Under markets
-      let category = "";
-      if (lowerSel.includes("corner") || lowerSel.includes("córner")) {
-        category = "Córners";
-      } else if (
-        lowerSel.includes("tarjeta") ||
-        lowerSel.includes("card") ||
-        lowerSel.includes("amarilla")
-      ) {
-        category = "Tarjetas";
-      } else if (lowerSel.includes("foul") || lowerSel.includes("falta")) {
-        category = "Faltas";
-      } else if (
-        lowerSel.includes("shot_target") ||
-        lowerSel.includes("tiro_a_puerta") ||
-        lowerSel.includes("shots_target") ||
-        lowerSel.includes("pta")
-      ) {
-        category = "Tiros a puerta";
-      } else if (
-        lowerSel.includes("shot") ||
-        lowerSel.includes("tiro") ||
-        lowerSel.includes("remate")
-      ) {
-        category = "Tiros";
-      } else if (lowerSel.includes("goal") || lowerSel.includes("gol")) {
-        category = "Goles";
-      }
-
-      if (category) {
-        if (
-          lowerSel.includes("over") ||
-          lowerSel.includes("más de") ||
-          lowerSel.includes("mas de")
-        ) {
-          selKey = `Over ${category}`;
-        } else if (
-          lowerSel.includes("under") ||
-          lowerSel.includes("menos de")
-        ) {
-          selKey = `Under ${category}`;
+      // Build success map
+      const successMap = {};
+      try {
+        const snap = match.compare_response_snapshot;
+        if (snap && snap.values && Array.isArray(snap.values)) {
+          snap.values.forEach((v) => {
+            const key = (v.selection || "").toLowerCase();
+            if (key) successMap[key] = v.success;
+          });
         }
-      }
-      const odds =
-        typeof pick.odds === "number" ? pick.odds : parseFloat(pick.odds) || 0;
-      let success = pick.success;
-      if (success === undefined || success === null) {
-        success = successMap[originalSel.toLowerCase()];
-      }
+      } catch (_) {}
 
-      const pickStake = useStake
-        ? pick.stake_units !== undefined && pick.stake_units !== null
-          ? pick.stake_units
-          : pick.kelly_fraction > 0
-            ? Math.min(
-                MAX_STAKE,
-                Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
-              )
-            : MIN_STAKE
-        : MIN_STAKE;
+      const rawPicks = Array.isArray(match.picks_calculados)
+        ? match.picks_calculados
+        : [];
 
-      if (!marketMap[selKey]) {
-        marketMap[selKey] = {
-          name: selKey,
-          totalPicks: 0,
-          ganados: 0,
-          perdidos: 0,
-          nulos: 0,
-          pendientes: 0,
-          profit: 0.0,
-          oddsSum: 0.0,
-          oddsCount: 0,
-        };
-      }
+      const visiblePicks = rawPicks.filter(
+        (p) =>
+          !p.is_blacklisted &&
+          !p.is_rule_blocked &&
+          (p.is_publishable || p.is_underdog || p.is_value),
+      );
 
-      const mData = marketMap[selKey];
-      mData.totalPicks += 1;
+      visiblePicks.forEach((pick) => {
+        const originalSel = pick.selection || "N/A";
+        let selKey = originalSel.trim();
+        const lowerSel = selKey.toLowerCase();
 
-      if (success === true) {
-        mData.ganados += 1;
-        mData.profit += (odds - 1) * pickStake;
-      } else if (success === false) {
-        mData.perdidos += 1;
-        mData.profit -= pickStake;
-      } else if (success === "void") {
-        mData.nulos += 1;
-      } else {
-        mData.pendientes += 1;
-      }
+        // Determine category for Over/Under markets
+        let category = "";
+        if (lowerSel.includes("corner") || lowerSel.includes("córner")) {
+          category = "Córners";
+        } else if (
+          lowerSel.includes("tarjeta") ||
+          lowerSel.includes("card") ||
+          lowerSel.includes("amarilla")
+        ) {
+          category = "Tarjetas";
+        } else if (lowerSel.includes("foul") || lowerSel.includes("falta")) {
+          category = "Faltas";
+        } else if (
+          lowerSel.includes("shot_target") ||
+          lowerSel.includes("tiro_a_puerta") ||
+          lowerSel.includes("shots_target") ||
+          lowerSel.includes("pta")
+        ) {
+          category = "Tiros a puerta";
+        } else if (
+          lowerSel.includes("shot") ||
+          lowerSel.includes("tiro") ||
+          lowerSel.includes("remate")
+        ) {
+          category = "Tiros";
+        } else if (lowerSel.includes("goal") || lowerSel.includes("gol")) {
+          category = "Goles";
+        }
 
-      // Acumular cuota para promedio (solo picks con cuota válida)
-      if (odds > 0) {
-        mData.oddsSum += odds;
-        mData.oddsCount += 1;
-      }
+        if (category) {
+          if (
+            lowerSel.includes("over") ||
+            lowerSel.includes("más de") ||
+            lowerSel.includes("mas de")
+          ) {
+            selKey = `Over ${category}`;
+          } else if (
+            lowerSel.includes("under") ||
+            lowerSel.includes("menos de")
+          ) {
+            selKey = `Under ${category}`;
+          }
+        }
+        const odds =
+          typeof pick.odds === "number"
+            ? pick.odds
+            : parseFloat(pick.odds) || 0;
+        let success = pick.success;
+        if (success === undefined || success === null) {
+          success = successMap[originalSel.toLowerCase()];
+        }
+
+        const pickStake = useStake
+          ? pick.stake_units !== undefined && pick.stake_units !== null
+            ? pick.stake_units
+            : pick.kelly_fraction > 0
+              ? Math.min(
+                  MAX_STAKE,
+                  Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+                )
+              : MIN_STAKE
+          : MIN_STAKE;
+
+        if (!marketMap[selKey]) {
+          marketMap[selKey] = {
+            name: selKey,
+            totalPicks: 0,
+            ganados: 0,
+            perdidos: 0,
+            nulos: 0,
+            pendientes: 0,
+            profit: 0.0,
+            oddsSum: 0.0,
+            oddsCount: 0,
+          };
+        }
+
+        const mData = marketMap[selKey];
+        mData.totalPicks += 1;
+
+        if (success === true) {
+          mData.ganados += 1;
+          mData.profit += (odds - 1) * pickStake;
+        } else if (success === false) {
+          mData.perdidos += 1;
+          mData.profit -= pickStake;
+        } else if (success === "void") {
+          mData.nulos += 1;
+        } else {
+          mData.pendientes += 1;
+        }
+
+        // Acumular cuota para promedio (solo picks con cuota válida)
+        if (odds > 0) {
+          mData.oddsSum += odds;
+          mData.oddsCount += 1;
+        }
+      });
     });
-  });
 
-  const markets = Object.values(marketMap);
-  // Sort markets by totalPicks desc
-  markets.sort((a, b) => b.totalPicks - a.totalPicks);
+    markets = Object.values(marketMap);
+    markets.sort((a, b) => b.totalPicks - a.totalPicks);
+  }
 
   if (markets.length === 0) {
     matchesContainer.innerHTML = `<div style="color: var(--text-muted); padding: 2rem; text-align: center;">No hay mercados registrados para esta temporada.</div>`;
@@ -952,10 +990,27 @@ async function addMarketToBlacklist(marketName) {
         market_name: marketName,
       }),
     });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     alert(data.message || "Mercado añadido a blacklist.");
-    fetchMatchesForLeague(activeLeague);
+
+    // Si estamos en la vista de mercados, consultar directamente el endpoint ligero de la liga activa
+    if (activeView === "markets") {
+      const useStake = localStorage.getItem("use_stake_system") === "true";
+      const mRes = await fetch(
+        `/api/v1/leagues/${encodeURIComponent(activeLeague)}/markets?use_stake=${useStake}`,
+      );
+      if (mRes.ok) {
+        const freshMarkets = await mRes.json();
+        const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
+        if (leagueInfo) {
+          leagueInfo.markets = freshMarkets;
+        }
+      }
+    }
+    // Refrescar los partidos y mercados de la liga activa
+    if (activeLeague) {
+      await fetchMatchesForLeague(activeLeague);
+    }
   } catch (err) {
     console.error("Error al agregar mercado a blacklist:", err);
     alert("Error al agregar a blacklist: " + err.message);

@@ -360,6 +360,7 @@ class LeagueMathEngine:
         is_over: bool = True,
         team_role: str = "home",
         target_side: str = "home",
+        is_team_specific: bool = False,
     ) -> Optional[bool]:
         """
         Evalúa si un partido específico cumple con el criterio de un pick.
@@ -368,67 +369,78 @@ class LeagueMathEngine:
         sh = m.get("final_score_home")
         sa = m.get("final_score_away")
 
+        fam = market_family.lower().strip()
+
         # 1. Ambos marcan (BTTS)
-        if market_family in {"btts", "btts_yes"}:
+        if fam in {"btts", "btts_yes", "bttsyes"}:
             if sh is None or sa is None:
                 return None
-            return (float(sh) > 0 and float(sa) > 0)
-        if market_family == "btts_no":
+            return float(sh) > 0 and float(sa) > 0
+
+        if fam in {"btts_no", "bttsno"}:
             if sh is None or sa is None:
                 return None
-            return (float(sh) == 0 or float(sa) == 0)
+            return float(sh) == 0 or float(sa) == 0
 
         # 2. Ganador 1X2 (Moneyline / Result)
-        if market_family in {"result", "moneyline", "1x2"}:
+        if fam in {"result", "moneyline", "1x2"}:
             if sh is None or sa is None:
                 return None
             gh, ga = float(sh), float(sa)
-            if target_side in {"home", "local", "1"}:
-                # Si se evalúa para el equipo en cuestión según su rol
-                return gh > ga if team_role == "home" else False
-            elif target_side in {"away", "visitante", "2"}:
-                return ga > gh if team_role == "away" else False
-            elif target_side in {"draw", "empate", "x"}:
+            t_side = target_side.lower().strip()
+            if t_side in {"home", "local", "1"}:
+                # Local gana: Para el local que gane (gh > ga); para el visitante que pierda (ga < gh)
+                return (gh > ga) if team_role == "home" else (ga < gh)
+            elif t_side in {"away", "visitante", "2"}:
+                # Visitante gana: Para el visitante que gane (ga > gh); para el local que pierda (gh < ga)
+                return (ga > gh) if team_role == "away" else (gh < ga)
+            elif t_side in {"draw", "empate", "x"}:
                 return gh == ga
 
         # 3. Doble Oportunidad (Double Chance: 1X, X2, 12)
-        if market_family == "double_chance":
+        if fam in {"double_chance", "doublechance"}:
             if sh is None or sa is None:
                 return None
             gh, ga = float(sh), float(sa)
-            if target_side in {"1x", "home_draw"}:
-                return (gh >= ga) if team_role == "home" else (gh >= ga)
-            elif target_side in {"x2", "draw_away"}:
-                return (ga >= gh) if team_role == "away" else (ga >= gh)
-            elif target_side in {"12", "home_away"}:
+            t_side = target_side.lower().strip()
+            if t_side in {"1x", "home_draw", "homedraw"}:
+                # 1X: Local gana o empata. Para local gh >= ga; para visitante rival no ganar (ga <= gh)
+                return (gh >= ga) if team_role == "home" else (ga <= gh)
+            elif t_side in {"x2", "draw_away", "drawaway"}:
+                # X2: Visitante gana o empata. Para visitante ga >= gh; para local rival no ganar (gh <= ga)
+                return (ga >= gh) if team_role == "away" else (gh <= ga)
+            elif t_side in {"12", "home_away", "homeaway"}:
+                # 12: Gana local o visitante (sin empate)
                 return gh != ga
 
         # 4. Totales / Over-Under en métricas cuantitativas
         val = None
-        if market_family == "goals":
+        if fam == "goals":
             if sh is not None and sa is not None:
-                val = float(sh) + float(sa)
-        elif market_family == "corners":
+                val = (float(sh) if team_role == "home" else float(sa)) if is_team_specific else (float(sh) + float(sa))
+        elif fam == "corners":
             ch, ca = m.get("final_corners_home"), m.get("final_corners_away")
             if ch is not None and ca is not None:
-                val = float(ch) + float(ca)
-        elif market_family == "cards":
+                val = (float(ch) if team_role == "home" else float(ca)) if is_team_specific else (float(ch) + float(ca))
+        elif fam == "cards":
             yh, ya = m.get("final_yellow_cards_home"), m.get("final_yellow_cards_away")
             if yh is not None and ya is not None:
-                val = float(yh) + float(ya)
-        elif market_family in {"shots", "shots_target"}:
-            if market_family == "shots_target":
+                val = (float(yh) if team_role == "home" else float(ya)) if is_team_specific else (float(yh) + float(ya))
+        elif fam in {"shots", "shots_target"}:
+            if fam == "shots_target":
                 sth, sta = m.get("final_shots_on_target_home"), m.get("final_shots_on_target_away")
             else:
                 sth, sta = m.get("final_shots_home"), m.get("final_shots_away")
             if sth is not None and sta is not None:
-                val = float(sth) + float(sta)
-        elif market_family == "fouls":
+                val = (float(sth) if team_role == "home" else float(sta)) if is_team_specific else (float(sth) + float(sta))
+        elif fam == "fouls":
             fh, fa = m.get("final_fouls_home"), m.get("final_fouls_away")
             if fh is not None and fa is not None:
-                val = float(fh) + float(fa)
+                val = (float(fh) if team_role == "home" else float(fa)) if is_team_specific else (float(fh) + float(fa))
 
         if val is not None and line is not None:
+            if math.isclose(val, line, abs_tol=1e-5):
+                return None  # Push / Void: excluye del total de muestra en líneas enteras
             return (val > line) if is_over else (val < line)
 
         return None
@@ -445,7 +457,8 @@ class LeagueMathEngine:
         target_side: str = "home",
         exclude_match_id: Optional[int] = None,
         current_match_date: Optional[Any] = None,
-        cutoff: Optional[TemporalCutoff] = None,  # <-- NUEVO: reutilizable entre llamadas
+        cutoff: Optional[TemporalCutoff] = None,
+        is_team_specific: bool = False,
     ) -> Dict[str, Any]:
         """
         Calcula el porcentaje histórico de acierto de cualquier pick para un equipo.
@@ -456,9 +469,6 @@ class LeagueMathEngine:
         matching_count = 0
         hit_count = 0
 
-        # Si el llamador ya construyó el cutoff (recomendado cuando se hacen
-        # múltiples llamadas para el mismo partido), lo reutiliza en vez de
-        # reparsear current_match_date en cada una de las ~30 llamadas por partido.
         if cutoff is None:
             cutoff = TemporalCutoff.create(current_match_date)
         if cutoff is None:
@@ -467,7 +477,7 @@ class LeagueMathEngine:
         for m in matches:
             if exclude_match_id is not None:
                 m_id = m.get("id") or m.get("match_id")
-                if m_id is not None and str(m_id) == str(exclude_match_id):
+                if m_id is not None and str(m_id).strip() == str(exclude_match_id).strip():
                     continue
 
             if not cutoff.allows_record(m):
@@ -476,8 +486,8 @@ class LeagueMathEngine:
             ht = (m.get("home_team") or m.get("match_title", "").split(" vs ")[0]).strip().lower()
             at = (m.get("away_team") or (m.get("match_title", "").split(" vs ")[1] if " vs " in m.get("match_title", "") else "")).strip().lower()
 
-            is_home = t_lower == ht
-            is_away = t_lower == at
+            is_home = (t_lower == ht) or (t_lower in ht)
+            is_away = (t_lower == at) or (t_lower in at)
 
             if not (is_home or is_away):
                 continue
@@ -489,7 +499,13 @@ class LeagueMathEngine:
 
             role = "home" if is_home else "away"
             hit = cls._evaluate_match_metric_pick(
-                m, market_family, line=line, is_over=is_over, team_role=role, target_side=target_side
+                m,
+                market_family,
+                line=line,
+                is_over=is_over,
+                team_role=role,
+                target_side=target_side,
+                is_team_specific=is_team_specific,
             )
 
             if hit is not None:
@@ -516,11 +532,12 @@ class LeagueMathEngine:
         target_side: str = "home",
         exclude_match_id: Optional[Any] = None,
         current_match_date: Optional[Any] = None,
-        cutoff: Optional[TemporalCutoff] = None,  # <-- NUEVO
+        cutoff: Optional[TemporalCutoff] = None,
+        strict_venue: bool = True,
     ) -> Dict[str, Any]:
         """
         Calcula el Hit Rate específico en los enfrentamientos directos previos (H2H)
-        entre ambos equipos (respetando localía/visitante estricta para 1X2 / Doble Oportunidad).
+        entre ambos equipos (respetando localía/visitante estricta para 1X2 / Doble Oportunidad si strict_venue=True).
         Previene data-leakage excluyendo partidos en o posteriores a la fecha del partido actual.
         """
         h_lower = home_team_name.strip().lower()
@@ -557,19 +574,27 @@ class LeagueMathEngine:
             ht = ht_raw.strip().lower()
             at = at_raw.strip().lower()
 
-            is_exact_fixture = (h_lower == ht and a_lower == at)
-            is_reverse_fixture = (a_lower == ht and h_lower == at)
+            is_exact_fixture = ((h_lower == ht) or (h_lower in ht)) and ((a_lower == at) or (a_lower in at))
+            is_reverse_fixture = ((a_lower == ht) or (a_lower in ht)) and ((h_lower == at) or (h_lower in at))
 
             if not (is_exact_fixture or is_reverse_fixture):
                 continue
 
-            if market_family in {"result", "moneyline", "1x2", "double_chance"}:
+            fam = market_family.lower().strip()
+            # Si el mercado depende estrictamente del estadio (1X2, Doble Oportunidad)
+            if strict_venue and fam in {"result", "moneyline", "1x2", "double_chance", "doublechance"}:
                 if not is_exact_fixture:
                     continue
 
             role = "home" if is_exact_fixture else "away"
             hit = cls._evaluate_match_metric_pick(
-                m, market_family, line=line, is_over=is_over, team_role=role, target_side=target_side
+                m,
+                market_family,
+                line=line,
+                is_over=is_over,
+                team_role=role,
+                target_side=target_side,
+                is_team_specific=False,
             )
 
             if hit is not None:
@@ -600,6 +625,3 @@ class LeagueMathEngine:
             "hit_rate_pct": round(hit_rate, 1) if hit_rate is not None else None,
             "h2h_matches": h2h_matches_list
         }
-
-
-

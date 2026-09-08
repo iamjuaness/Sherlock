@@ -1467,7 +1467,7 @@ async function recalculateAllHistoryAccuracy() {
   const thresholdDate =
     generalStatsDate && generalStatsDate.value
       ? generalStatsDate.value
-      : "2026-07-01";
+      : "2026-01-01";
 
   try {
     const btn = event.target;
