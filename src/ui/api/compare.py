@@ -36,6 +36,8 @@ load_dotenv()
 
 logger = logging.getLogger("sherlock.compare")
 
+MIN_STAKE = 1
+MAX_STAKE = 3
 
 # ───────────────────────────────────────────────────────────────
 # Enums
@@ -1412,6 +1414,10 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         market_family=family,
         lrs=lrs,
     )
+    if league_name:
+        stake_mod = get_market_stake_modifier_for_league(league_name, sel)
+        if stake_mod != 1.0:
+            stake = max(MIN_STAKE, round(stake * stake_mod))
 
 
     v = ValueIndicator(
@@ -2460,6 +2466,68 @@ def is_market_blacklisted_for_league(league_name: str, selection: str, category:
         return False
 
 
+def get_market_stake_modifier_for_league(league_name: str, selection: str, category: str | None = None) -> float:
+    """
+    Obtiene el multiplicador de stake para un mercado en una liga según data/league_penalties.json.
+    Si se encuentra una regla con 'stake_modifier', retorna ese valor (ej: 0.5 para reducir a la mitad).
+    Si no hay regla o stake_modifier, retorna 1.0 (stake normal).
+    """
+    try:
+        data_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
+        if not os.path.exists(data_path):
+            return 1.0
+        import json
+        with open(data_path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+            if not content:
+                return 1.0
+            penalties = json.loads(content)
+
+        if not isinstance(penalties, list):
+            return 1.0
+
+        family = _market_family(selection)
+        side = _market_side(selection)
+
+        for rule in penalties:
+            rule_league = (rule.get("league") or "").strip()
+            if rule_league and (rule_league.lower() == (league_name or "").strip().lower() or _normalize_text(rule_league) == _normalize_text(league_name)):
+                rule_family = rule.get("market_family", "").strip().lower().replace(" ", "_")
+                rule_side = rule.get("market_side", "").strip().lower().replace(" ", "_")
+
+                match_family = not rule_family or rule_family == family.lower()
+                match_side = not rule_side or rule_side == side.lower()
+
+                if match_family and match_side:
+                    rule_cat = rule.get("category")
+                    
+                    def normalize_cat(c: str | None) -> str | None:
+                        if not c:
+                            return None
+                        c_lower = c.strip().lower()
+                        if c_lower in {"profesional", "publishable"}:
+                            return "profesional"
+                        return c_lower
+
+                    norm_rule_cat = normalize_cat(rule_cat)
+                    norm_requested_cat = normalize_cat(category)
+
+                    match_category = True
+                    if norm_rule_cat is not None:
+                        match_category = (norm_rule_cat == norm_requested_cat)
+
+                    if match_category:
+                        if "stake_modifier" in rule:
+                            try:
+                                return float(rule["stake_modifier"])
+                            except (TypeError, ValueError):
+                                return 1.0
+
+        return 1.0
+    except Exception:
+        return 1.0
+
+
 def _market_risk_weight(selection: str) -> int:
     family = _market_family(selection)
 
@@ -2589,26 +2657,29 @@ def _team_strength_score(team) -> float:
 
 # ── Support Over/Under Goals — Determinista ──
 def _support_over_goals(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
-    """stat_support = 0.60 * P_modelo_Poisson(over line) + 0.40 * HitRate_empírico."""
-    # Probabilidad del modelo (Poisson/DC) desde ProjectedLines
-    pval, pprob, _ = _projected_value_by_keywords(proj, ["goles"])
-    if pval is None:
-        pval, pprob, _ = _projected_value_by_keywords(proj, ["goals"])
+    """
+    stat_support con penalización no lineal en colas extremas (Over > 3.5).
+    """
+    pval, pprob, _ = _projected_value_by_keywords(proj, ["goles", "goals"])
 
-    # P_modelo desde la proyección o estimación por stats si no hay proyección
     if pprob is not None:
-        model_prob = float(pprob)  # ya viene en 0-100
+        model_prob = float(pprob)
     elif pval is not None:
-        model_prob = _clip_0_100(55.0 + (pval - line) * 20)
+        model_prob = _clip_0_100(55.0 + (pval - line) * 20.0)
     else:
-        # Fallback: estimación rápida desde stats del equipo
         h_exp = (_safe_num(h.goals_per_game) + _safe_num(h.xg_per_game)) / 2.0
         a_exp = (_safe_num(a.goals_per_game) + _safe_num(a.xg_per_game)) / 2.0
         total_exp = h_exp + a_exp
         model_over, _, _ = _poisson_over_under(total_exp, line)
         model_prob = model_over
 
-    # Hit rate empírico del ValueIndicator
+    # Amortiguación estricta de colas altas (Over 4.5+ sufre decaimiento de intensidad)
+    if line >= 4.5:
+        # Penalización por saciedad competitiva
+        model_prob *= 0.82
+    elif line >= 3.5:
+        model_prob *= 0.94
+
     empirical = None
     if vi is not None:
         empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
@@ -2619,19 +2690,40 @@ def _support_over_goals(line: float, h, a, proj: list, vi=None) -> tuple[float, 
                 empirical = (h_hr + a_hr) / 2.0
 
     if empirical is not None:
-        stat = _clip_0_100(0.60 * model_prob + 0.40 * empirical)
+        stat = _clip_0_100(0.55 * model_prob + 0.45 * empirical)
     else:
         stat = _clip_0_100(model_prob)
 
-    proj_score = model_prob if pprob is not None else _clip_0_100(55.0 + (pval - line) * 20 if pval else model_prob)
+    proj_score = model_prob if pprob is not None else _clip_0_100(55.0 + (pval - line) * 20.0 if pval else model_prob)
     return stat, _clip_0_100(proj_score)
 
 
 def _support_under_goals(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
+    """
+    Soporte Under modelado independientemente con factor de ruido de partido (Varianza Residual).
+    No asume simetría estricta con el Over para líneas bajas (Under 2.5).
+    """
     stat_over, proj_over = _support_over_goals(line, h, a, proj, vi)
-    return _clip_0_100(100 - stat_over), _clip_0_100(100 - proj_over)
+    
+    raw_under_stat = 100.0 - stat_over
+    raw_under_proj = 100.0 - proj_over
 
+    # Descuento por riesgo de varianza tardía en líneas cerradas (Under 1.5, Under 2.5)
+    # Un gol en el 85+ rompe Under con mucha más frecuencia que lo proyectado por medias
+    variance_discount = 0.0
+    if line <= 2.5:
+        # Descuento base por entropía del juego (penaltis, rojas, tiempo añadido)
+        variance_discount = 5.5
+        
+        # Si la probabilidad cruda es excesivamente alta (>70%), aplicar contracción (shrinkage)
+        if raw_under_stat > 65.0:
+            excess = raw_under_stat - 65.0
+            variance_discount += excess * 0.35
 
+    adjusted_stat = max(0.0, raw_under_stat - variance_discount)
+    adjusted_proj = max(0.0, raw_under_proj - variance_discount)
+
+    return _clip_0_100(adjusted_stat), _clip_0_100(adjusted_proj)
 
 
 # ── Support BTTS MEJORADO ──
@@ -2756,6 +2848,71 @@ def _support_draw(h, a, proj: list, vi=None) -> tuple[float, float]:
 
     return stat, _clip_0_100(proj_score)
 
+def _support_double_chance(
+    side: str, 
+    h, 
+    a, 
+    proj: list, 
+    vi=None
+) -> tuple[float, float]:
+    """
+    Soporte probabilístico estricto y coherente para Doble Oportunidad.
+    Evita suelos artificiales y respeta la probabilidad complementaria axiomática:
+      - P(1X) = 100 - P(Away)
+      - P(X2) = 100 - P(Home)
+      - P(12) = 100 - P(Draw)
+    """
+    stath, projh = _support_home_win(h, a, proj, vi)
+    statd, projd = _support_draw(h, a, proj, vi)
+    stata, proja = _support_away_win(h, a, proj, vi)
+
+    # Suma directa con acotamiento de coherencia en espacio de probabilidades
+    if side in ("1x", "homedraw"):
+        # Derivación complementaria cruzada para evitar sobreestimar locales extremos
+        direct_stat = stath + statd
+        comp_stat = 100.0 - stata
+        stat = min(direct_stat, comp_stat)
+
+        direct_proj = projh + projd
+        comp_proj = 100.0 - proja
+        proj_score = min(direct_proj, comp_proj)
+
+    elif side in ("x2", "drawaway"):
+        direct_stat = stata + statd
+        comp_stat = 100.0 - stath
+        stat = min(direct_stat, comp_stat)
+
+        direct_proj = proja + projd
+        comp_proj = 100.0 - projh
+        proj_score = min(direct_proj, comp_proj)
+
+    elif side in ("12", "homeaway"):
+        direct_stat = stath + stata
+        comp_stat = 100.0 - statd
+        stat = min(direct_stat, comp_stat)
+
+        direct_proj = projh + proja
+        comp_proj = 100.0 - projd
+        proj_score = min(direct_proj, comp_proj)
+
+    else:
+        stat, proj_score = 50.0, 50.0
+
+    # Ajuste de contracción Bayesiana hacia la cuota de mercado si el ValueIndicator está disponible
+    if vi is not None and getattr(vi, "odds", None) is not None:
+        try:
+            odds_val = float(vi.odds)
+            if odds_val > 1.0:
+                implied_pct = (1.0 / odds_val) * 100.0
+                # Si el modelo proyecta un soporte > 20% sobre la implícita, encoger hacia la implícita
+                if stat > implied_pct + 15.0:
+                    stat = 0.50 * stat + 0.50 * implied_pct
+                if proj_score > implied_pct + 15.0:
+                    proj_score = 0.50 * proj_score + 0.50 * implied_pct
+        except (ValueError, TypeError):
+            pass
+
+    return _clip_0_100(stat), _clip_0_100(proj_score)
 
 # ── Support Shots MEJORADO ──
 def _support_under_shots(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
@@ -2928,44 +3085,9 @@ def _explicit_market_support(selection: str, h, a, proj: list, vi=None) -> tuple
     if family == "corners" and side == "under" and line is not None:
         return _support_under_corners(line, h, a, proj, vi)
 
-    if family == "double_chance":
-        h_w, d_w, a_w = _dc_component_weights(h, a)
-        stat_h, proj_h = _support_home_win(h, a, proj, vi)
-        stat_d, proj_d = _support_draw(h, a, proj, vi)
-        stat_a, proj_a = _support_away_win(h, a, proj, vi)
-
-        base_stat = 55.0
-        base_proj = 55.0
-
-        if "1x" in s:
-            norm = h_w + d_w
-            w_h, w_d = h_w / norm, d_w / norm
-            base_stat = _clip_0_100(w_h * stat_h + w_d * stat_d)
-            base_proj = _clip_0_100(w_h * proj_h + w_d * proj_d)
-        elif "x2" in s:
-            norm = a_w + d_w
-            w_a, w_d2 = a_w / norm, d_w / norm
-            base_stat = _clip_0_100(w_a * stat_a + w_d2 * stat_d)
-            base_proj = _clip_0_100(w_a * proj_a + w_d2 * proj_d)
-        elif "12" in s:
-            norm = h_w + a_w
-            w_h2, w_a2 = h_w / norm, a_w / norm
-            base_stat = _clip_0_100(w_h2 * stat_h + w_a2 * stat_a)
-            base_proj = _clip_0_100(w_h2 * proj_h + w_a2 * proj_a)
-
-        empirical = None
-        if vi is not None:
-            if "1x" in s:
-                empirical = _safe_num(getattr(vi, "home_hit_rate", None), None) or _safe_num(getattr(vi, "empirical_hit_rate", None), None)
-            elif "x2" in s:
-                empirical = _safe_num(getattr(vi, "away_hit_rate", None), None) or _safe_num(getattr(vi, "empirical_hit_rate", None), None)
-            else:
-                empirical = _safe_num(getattr(vi, "empirical_hit_rate", None), None)
-
-        if empirical is not None:
-            base_stat = _clip_0_100(0.60 * base_stat + 0.40 * empirical)
-
-        return base_stat, base_proj
+    if family in ("double_chance", "doublechance") or "doble oportunidad" in s:
+        target_side = "1x" if "1x" in s else ("x2" if "x2" in s else ("12" if "12" in s else side))
+        return _support_double_chance(target_side, h, a, proj, vi)
 
     return 55.0, 55.0
 

@@ -53,6 +53,35 @@ function switchView(view) {
   renderFilteredMatches();
 }
 
+function getLeagueFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  const league = params.get("league");
+  return league ? decodeURIComponent(league).trim() : null;
+}
+
+function updateLeagueUrl(leagueName, replace = false) {
+  if (!leagueName) return;
+  const url = new URL(window.location.href);
+  url.searchParams.set("league", leagueName);
+  if (replace) {
+    window.history.replaceState({ league: leagueName }, "", url.toString());
+  } else {
+    const currentLeague = getLeagueFromUrl();
+    if (currentLeague !== leagueName) {
+      window.history.pushState({ league: leagueName }, "", url.toString());
+    }
+  }
+}
+
+window.addEventListener("popstate", (e) => {
+  const urlLeague = getLeagueFromUrl();
+  if (urlLeague && leaguesData.some((l) => l.name === urlLeague)) {
+    selectLeague(urlLeague, false);
+  } else if (leaguesData.length > 0) {
+    selectLeague(leaguesData[0].name, false);
+  }
+});
+
 document.addEventListener("DOMContentLoaded", () => {
   // Signal active state to backend so result pushing is enabled in leagues view
   fetch("/api/v1/leagues/active-state?active=true", { method: "POST" }).catch(
@@ -87,9 +116,22 @@ async function fetchLeagues() {
 
     renderLeaguesList();
 
-    // Select first league by default if any
-    if (leaguesData.length > 0) {
-      selectLeague(leaguesData[0].name);
+    // Preserve league selection: check URL first, then activeLeague state, fallback to 1st
+    const urlLeague = getLeagueFromUrl();
+    let targetLeague = null;
+    if (urlLeague && leaguesData.some((l) => l.name === urlLeague)) {
+      targetLeague = urlLeague;
+    } else if (
+      activeLeague &&
+      leaguesData.some((l) => l.name === activeLeague)
+    ) {
+      targetLeague = activeLeague;
+    } else if (leaguesData.length > 0) {
+      targetLeague = leaguesData[0].name;
+    }
+
+    if (targetLeague) {
+      selectLeague(targetLeague, true, true); // replace URL if initial load
     }
   } catch (error) {
     console.error(error);
@@ -102,12 +144,19 @@ function renderLeaguesList() {
   const container = document.getElementById("leagues-list");
   if (!container) return;
 
-  if (leaguesData.length === 0) {
-    container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.9rem; text-align: center; padding: 1rem;">No se encontraron competiciones.</div>`;
+  const searchInput = document.getElementById("league-search-input");
+  const query = searchInput ? searchInput.value.trim().toLowerCase() : "";
+
+  const listToRender = query
+    ? leaguesData.filter((l) => l.name.toLowerCase().includes(query))
+    : leaguesData;
+
+  if (listToRender.length === 0) {
+    container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; text-align: center; padding: 1rem;">No se encontraron competiciones.</div>`;
     return;
   }
 
-  container.innerHTML = leaguesData
+  container.innerHTML = listToRender
     .map((league) => {
       const activeClass =
         activeLeague === league.name ? "league-list-item--active" : "";
@@ -127,13 +176,22 @@ function renderLeaguesList() {
     .join("");
 }
 
+function filterLeaguesList() {
+  renderLeaguesList();
+}
+
 let activeSeason = "all";
 let currentMatchesCache = [];
 
-function selectLeague(name) {
+function selectLeague(name, updateUrl = true, replaceUrl = false) {
   activeLeague = name;
   activeSeason = "all";
   visibleMatchesLimit = 50;
+
+  if (updateUrl) {
+    updateLeagueUrl(name, replaceUrl);
+  }
+
   renderLeaguesList();
 
   const leagueInfo = leaguesData.find((l) => l.name === name);
@@ -141,17 +199,6 @@ function selectLeague(name) {
 
   // Render stats DIRECTAMENTE desde leaguesData (backend)
   document.getElementById("selected-league-name").textContent = leagueInfo.name;
-  // document.getElementById("lbl-total-matches").textContent =
-  //   leagueInfo.total_matches;
-  // document.getElementById("lbl-total-picks").textContent =
-  //   leagueInfo.total_picks;
-  // document.getElementById("lbl-accuracy").textContent =
-  //   `${leagueInfo.accuracy}%`;
-
-  // const profitEl = document.getElementById("lbl-profit");
-  // profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
-  // profitEl.style.color =
-  //   leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
 
   const chkProf = document.getElementById("chk-league-profitability");
   if (chkProf) {
@@ -219,7 +266,7 @@ async function fetchMatchesForLeague(name, isLoadMore = false) {
   try {
     const useStake = localStorage.getItem("use_stake_system") === "true";
     const res = await fetch(
-      `/api/v1/analysis?competition=${encodeURIComponent(name)}&use_stake=${useStake}&limit=50&offset=${currentOffset}`,
+      `/api/v1/leagues/${encodeURIComponent(name)}/matches?use_stake=${useStake}&limit=50&offset=${currentOffset}`,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const newMatches = await res.json();
@@ -756,6 +803,7 @@ function renderMarketsView(filtered, matchesContainer) {
         <div class="match-card__header" style="border-bottom: none; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
           <div style="display: flex; align-items: center; gap: 0.75rem;">
             <span class="match-card__title" style="font-size: 1.15rem; font-weight: 700; color: #fff;">📊 ${escapeHtml(m.name)}</span>
+            <button onclick="reduceMarketStake('${escapeAttr(m.name)}')" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(245, 158, 11, 0.25)'" onmouseout="this.style.background='rgba(245, 158, 11, 0.12)'" title="Reducir stake a la mitad (50%) para este mercado en ${escapeAttr(activeLeague || "")}">📉 Reducir Stake (50%)</button>
             <button onclick="addMarketToBlacklist('${escapeAttr(m.name)}')" style="background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'" title="Agregar este mercado a la blacklist de ${escapeAttr(activeLeague || "")}">🚫 Blacklist</button>
           </div>
           <span style="font-weight: 800; color: ${profitColor}; font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">
@@ -789,8 +837,8 @@ function renderMarketsView(filtered, matchesContainer) {
               <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Cuota Media</div>
             </div>
             <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
-              <div class="league-stat-box__val" style="font-size: 1.1rem; color: #a78bfa;">${winPct}%</div>
-              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">% Ganar</div>
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: #38bdf8;">${winPct}%</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">% Equilibrio</div>
             </div>
           </div>
           ${
@@ -825,13 +873,20 @@ function escapeAttr(str) {
   return String(str).replace(/\\/g, "\\\\").replace(/'/g, "\\'");
 }
 
-function updateStatsSummaryForFiltered(filteredMatches) {
+async function updateStatsSummaryForFiltered(filteredMatches) {
+  //rows = db.query(AnalysisHistory).options(load_only(AnalysisHistory.id)).all();
+
+  matches_count = await fetch(
+    `/api/v1/competitions/${activeLeague}/matches`,
+  ).then((res) => res.json());
+
+  if (matches_count > 0) {
+    document.getElementById("lbl-total-matches").textContent = matches_count;
+  }
   // If activeSeason is 'all', keep the official backend aggregated stats for the league
   if (activeSeason === "all" && activeLeague) {
     const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
     if (leagueInfo) {
-      document.getElementById("lbl-total-matches").textContent =
-        leagueInfo.total_matches;
       document.getElementById("lbl-total-picks").textContent =
         leagueInfo.total_picks;
       document.getElementById("lbl-accuracy").textContent =
@@ -993,26 +1048,40 @@ async function addMarketToBlacklist(marketName) {
     const data = await res.json();
     alert(data.message || "Mercado añadido a blacklist.");
 
-    // Si estamos en la vista de mercados, consultar directamente el endpoint ligero de la liga activa
-    if (activeView === "markets") {
-      const useStake = localStorage.getItem("use_stake_system") === "true";
-      const mRes = await fetch(
-        `/api/v1/leagues/${encodeURIComponent(activeLeague)}/markets?use_stake=${useStake}`,
-      );
-      if (mRes.ok) {
-        const freshMarkets = await mRes.json();
-        const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
-        if (leagueInfo) {
-          leagueInfo.markets = freshMarkets;
-        }
-      }
-    }
-    // Refrescar los partidos y mercados de la liga activa
-    if (activeLeague) {
-      await fetchMatchesForLeague(activeLeague);
-    }
+    // Recargar ligas para refrescar rentabilidades manteniendo la liga activa seleccionada
+    await fetchLeagues();
   } catch (err) {
     console.error("Error al agregar mercado a blacklist:", err);
     alert("Error al agregar a blacklist: " + err.message);
+  }
+}
+
+async function reduceMarketStake(marketName) {
+  if (!activeLeague) return;
+  if (
+    !confirm(
+      `¿Deseas reducir el stake a la mitad (50%) para el mercado "${marketName}" en la competición "${activeLeague}" y recalcular todo el historial?`,
+    )
+  ) {
+    return;
+  }
+  try {
+    const res = await fetch("/api/v1/leagues/reduce-stake-market", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        league: activeLeague,
+        market_name: marketName,
+        stake_modifier: 0.5,
+      }),
+    });
+    const data = await res.json();
+    alert(data.message || "Stake reducido con éxito.");
+
+    // Recargar ligas para refrescar estadísticas manteniendo la liga activa seleccionada
+    await fetchLeagues();
+  } catch (err) {
+    console.error("Error al reducir stake del mercado:", err);
+    alert("Error al reducir stake: " + err.message);
   }
 }

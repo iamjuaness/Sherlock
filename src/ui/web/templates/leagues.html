@@ -340,6 +340,29 @@
               📈 Stakes
             </label>
           </div>
+          <!-- Buscador de Ligas -->
+          <div style="margin-bottom: 0.75rem;">
+            <input
+              type="text"
+              id="league-search-input"
+              placeholder="🔍 Buscar liga..."
+              oninput="filterLeaguesList()"
+              style="
+                width: 100%;
+                background: rgba(0, 0, 0, 0.4);
+                border: 1px solid var(--border);
+                padding: 0.45rem 0.75rem;
+                border-radius: var(--radius-sm);
+                font-size: 0.82rem;
+                color: #fff;
+                outline: none;
+                box-sizing: border-box;
+                transition: border-color 0.2s;
+              "
+              onfocus="this.style.borderColor='var(--accent)'"
+              onblur="this.style.borderColor='var(--border)'"
+            />
+          </div>
           <div id="leagues-list">
             <!-- Rellenado dinámicamente -->
           </div>

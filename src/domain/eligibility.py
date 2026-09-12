@@ -76,6 +76,7 @@ class BlockReason(str, Enum):
     DATA_QUALITY_TOO_LOW = "data_quality_too_low"
     STAKE_TOO_LOW = "stake_too_low"
     H2H_ZERO_HIT_RATE = "h2h_zero_hit_rate"
+    H2H_LOW_HIT_RATE = "h2h_low_hit_rate"
 
 
 HARD_BLOCKS: frozenset[BlockReason] = frozenset({
@@ -115,6 +116,7 @@ REASON_LABELS: dict[BlockReason, str] = {
     BlockReason.DATA_QUALITY_TOO_LOW: "Calidad de dato insuficiente",
     BlockReason.STAKE_TOO_LOW: "Stake por debajo del mínimo",
     BlockReason.H2H_ZERO_HIT_RATE: "0% de acierto en H2H con muestra disponible",
+    BlockReason.H2H_LOW_HIT_RATE: "H2H con acierto bajo y muestra suficiente (riesgo elevado)",
 }
 
 
@@ -140,12 +142,7 @@ HIGH_VARIANCE_FAMILIES: frozenset[str] = frozenset(
 
 @dataclass(frozen=True)
 class PublicationThresholds:
-    """
-    Umbrales de publicación, versionados y en un solo sitio.
-
-    Los valores por defecto replican EXACTAMENTE la lógica que había dispersa
-    en `is_publishable_pick`, para que centralizar no cambie qué se publica.
-    """
+    """Umbrales de publicación, versionados y en un solo sitio."""
 
     min_odds: float = 1.40
     max_odds: float = 2.50
@@ -153,18 +150,23 @@ class PublicationThresholds:
     min_prob_high_variance: float = 20.0
     min_prob_default: float = 35.0
     min_edge: float = 2.5
-    min_edge_high_threshold: float = 10.0  # Umbral elevado para Doble Oportunidad y Corners (planning.txt punto 2)
-    max_edge: float = 25.0
+    min_edge_high_threshold: float = 10.0
+    max_edge: float = 25.0  # único techo de edge, global, sin excepción por mercado
     min_data_quality: float = 50.0
     min_stake_units: float = 1.0
     block_on_zero_h2h: bool = True
-    version: str = POLICY_VERSION
+    # H2H bajo (no solo cero): validado en backtest, sí aporta.
+    block_on_low_h2h: bool = True
+    min_h2h_hit_rate_block: float = 25.0
+    min_h2h_samples_for_block: int = 3
+    low_h2h_families: frozenset[str] = frozenset({"double_chance", "doublechance"})
+    version: str = "elig-v2.1"
 
     def min_prob_for(self, market_family: str | None) -> float:
         fam = (market_family or "generic").lower()
-        if fam in BINARY_FAMILIES:
+        if fam in {"result", "btts", "goals"}:
             return self.min_prob_binary
-        if fam in HIGH_VARIANCE_FAMILIES:
+        if fam in {"cards", "shots", "shots_target", "fouls", "corners"}:
             return self.min_prob_high_variance
         return self.min_prob_default
 
@@ -374,16 +376,13 @@ def _coerce_reason(r: BlockReason | str) -> BlockReason:
 # ═══════════════════════════════════════════════════════════════════════
 
 def evaluate_soft_filters(
-    snapshot: PickSnapshot,
+    snapshot,  # PickSnapshot
     thresholds: PublicationThresholds = DEFAULT_THRESHOLDS,
-) -> frozenset[BlockReason]:
-    """
-    Aplica los umbrales recalculables. No conoce los bloqueos duros.
+) -> frozenset:
+    """Aplica los umbrales recalculables. No conoce los bloqueos duros."""
+    from src.domain.eligibility import BlockReason  # evitar import circular en el snippet
 
-    Un valor ausente que impide comprobar el umbral produce un fallo, no un
-    pase: fallar cerrado.
-    """
-    fails: set[BlockReason] = set()
+    fails: set = set()
 
     if snapshot.odds is None:
         fails.add(BlockReason.ODDS_MISSING)
@@ -401,7 +400,7 @@ def evaluate_soft_filters(
         fails.add(BlockReason.EDGE_MISSING)
     elif snapshot.edge < thresholds.min_edge_for(snapshot.market_family):
         fails.add(BlockReason.EDGE_TOO_LOW)
-    elif snapshot.edge > thresholds.max_edge:
+    elif snapshot.edge > thresholds.max_edge:  # CAMBIO: vuelve a ser el único techo, sin excepción por mercado
         fails.add(BlockReason.EDGE_TOO_HIGH)
 
     if (
@@ -424,6 +423,18 @@ def evaluate_soft_filters(
         and snapshot.h2h_samples > 0
     ):
         fails.add(BlockReason.H2H_ZERO_HIT_RATE)
+
+    # Se conserva: H2H bajo (no cero) en Doble Oportunidad, validado en backtest.
+    fam = (snapshot.market_family or "generic").lower()
+    if (
+        thresholds.block_on_low_h2h
+        and fam in thresholds.low_h2h_families
+        and effective_h2h_hr is not None
+        and effective_h2h_hr > 0.0
+        and effective_h2h_hr <= thresholds.min_h2h_hit_rate_block
+        and snapshot.h2h_samples >= thresholds.min_h2h_samples_for_block
+    ):
+        fails.add(BlockReason.H2H_LOW_HIT_RATE)
 
     return frozenset(fails)
 

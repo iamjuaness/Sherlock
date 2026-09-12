@@ -146,16 +146,43 @@ def extract_samples(
     require_timestamp: bool = True,
 ) -> tuple[list[CalibrationSample], ExtractionStats]:
     """
-    Convierte filas de `analysis_history` en muestras de calibración.
-
-    `resolver(pick, results) -> PickOutcome` por defecto es
-    `main.py::_check_pick_success`, para no duplicar la lógica de mercados.
-    Se inyecta como parámetro para poder testear sin importar la app FastAPI.
+    Convierte filas de analysis_history en muestras de calibración, preservando
+    la polaridad direccional (1X vs X2, Over vs Under, Home vs Away).
     """
     if resolver is None:
         from src.ui.api.main import _check_pick_success as resolver  # type: ignore
     if market_family_fn is None:
         from src.ui.api.compare import _market_family as market_family_fn  # type: ignore
+
+    def _resolve_directional_market_family(selection_str: str, base_family: str) -> str:
+        sel = selection_str.lower().strip()
+        
+        # 1. Doble Oportunidad: segregación obligatoria
+        if base_family in ("family:double_chance", "family:doublechance") or "doble oportunidad" in sel or "1x" in sel or "x2" in sel:
+            if "1x" in sel:
+                return "family:double_chance|side:1x"
+            elif "x2" in sel:
+                return "family:double_chance|side:x2"
+            elif "12" in sel:
+                return "family:double_chance|side:12"
+            return "family:double_chance"
+
+        # 2. Over / Under: segregación por polaridad
+        if "under" in sel or "menos de" in sel or "menos" in sel:
+            return f"{base_family}|side:under"
+        if "over" in sel or "más de" in sel or "mas de" in sel or "más" in sel:
+            return f"{base_family}|side:over"
+
+        # 3. 1X2 (Moneyline / Result)
+        if base_family in ("family:result", "family:1x2", "family:moneyline"):
+            if any(k in sel for k in ("local", "home", "1")):
+                return f"{base_family}|side:home"
+            if any(k in sel for k in ("visitante", "away", "2")):
+                return f"{base_family}|side:away"
+            if any(k in sel for k in ("empate", "draw", "x")):
+                return f"{base_family}|side:draw"
+
+        return base_family
 
     stats = ExtractionStats()
     samples: list[CalibrationSample] = []
@@ -211,16 +238,19 @@ def extract_samples(
                 continue
 
             hit = outcome_hit_value(outcome)
-            if hit is None:                    # push: no informa de la probabilidad
+            if hit is None:
                 stats.picks_push += 1
                 continue
 
             selection = str(pick.get("selection") or pick.get("market") or "")
+            base_family = market_family_fn(selection)
+            directional_key = _resolve_directional_market_family(selection, base_family)
+
             samples.append(
                 CalibrationSample(
                     prob=prob,
                     hit_value=hit,
-                    market_family=market_family_fn(selection),
+                    market_family=directional_key,
                     league=str(league) if league else None,
                     timestamp=ts,
                 )
@@ -228,7 +258,6 @@ def extract_samples(
             stats.picks_accepted += 1
 
     return samples, stats
-
 
 def load_rows_from_db(session=None, limit: int | None = None) -> list[dict]:
     """

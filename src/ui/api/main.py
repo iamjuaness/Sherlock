@@ -297,6 +297,13 @@ def list_competitions():
             print(f"Error loading competitions.json: {e}")
     return []
 
+## Obtener la cantidad de partidos de una liga en especifico
+@app.get("/api/v1/competitions/{competition_id}/matches", tags=["Competitions"])
+def list_matches(competition_id: str, db: Session = Depends(get_db)):
+    """Return the number of matches for a specific competition."""
+    from sqlalchemy.orm import load_only
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.competition == competition_id).options(load_only(AnalysisHistory.id)).count()
+    return query
 
 @app.get("/api/v1/competitions/pending-picks", tags=["Competitions"])
 def list_competitions_with_pending_picks(db: Session = Depends(get_db)):
@@ -2301,9 +2308,19 @@ def list_analysis(
     if match_date_to:
         query = query.filter(AnalysisHistory.match_date <= datetime.fromisoformat(match_date_to))
 
-    # Competition filter via indexed column
+    # Competition filter via indexed column (with fallback for legacy records)
     if competition:
-        query = query.filter(AnalysisHistory.competition == competition)
+        comp_str = competition.strip()
+        from sqlalchemy import or_, and_
+        query = query.filter(
+            or_(
+                AnalysisHistory.competition == comp_str,
+                and_(
+                    or_(AnalysisHistory.competition == None, AnalysisHistory.competition == ""),
+                    AnalysisHistory.payload.like(f'%"{comp_str}"%')
+                )
+            )
+        )
 
     if has_odds is not None:
         query = query.filter(AnalysisHistory.has_odds == has_odds)
@@ -2336,6 +2353,22 @@ def list_analysis(
     return results
 
 
+@app.get("/api/v1/analysis/{analysis_id}", response_model=AnalysisHistoryOut, tags=["Analysis History"])
+def get_analysis_by_id(
+    analysis_id: str,
+    use_stake: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> AnalysisHistoryOut:
+    """
+    Obtiene toda la información necesaria para un partido en específico por su ID.
+    """
+    history = db.query(AnalysisHistory).filter(AnalysisHistory.id == analysis_id).first()
+    if not history:
+        raise HTTPException(status_code=404, detail="Analysis not found")
+    out = AnalysisHistoryOut.model_validate(history)
+    return _populate_history_extra_fields(history, out, use_stake=use_stake)
+
+
 @app.get("/api/v1/stats/leagues", tags=["Stats"])
 def get_leagues_stats(
     use_stake: bool = Query(False),
@@ -2353,10 +2386,10 @@ def get_leagues_stats(
     from sqlalchemy.orm import load_only
     history = (
         db.query(AnalysisHistory)
+        .filter(AnalysisHistory.picks_calculados != None)
         .options(load_only(
             AnalysisHistory.id,
             AnalysisHistory.competition,
-            AnalysisHistory.payload,
             AnalysisHistory.picks_calculados,
             AnalysisHistory.final_score_home,
             AnalysisHistory.final_score_away,
@@ -2382,7 +2415,7 @@ def get_leagues_stats(
     for h in history:
         # Resolve competition name using index column first
         comp_name = h.competition
-        if not comp_name and h.payload:
+        if not comp_name and getattr(h, "payload", None):
             try:
                 p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
                 comp_name = p_data.get("competition") or "Desconocida"
@@ -2562,6 +2595,69 @@ def get_leagues_stats(
         results.append(league)
         
     _set_cache(cache_key, results)
+    return results
+
+
+@app.get("/api/v1/leagues/{league_name}/matches", response_model=list[AnalysisHistoryOut], tags=["Leagues"])
+def get_league_matches(
+    league_name: str,
+    limit: int = Query(50, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    use_stake: bool = Query(False),
+    db: Session = Depends(get_db),
+) -> list[AnalysisHistoryOut]:
+    """
+    Obtiene los partidos de una liga en específico sin filtrar por picks_calculados != None,
+    cargando únicamente los campos necesarios para la vista de la liga (picks, resultados, id, etc.).
+    """
+    from sqlalchemy.orm import load_only
+    from sqlalchemy import or_, and_
+    comp_str = league_name.strip()
+
+    query = db.query(AnalysisHistory).filter(
+        or_(
+            AnalysisHistory.competition == comp_str,
+            and_(
+                or_(AnalysisHistory.competition == None, AnalysisHistory.competition == ""),
+                AnalysisHistory.payload.like(f'%"{comp_str}"%')
+            )
+        )
+    ).options(
+        load_only(
+            AnalysisHistory.id,
+            AnalysisHistory.sport,
+            AnalysisHistory.date,
+            AnalysisHistory.match_date,
+            AnalysisHistory.match_title,
+            AnalysisHistory.competition,
+            AnalysisHistory.payload,
+            AnalysisHistory.picks_calculados,
+            AnalysisHistory.count_in_profitability,
+            AnalysisHistory.has_real_stats,
+            AnalysisHistory.final_score_home,
+            AnalysisHistory.final_score_away,
+            AnalysisHistory.final_corners_home,
+            AnalysisHistory.final_corners_away,
+            AnalysisHistory.final_yellow_cards_home,
+            AnalysisHistory.final_yellow_cards_away,
+            AnalysisHistory.final_red_cards_home,
+            AnalysisHistory.final_red_cards_away,
+            AnalysisHistory.final_shots_home,
+            AnalysisHistory.final_shots_away,
+            AnalysisHistory.final_shots_on_target_home,
+            AnalysisHistory.final_shots_on_target_away,
+            AnalysisHistory.final_fouls_home,
+            AnalysisHistory.final_fouls_away,
+            AnalysisHistory.final_offsides_home,
+            AnalysisHistory.final_offsides_away,
+        )
+    ).order_by(AnalysisHistory.date.desc())
+
+    history_list = query.offset(offset).limit(limit).all()
+    results = []
+    for h in history_list:
+        out = AnalysisHistoryOut.model_validate(h)
+        results.append(_populate_history_extra_fields(h, out, use_stake=use_stake))
     return results
 
 
@@ -3191,6 +3287,7 @@ def apply_blacklist(db: Session = Depends(get_db)):
     """
     from src.ui.api.compare import (
         is_market_blacklisted_for_league,
+        get_market_stake_modifier_for_league,
         is_publishable_pick,
         is_value_pick,
         is_underdog_pick,
@@ -3245,7 +3342,6 @@ def apply_blacklist(db: Session = Depends(get_db)):
                         pick["strategic_score"] = -1
                         pick["is_underdog"] = False
                     else:
-                        # Re-construimos ValueIndicator temporal para re-calcular los campos utilizando las fórmulas
                         v = ValueIndicator(
                             selection=sel,
                             odds=pick.get("odds"),
@@ -3264,8 +3360,22 @@ def apply_blacklist(db: Session = Depends(get_db)):
                         pick["is_underdog"] = is_underdog_pick(v)
                         pick["strategic_score"] = _frontend_style_strategic_score(v)
 
+                # Aplicar o revertir stake_modifier de la liga en picks no blacklisted
+                if not pick.get("is_blacklisted"):
+                    stake_mod = get_market_stake_modifier_for_league(league_name, sel)
+                    base_stake = pick.get("base_stake_units")
+                    if base_stake is None:
+                        base_stake = pick.get("stake_units", 1.0)
+                        pick["base_stake_units"] = base_stake
+                    
+                    target_stake = max(MIN_STAKE, round(base_stake * stake_mod)) if stake_mod != 1.0 else base_stake
+                    if pick.get("stake_units") != target_stake:
+                        pick["stake_units"] = target_stake
+                        changed = True
+
             if changed:
                 history.picks_calculados = json.dumps(picks)
+                history.stake_units = _sum_stake_from_picks(picks)
                 # Also update compare_response_snapshot if it exists
                 if history.compare_response_snapshot:
                     try:
@@ -3478,6 +3588,73 @@ def blacklist_market(req: BlacklistMarketRequest, db: Session = Depends(get_db))
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Error al agregar mercado a blacklist: {e}")
+
+
+class ReduceStakeMarketRequest(BaseModel):
+    league: str
+    market_name: str
+    stake_modifier: float = 0.5
+
+
+@app.post("/api/v1/leagues/reduce-stake-market", tags=["Leagues"])
+def reduce_stake_market(req: ReduceStakeMarketRequest, db: Session = Depends(get_db)):
+    """
+    Agrega o actualiza una regla de reducción de stake para un mercado en data/league_penalties.json
+    y vuelve a aplicar el recálculo al historial de análisis.
+    """
+    from src.ui.api.compare import _market_family, _market_side
+    penalties_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
+    try:
+        penalties = []
+        if os.path.exists(penalties_path):
+            try:
+                with open(penalties_path, "r", encoding="utf-8") as f:
+                    content = f.read().strip()
+                    if content:
+                        penalties = json.loads(content)
+                        if not isinstance(penalties, list):
+                            penalties = []
+            except Exception:
+                penalties = []
+
+        family = _market_family(req.market_name)
+        side = _market_side(req.market_name)
+
+        found = False
+        for rule in penalties:
+            if (rule.get("league", "").strip().lower() == req.league.strip().lower() and
+                rule.get("market_family", "").strip().lower() == family.lower() and
+                rule.get("market_side", "").strip().lower() == side.lower()):
+                rule["stake_modifier"] = req.stake_modifier
+                # Asegurarse de que no esté en blacklist si solo queremos reducir stake
+                rule["blacklist"] = False
+                found = True
+                break
+
+        if not found:
+            penalties.append({
+                "league": req.league.strip(),
+                "market_family": family,
+                "market_side": side,
+                "stake_modifier": req.stake_modifier,
+                "blacklist": False
+            })
+
+        os.makedirs(os.path.dirname(penalties_path), exist_ok=True)
+        with open(penalties_path, "w", encoding="utf-8") as f:
+            json.dump(penalties, f, ensure_ascii=False, indent=2)
+
+        res = apply_blacklist(db=db)
+        return {
+            "status": "ok",
+            "message": f"Stake reducido al {int(req.stake_modifier*100)}% para '{req.market_name}' en '{req.league}'. {res.get('message', '')}",
+            "apply_blacklist_result": res
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error al reducir stake de mercado: {e}")
+
 
 
 
@@ -3775,7 +3952,7 @@ def get_global_stats(
         return cached
 
     from sqlalchemy.orm import load_only
-    query = db.query(AnalysisHistory).options(
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.picks_calculados != None).options(
         load_only(
             AnalysisHistory.id,
             AnalysisHistory.sport,
@@ -4333,7 +4510,7 @@ def export_excel_report(
     del modelo, partidos, picks, rentabilidad y análisis de significancia
     ajustado por clustering (a nivel de partido)."""
 
-    query = db.query(AnalysisHistory)
+    query = db.query(AnalysisHistory).filter(AnalysisHistory.picks_calculados != None)
     if date_from:
         try:
             query = query.filter(AnalysisHistory.date >= datetime.fromisoformat(date_from))
@@ -5500,7 +5677,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-    liga = "VriendenLoterij Eredivisie"
+    liga = "Chinese Super League"
 
     #----------Contar equipos de liga--------------------------------
 
@@ -5514,8 +5691,8 @@ if __name__ == "__main__":
 
     
     ##---------Cambiar nombre de liga---------------
-    # old_name = "VriendenLoterij Eredivisie, Europa Playoffs"
-    # new_name = "VriendenLoterij Eredivisie"
+    # old_name = "Egyptian Premier League, Championship Round"
+    # new_name = "Egyptian Premier League"
     
     # db = next(get_db())
     # try:
@@ -5537,12 +5714,12 @@ if __name__ == "__main__":
 
     #------------------Eliminar duplicados-------------------
 
-    db = next(get_db())
-    try:
-        resultado = deduplicate_competition_matches(liga, db)
-        print(resultado)
-    finally:
-        db.close()
+    # db = next(get_db())
+    # try:
+    #     resultado = deduplicate_competition_matches(liga, db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
 
     # -----------------Eliminar partidos--------------------
     # db = next(get_db())
@@ -5553,18 +5730,18 @@ if __name__ == "__main__":
     #     db.close()
 
     #----------Renombra equipos de una liga especifica---------------
-    # db = next(get_db())
-    # try:
+    db = next(get_db())
+    try:
                        
-    #     # Puedes ir encadenando las demás correcciones usando kwargs:
-    #     rename_team_matches(old_name="Red Bull Bragantino", new_name="Rb Bragantino", competition=liga, db=db)
-    #     rename_team_matches(old_name="Ca Lanús", new_name="Lanús", competition=liga, db=db)
-    #     rename_team_matches(old_name="Vasco Da Gama", new_name="Vasco", competition=liga, db=db)
-    #     rename_team_matches(old_name="Caracas F.C.", new_name="Caracas", competition=liga, db=db)
-    #     rename_team_matches(old_name="Club Sporting Cristal", new_name="Sporting Cristal", competition=liga, db=db)
-    #     rename_team_matches(old_name="River", new_name="River Plate", competition=liga, db=db)
+        # Puedes ir encadenando las demás correcciones usando kwargs:
+        rename_team_matches(old_name="Qingdao", new_name="Qingdao ", competition=liga, db=db)
+        # rename_team_matches(old_name="Ca Lanús", new_name="Lanús", competition=liga, db=db)
+        # rename_team_matches(old_name="Vasco Da Gama", new_name="Vasco", competition=liga, db=db)
+        # rename_team_matches(old_name="Caracas F.C.", new_name="Caracas", competition=liga, db=db)
+        # rename_team_matches(old_name="Club Sporting Cristal", new_name="Sporting Cristal", competition=liga, db=db)
+        # rename_team_matches(old_name="River", new_name="River Plate", competition=liga, db=db)
 
-    #     print("Equipos renombrados exitosamente.")
+        print("Equipos renombrados exitosamente.")
         
-    # finally:
-    #     db.close()
+    finally:
+        db.close()
