@@ -117,13 +117,20 @@ def test_threshold_families_match_the_legacy_sets():
     }
 
 
-@pytest.mark.parametrize("edge,expected", [
-    (None, BlockReason.EDGE_MISSING),
-    (2.4, BlockReason.EDGE_TOO_LOW),
-    (25.1, BlockReason.EDGE_TOO_HIGH),
+@pytest.mark.parametrize("edge,prob,expected", [
+    (None, 65.0, BlockReason.EDGE_MISSING),
+    (2.4, 65.0, BlockReason.EDGE_TOO_LOW),
+    (25.1, 65.0, BlockReason.EDGE_TOO_HIGH),
 ])
-def test_edge_bounds(edge, expected):
-    assert expected in evaluate_soft_filters(good_snapshot(edge=edge))
+def test_edge_bounds(edge, prob, expected):
+    assert expected in evaluate_soft_filters(good_snapshot(edge=edge, prob=prob))
+
+
+def test_edge_above_25_allowed_if_high_prob():
+    # Pick con edge > 25% debe pasar si prob calibrada >= 67%
+    assert evaluate_soft_filters(good_snapshot(edge=26.0, prob=67.0)) == frozenset()
+    assert evaluate_soft_filters(good_snapshot(edge=30.0, prob=70.0)) == frozenset()
+    assert BlockReason.EDGE_TOO_HIGH in evaluate_soft_filters(good_snapshot(edge=26.0, prob=66.9))
 
 
 def test_data_quality_floor():

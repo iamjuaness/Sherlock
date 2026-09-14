@@ -626,20 +626,34 @@ async function handleSendToEndpoint(data) {
 // ═══════════════════════════════════════════════════════════════
 // HELPER FETCH
 // ═══════════════════════════════════════════════════════════════
-async function fetchSofaScore(path) {
+async function fetchSofaScore(path, retries = 2) {
   const url = `https://www.sofascore.com${path}`;
-  const response = await fetch(url, {
-    headers: {
-      Accept: "application/json",
-      "X-Requested-With": "XMLHttpRequest",
-    },
-  });
 
-  if (!response.ok) {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const response = await fetch(url, {
+      headers: {
+        Accept: "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+    });
+
+    if (response.ok) {
+      return await response.json();
+    }
+
+    // Rate limit o error transitorio del servidor: reintentar con backoff
+    const isRetryable = response.status === 429 || response.status >= 500;
+    if (isRetryable && attempt < retries) {
+      const waitMs = 2000 * (attempt + 1); // 2s, 4s, ...
+      console.warn(
+        `[Watson] HTTP ${response.status} en ${path}, reintentando en ${waitMs}ms (intento ${attempt + 1}/${retries})`,
+      );
+      await delay(waitMs);
+      continue;
+    }
+
     throw new Error(`HTTP ${response.status} en ${path}`);
   }
-
-  return await response.json();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1225,7 +1239,9 @@ function sendBulkProgress(data) {
  * busca los partidos del día siguiente (o del mismo día con status.type == "notstarted"),
  * extrae stats + cuotas por cada partido (mismo flujo que handleExtractStats),
  * y los envía al endpoint de Sherlock. Evita duplicados usando la BD via Sherlock.
- * Delays: 5s entre ligas, 3s entre partidos.
+ * Al finalizar, dispara recalculate-all con corte en la fecha del partido mas
+ * temprano guardado, para incorporar los nuevos partidos al motor de picks.
+ * Delays: 5s entre ligas, 5s entre partidos.
  */
 async function handleBulkExtractStats(data) {
   const { baseUrl, competitions } = data;
@@ -1262,6 +1278,7 @@ async function handleBulkExtractStats(data) {
   let totalSaved = 0;
   let totalErrors = 0;
   let totalSkipped = 0;
+  let earliestMatchTs = null; // timestamp (ms) del partido guardado mas temprano, para el corte de recalculate-all
 
   for (let ci = 0; ci < activeComps.length; ci++) {
     if (_bulkCancelled) {
@@ -1362,6 +1379,10 @@ async function handleBulkExtractStats(data) {
 
               if (sendResult?.success) {
                 totalSaved++;
+                const eventTs = event.startTimestamp * 1000;
+                if (earliestMatchTs === null || eventTs < earliestMatchTs) {
+                  earliestMatchTs = eventTs;
+                }
                 sendBulkProgress({
                   phase: "event_saved",
                   message: `  ✅ ${homeName} vs ${awayName} guardado`,
@@ -1392,9 +1413,9 @@ async function handleBulkExtractStats(data) {
             );
           }
 
-          // Espera entre partidos (mínimo 3 segundos)
+          // Espera entre partidos (5 segundos, rate limit solicitado)
           if (ei < targetEvents.length - 1) {
-            await delay(3000);
+            await delay(5000);
           }
         }
       }
@@ -1414,15 +1435,62 @@ async function handleBulkExtractStats(data) {
     }
   }
 
+  // ── Paso final: recalcular todo el historial con corte en la fecha del
+  // partido guardado mas temprano de esta corrida (hoy o manana). Esto asegura
+  // que los partidos recien insertados entren al motor de picks/calibracion
+  // sin tener que reprocesar todo el historico. ──
+  let recalcResult = null;
+  if (totalSaved > 0 && earliestMatchTs !== null) {
+    const thresholdDate = new Date(earliestMatchTs).toISOString().slice(0, 10); // YYYY-MM-DD
+    sendBulkProgress({
+      phase: "recalculate_start",
+      message: `🔁 Recalculando historial desde ${thresholdDate}...`,
+      totalProcessed,
+      totalSaved,
+      totalErrors,
+    });
+    try {
+      const recalcUrl = `${baseUrl}/api/v1/analysis/recalculate-all?threshold_date=${thresholdDate}`;
+      const recalcRes = await fetch(recalcUrl, { method: "POST" });
+      if (recalcRes.ok) {
+        recalcResult = await recalcRes.json();
+        sendBulkProgress({
+          phase: "recalculate_done",
+          message: `✅ Recalculo listo: ${recalcResult?.message || (recalcResult?.updated + " actualizados")}`,
+          totalProcessed,
+          totalSaved,
+          totalErrors,
+        });
+      } else {
+        sendBulkProgress({
+          phase: "recalculate_error",
+          message: `❌ Error al recalcular: HTTP ${recalcRes.status}`,
+          totalProcessed,
+          totalSaved,
+          totalErrors,
+        });
+      }
+    } catch (e) {
+      console.warn("[Bulk Stats] Error en recalculate-all:", e.message);
+      sendBulkProgress({
+        phase: "recalculate_error",
+        message: `❌ Error al recalcular: ${e.message}`,
+        totalProcessed,
+        totalSaved,
+        totalErrors,
+      });
+    }
+  }
+
   sendBulkProgress({
     phase: "done",
-    message: `✅ Completado: ${totalSaved} guardados, ${totalErrors} errores`,
+    message: `✅ Completado: ${totalSaved} guardados, ${totalErrors} errores${recalcResult ? " — historial recalculado" : ""}`,
     totalProcessed,
     totalSaved,
     totalErrors,
   });
 
-  return { success: true, totalProcessed, totalSaved, totalErrors };
+  return { success: true, totalProcessed, totalSaved, totalErrors, recalcResult };
 }
 
 // ═══════════════════════════════════════════════════════════════

@@ -302,7 +302,12 @@ async function handleBulkExtractStatsUI() {
 
     showProgress(100);
     if (res && res.success) {
-      showStatus("success", `✅ ${res.totalSaved} partidos guardados, ${res.totalErrors} errores`);
+      showStatus(
+        "success",
+        `✅ ${res.totalSaved} partidos guardados, ${res.totalErrors} errores${
+          res.recalcResult ? " — historial recalculado" : ""
+        }`,
+      );
     } else if (res && res.cancelled) {
       showStatus("error", "⏹ Extracción masiva cancelada por el usuario");
     } else {

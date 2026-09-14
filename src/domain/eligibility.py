@@ -50,7 +50,7 @@ from typing import Any, Iterable, Mapping
 
 # Versión de la política de publicación. Cambiar un umbral obliga a subirla:
 # sin esto no se puede saber con qué reglas se publicó un pick histórico.
-POLICY_VERSION = "elig-v1"
+POLICY_VERSION = "elig-v2.1"
 
 
 class BlockReason(str, Enum):
@@ -151,7 +151,8 @@ class PublicationThresholds:
     min_prob_default: float = 35.0
     min_edge: float = 2.5
     min_edge_high_threshold: float = 10.0
-    max_edge: float = 25.0  # único techo de edge, global, sin excepción por mercado
+    max_edge: float = 25.0  # Techo global de edge
+    max_edge_high_prob_threshold: float = 67.0  # Excepción: prob calibrada >= 67% permite edge > 25%
     min_data_quality: float = 50.0
     min_stake_units: float = 1.0
     block_on_zero_h2h: bool = True
@@ -400,8 +401,12 @@ def evaluate_soft_filters(
         fails.add(BlockReason.EDGE_MISSING)
     elif snapshot.edge < thresholds.min_edge_for(snapshot.market_family):
         fails.add(BlockReason.EDGE_TOO_LOW)
-    elif snapshot.edge > thresholds.max_edge:  # CAMBIO: vuelve a ser el único techo, sin excepción por mercado
-        fails.add(BlockReason.EDGE_TOO_HIGH)
+    elif snapshot.edge > thresholds.max_edge:
+        # Edge > 25% se descarta por alto riesgo a menos que la probabilidad (calibrada) sea >= 67%
+        prob_val = snapshot.prob if snapshot.prob is not None else 0.0
+        prob_pct = prob_val * 100.0 if 0.0 < prob_val <= 1.0 else prob_val
+        if prob_pct < thresholds.max_edge_high_prob_threshold:
+            fails.add(BlockReason.EDGE_TOO_HIGH)
 
     if (
         snapshot.data_quality_score is not None

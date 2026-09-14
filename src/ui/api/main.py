@@ -5,6 +5,7 @@ from datetime import datetime
 import json
 import asyncio
 import copy
+import traceback
 
 from fastapi.responses import StreamingResponse
 from fastapi import Body, Depends, FastAPI, HTTPException, Query
@@ -1613,20 +1614,11 @@ def save_analysis(
         if req.compare_response_snapshot is not None:
             # pyrefly: ignore [bad-assignment]
             existing.compare_response_snapshot = json.dumps(req.compare_response_snapshot)
-        comp_name = req.payload.get("competition") if isinstance(req.payload, dict) else None
+        comp_name = _extract_competition(req.payload)
         has_real_stats_val = req.has_real_stats if req.has_real_stats is not None else True
         if req.count_in_profitability is not None:
-            count_in_prof_val = req.count_in_profitability
-        elif comp_name:
-            count_in_prof_val = is_league_profitable(comp_name)
-        else:
-            count_in_prof_val = False if not has_real_stats_val else True
-
-        if req.count_in_profitability is not None:
-            # pyrefly: ignore [bad-assignment]
             existing.count_in_profitability = req.count_in_profitability
         elif comp_name:
-            # pyrefly: ignore [bad-assignment]
             existing.count_in_profitability = is_league_profitable(comp_name)
         elif not has_real_stats_val:
             existing.count_in_profitability = False
@@ -1655,7 +1647,7 @@ def save_analysis(
         return _populate_history_extra_fields(existing, out)
 
     # Create new record
-    comp_name = req.payload.get("competition") if isinstance(req.payload, dict) else None
+    comp_name = _extract_competition(req.payload)
     has_real_stats_val = req.has_real_stats if req.has_real_stats is not None else True
     if req.count_in_profitability is not None:
         count_in_prof_val = req.count_in_profitability
@@ -2434,6 +2426,8 @@ def get_leagues_stats(
                 "accuracy": 0.0,
                 "total_profit": 0.0,
                 "has_pending_matches": False,
+                "odds_sum": 0.0,
+                "odds_count": 0,
                 # Per-market tracking: {family: {"hits": 0, "total": 0}}
                 "_market_stats": {},
                 "_detailed_markets": {},
@@ -2491,6 +2485,10 @@ def get_leagues_stats(
                                 leagues_data[comp_name]["total_profit"] += pick_profit
                                 if success != "void":
                                     leagues_data[comp_name]["total_picks"] += 1
+                                    odds_val = float(pick.get("odds", 0.0) or 0.0)
+                                    if odds_val > 0:
+                                        leagues_data[comp_name]["odds_sum"] += odds_val
+                                        leagues_data[comp_name]["odds_count"] += 1
                                     is_hit = _is_pick_hit(success)
                                     if is_hit:
                                         leagues_data[comp_name]["total_hits"] += 1
@@ -2572,6 +2570,12 @@ def get_leagues_stats(
         league["accuracy"] = round((league["total_hits"] / picks_cnt * 100), 1) if picks_cnt > 0 else 0.0
         league["total_profit"] = round(league["total_profit"], 2)
         
+        odds_cnt = league.pop("odds_count", 0)
+        odds_s = league.pop("odds_sum", 0.0)
+        avg_odds = round(odds_s / odds_cnt, 2) if odds_cnt > 0 else 0.0
+        league["avg_odds"] = avg_odds
+        league["break_even_pct"] = round((1.0 / avg_odds * 100.0), 1) if avg_odds > 0 else 0.0
+
         # Build market_hit_rates dict: {family: rate}
         raw_mkt = league.pop("_market_stats", {})
         market_hit_rates = {}
@@ -3298,12 +3302,10 @@ def apply_blacklist(db: Session = Depends(get_db)):
     )
     import json
 
-    history_list = db.query(AnalysisHistory).all()
+    history_list = db.query(AnalysisHistory).filter(AnalysisHistory.picks_calculados != None).all()
     updated_count = 0
 
     for history in history_list:
-        if not history.picks_calculados:
-            continue
         try:
             picks = json.loads(str(history.picks_calculados))
             if not isinstance(picks, list) or len(picks) == 0:
@@ -3363,11 +3365,14 @@ def apply_blacklist(db: Session = Depends(get_db)):
                 # Aplicar o revertir stake_modifier de la liga en picks no blacklisted
                 if not pick.get("is_blacklisted"):
                     stake_mod = get_market_stake_modifier_for_league(league_name, sel)
+                    if stake_mod is None:
+                        stake_mod = 1.0
+
                     base_stake = pick.get("base_stake_units")
                     if base_stake is None:
-                        base_stake = pick.get("stake_units", 1.0)
+                        base_stake = pick.get("stake_units") or 1.0
                         pick["base_stake_units"] = base_stake
-                    
+
                     target_stake = max(MIN_STAKE, round(base_stake * stake_mod)) if stake_mod != 1.0 else base_stake
                     if pick.get("stake_units") != target_stake:
                         pick["stake_units"] = target_stake
@@ -3425,7 +3430,7 @@ def apply_blacklist(db: Session = Depends(get_db)):
 
                 updated_count += 1
         except Exception as e:
-            print(f"Error actualizando blacklist para {history.id}: {e}")
+            traceback.print_exc(f"Error actualizando blacklist para {history.id}: {e}")
 
     if updated_count > 0:
         db.commit()
@@ -3536,11 +3541,16 @@ class BlacklistMarketRequest(BaseModel):
     market_name: str
 
 
-@app.post("/api/v1/leagues/blacklist-market", tags=["Leagues"])
-def blacklist_market(req: BlacklistMarketRequest, db: Session = Depends(get_db)):
+class BlacklistMarketsBatchRequest(BaseModel):
+    league: str
+    markets: list[str]
+
+
+@app.post("/api/v1/leagues/blacklist-markets", tags=["Leagues"])
+def blacklist_markets_batch(req: BlacklistMarketsBatchRequest, db: Session = Depends(get_db)):
     """
-    Agrega un mercado de una liga específica a data/league_penalties.json
-    y vuelve a aplicar la blacklist a todo el historial.
+    Agrega varios mercados de una liga específica a data/league_penalties.json
+    y vuelve a aplicar la blacklist a todo el historial en una sola operación.
     """
     from src.ui.api.compare import _market_family, _market_side
     penalties_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
@@ -3557,23 +3567,30 @@ def blacklist_market(req: BlacklistMarketRequest, db: Session = Depends(get_db))
             except Exception:
                 penalties = []
 
-        family = _market_family(req.market_name)
-        side = _market_side(req.market_name)
+        added_count = 0
+        for m_name in req.markets:
+            if not m_name:
+                continue
+            family = _market_family(m_name)
+            side = _market_side(m_name)
 
-        exists = False
-        for rule in penalties:
-            if (rule.get("league", "").strip().lower() == req.league.strip().lower() and
-                rule.get("market_family", "").strip().lower() == family.lower() and
-                rule.get("market_side", "").strip().lower() == side.lower()):
-                exists = True
-                break
+            exists = False
+            for rule in penalties:
+                if (rule.get("league", "").strip().lower() == req.league.strip().lower() and
+                    rule.get("market_family", "").strip().lower() == family.lower() and
+                    rule.get("market_side", "").strip().lower() == side.lower()):
+                    exists = True
+                    break
 
-        if not exists:
-            penalties.append({
-                "league": req.league.strip(),
-                "market_family": family,
-                "market_side": side
-            })
+            if not exists:
+                penalties.append({
+                    "league": req.league.strip(),
+                    "market_family": family,
+                    "market_side": side
+                })
+                added_count += 1
+
+        if added_count > 0:
             os.makedirs(os.path.dirname(penalties_path), exist_ok=True)
             with open(penalties_path, "w", encoding="utf-8") as f:
                 json.dump(penalties, f, ensure_ascii=False, indent=2)
@@ -3581,13 +3598,26 @@ def blacklist_market(req: BlacklistMarketRequest, db: Session = Depends(get_db))
         res = apply_blacklist(db=db)
         return {
             "status": "ok",
-            "message": f"Mercado '{req.market_name}' añadido a blacklist para '{req.league}'. {res.get('message', '')}",
+            "message": f"Se añadieron {added_count} mercado(s) a blacklist para '{req.league}'. {res.get('message', '')}",
             "apply_blacklist_result": res
         }
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error al agregar mercado a blacklist: {e}")
+        raise HTTPException(status_code=500, detail=f"Error al agregar mercados a blacklist: {e}")
+
+
+@app.post("/api/v1/leagues/blacklist-market", tags=["Leagues"])
+def blacklist_market(req: BlacklistMarketRequest, db: Session = Depends(get_db)):
+    """
+    Agrega un mercado de una liga específica a data/league_penalties.json
+    y vuelve a aplicar la blacklist a todo el historial.
+    """
+    return blacklist_markets_batch(
+        req=BlacklistMarketsBatchRequest(league=req.league, markets=[req.market_name]),
+        db=db
+    )
+
 
 
 class ReduceStakeMarketRequest(BaseModel):

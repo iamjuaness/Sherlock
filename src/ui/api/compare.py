@@ -1443,6 +1443,11 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         league_reliability_penalty=lrs_penalty,
     )
 
+    if odds_obj:
+        bm = odds_obj.get("bookmaker") if isinstance(odds_obj, dict) else getattr(odds_obj, "bookmaker", None)
+        if bm:
+            v.bookmaker = str(bm)
+
     # ── Blacklist de liga: bloqueo duro ──────────────────────────────────
     if league_name and is_market_blacklisted_for_league(league_name, sel):
         block_pick(v, BlockReason.BLACKLISTED)

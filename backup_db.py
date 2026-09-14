@@ -127,5 +127,5 @@ if __name__ == "__main__":
     print(f"DB_PATH:      {DB_PATH}  (existe: {DB_PATH.exists()})")
     print(f"BACKUP_DIR:   {BACKUP_DIR}  (existe: {BACKUP_DIR.exists()})")
     print(f"Backups detectados: {_list_backup_files()}")
-    # backup_db()
-    restore_backup()
+    backup_db()
+    # restore_backup()

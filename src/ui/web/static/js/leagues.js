@@ -5,6 +5,9 @@ let activeView = "matches";
 let visibleMatchesLimit = 50;
 const MAX_STAKE = 3;
 const MIN_STAKE = 1;
+let isMarketSelectMode = false;
+let selectedMarketsSet = new Set();
+let currentMarketsList = [];
 
 function switchView(view) {
   activeView = view;
@@ -13,6 +16,7 @@ function switchView(view) {
   const tabParams = document.getElementById("tab-params");
   const matchesList = document.getElementById("matches-list");
   const paramsPanel = document.getElementById("params-panel");
+  const bulkActions = document.getElementById("markets-bulk-actions");
 
   [tabMatches, tabMarkets, tabParams].forEach(
     (t) => t && t.classList.remove("active"),
@@ -22,6 +26,7 @@ function switchView(view) {
     tabParams && tabParams.classList.add("active");
     if (matchesList) matchesList.style.display = "none";
     if (paramsPanel) paramsPanel.style.display = "block";
+    if (bulkActions) bulkActions.style.display = "none";
     loadLeagueParams();
     return;
   }
@@ -31,8 +36,13 @@ function switchView(view) {
 
   if (view === "matches") {
     tabMatches && tabMatches.classList.add("active");
+    if (bulkActions) bulkActions.style.display = "none";
+    isMarketSelectMode = false;
+    selectedMarketsSet.clear();
+    updateBulkBlacklistButton();
   } else {
     tabMarkets && tabMarkets.classList.add("active");
+    if (bulkActions) bulkActions.style.display = "flex";
     // Si entramos a mercados y la liga activa no tiene los mercados cargados en memory, pedirlos de forma rápida
     if (activeLeague) {
       const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
@@ -182,8 +192,14 @@ function filterLeaguesList() {
 
 let activeSeason = "all";
 let currentMatchesCache = [];
+let currentLeagueFetchController = null;
 
 function selectLeague(name, updateUrl = true, replaceUrl = false) {
+  if (currentLeagueFetchController) {
+    currentLeagueFetchController.abort();
+  }
+  currentLeagueFetchController = new AbortController();
+
   activeLeague = name;
   activeSeason = "all";
   visibleMatchesLimit = 50;
@@ -205,7 +221,7 @@ function selectLeague(name, updateUrl = true, replaceUrl = false) {
     chkProf.checked = leagueInfo.is_profitable !== false;
   }
 
-  fetchMatchesForLeague(name);
+  fetchMatchesForLeague(name, false, currentLeagueFetchController.signal);
 }
 
 async function toggleActiveLeagueProfitability(isProfitable) {
@@ -251,7 +267,7 @@ async function deleteCurrentLeague() {
 let currentOffset = 0;
 let hasMoreMatches = true;
 
-async function fetchMatchesForLeague(name, isLoadMore = false) {
+async function fetchMatchesForLeague(name, isLoadMore = false, signal = null) {
   const matchesContainer = document.getElementById("matches-list");
   if (!matchesContainer) return;
 
@@ -265,11 +281,15 @@ async function fetchMatchesForLeague(name, isLoadMore = false) {
 
   try {
     const useStake = localStorage.getItem("use_stake_system") === "true";
+    const fetchOptions = signal ? { signal } : {};
     const res = await fetch(
       `/api/v1/leagues/${encodeURIComponent(name)}/matches?use_stake=${useStake}&limit=50&offset=${currentOffset}`,
+      fetchOptions,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const newMatches = await res.json();
+
+    if (activeLeague !== name) return;
 
     if (newMatches.length < 50) {
       hasMoreMatches = false;
@@ -287,6 +307,10 @@ async function fetchMatchesForLeague(name, isLoadMore = false) {
 
     renderFilteredMatches();
   } catch (error) {
+    if (error.name === "AbortError") {
+      return; // Petición cancelada intencionalmente al cambiar de liga
+    }
+    if (activeLeague !== name) return;
     console.error("Error cargando partidos:", error);
     if (!isLoadMore) {
       matchesContainer.innerHTML = `<div style="color: var(--red); padding: 2rem; text-align: center;">❌ Error al cargar partidos: ${escapeHtml(error.message)}</div>`;
@@ -569,6 +593,12 @@ function renderMatchesView(filtered, matchesContainer) {
             hrHtml = `<span style="font-size:0.72rem; background:rgba(56,189,248,0.12); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); padding:1px 5px; border-radius:4px; margin-left:4px;" title="Hit rate histórico del pick">🎯 ${Number(hrVal).toFixed(0)}%</span>`;
           }
 
+          // Bookmaker badge
+          const bmVal = pick.bookmaker || (match.payload && (match.payload.bookmaker || (match.payload.odds && match.payload.odds.bookmaker)));
+          const bmHtml = bmVal
+            ? `<span style="font-size:0.72rem; background:rgba(255,255,255,0.06); color:var(--text-muted); border:1px solid rgba(255,255,255,0.12); padding:1px 5px; border-radius:4px; margin-left:4px;" title="Casa de apuestas">🏠 ${escapeHtml(String(bmVal))}</span>`
+            : "";
+
           return `
             <div class="pick-row">
               <div style="display:flex; align-items:center; gap:4px; flex-wrap:wrap;">
@@ -576,6 +606,7 @@ function renderMatchesView(filtered, matchesContainer) {
                 ${catBadge}
                 ${hrHtml}
                 <span style="color: var(--text-muted); font-size: 0.8rem;">@${odds.toFixed(2)}</span>
+                ${bmHtml}
                 ${stakeHtml}
               </div>
               <div>${badge}</div>
@@ -613,6 +644,7 @@ function renderMatchesView(filtered, matchesContainer) {
               </label>
               <span style="font-weight: 800; color: var(--accent-light); font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">${scoreText}</span>
               <span class="match-card__date">${matchDateStr}</span>
+              <button class="btn-preset" title="Registrar Resultado" onclick="openResultsModal('${match.id}')">🏆</button>
               <button class="btn-preset" style="color: var(--red);" title="Eliminar" onclick="deleteHistoryEntry('${match.id}', '${match.payload.competition}')">🗑️</button>
             </div>
           </div>
@@ -781,6 +813,8 @@ function renderMarketsView(filtered, matchesContainer) {
     markets.sort((a, b) => b.totalPicks - a.totalPicks);
   }
 
+  currentMarketsList = markets;
+
   if (markets.length === 0) {
     matchesContainer.innerHTML = `<div style="color: var(--text-muted); padding: 2rem; text-align: center;">No hay mercados registrados para esta temporada.</div>`;
     return;
@@ -798,10 +832,16 @@ function renderMarketsView(filtered, matchesContainer) {
     const avgOddsDisplay = avgOdds > 0 ? avgOdds.toFixed(2) : "0.00";
     const winPct = avgOdds > 0 ? ((1 / avgOdds) * 100).toFixed(1) : "0.0";
 
+    const isChecked = selectedMarketsSet.has(m.name);
+    const selectCheckboxHtml = isMarketSelectMode
+      ? `<input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleMarketSelection('${escapeAttr(m.name)}', this.checked)" style="width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; margin-right: 0.5rem;">`
+      : "";
+
     return `
       <div class="match-card">
         <div class="match-card__header" style="border-bottom: none; padding-bottom: 0.5rem; display: flex; justify-content: space-between; align-items: center;">
           <div style="display: flex; align-items: center; gap: 0.75rem;">
+            ${selectCheckboxHtml}
             <span class="match-card__title" style="font-size: 1.15rem; font-weight: 700; color: #fff;">📊 ${escapeHtml(m.name)}</span>
             <button onclick="reduceMarketStake('${escapeAttr(m.name)}')" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(245, 158, 11, 0.25)'" onmouseout="this.style.background='rgba(245, 158, 11, 0.12)'" title="Reducir stake a la mitad (50%) para este mercado en ${escapeAttr(activeLeague || "")}">📉 Reducir Stake (50%)</button>
             <button onclick="addMarketToBlacklist('${escapeAttr(m.name)}')" style="background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'" title="Agregar este mercado a la blacklist de ${escapeAttr(activeLeague || "")}">🚫 Blacklist</button>
@@ -895,6 +935,15 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
       profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
       profitEl.style.color =
         leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
+
+      const avgOddsEl = document.getElementById("lbl-avg-odds");
+      if (avgOddsEl) {
+        avgOddsEl.textContent = leagueInfo.avg_odds ? leagueInfo.avg_odds.toFixed(2) : "0.00";
+      }
+      const breakEvenEl = document.getElementById("lbl-break-even");
+      if (breakEvenEl) {
+        breakEvenEl.textContent = leagueInfo.break_even_pct ? `${leagueInfo.break_even_pct.toFixed(1)}%` : "0.0%";
+      }
       return;
     }
   }
@@ -904,6 +953,8 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
   let hits = 0;
   let resolvedPicks = 0;
   let totalProfit = 0;
+  let oddsSum = 0;
+  let oddsCount = 0;
 
   const useStake = localStorage.getItem("use_stake_system") === "true";
 
@@ -959,6 +1010,11 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
         return;
       }
 
+      if (odds > 0) {
+        oddsSum += odds;
+        oddsCount += 1;
+      }
+
       if (success === true) {
         totalProfit += (odds - 1) * pickStake;
         totalPicks++;
@@ -974,6 +1030,8 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
 
   const accuracy =
     resolvedPicks > 0 ? Math.round((hits / resolvedPicks) * 100) : 0;
+  const avgOdds = oddsCount > 0 ? oddsSum / oddsCount : 0;
+  const breakEvenPct = avgOdds > 0 ? (1 / avgOdds) * 100 : 0;
 
   document.getElementById("lbl-total-matches").textContent = visibleMatches;
   document.getElementById("lbl-total-picks").textContent = totalPicks;
@@ -982,6 +1040,135 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
   const profitEl = document.getElementById("lbl-profit");
   profitEl.textContent = `${totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)}u`;
   profitEl.style.color = totalProfit >= 0 ? "var(--green)" : "var(--red)";
+
+  const avgOddsEl = document.getElementById("lbl-avg-odds");
+  if (avgOddsEl) {
+    avgOddsEl.textContent = avgOdds > 0 ? avgOdds.toFixed(2) : "0.00";
+  }
+  const breakEvenEl = document.getElementById("lbl-break-even");
+  if (breakEvenEl) {
+    breakEvenEl.textContent = breakEvenPct > 0 ? `${breakEvenPct.toFixed(1)}%` : "0.0%";
+  }
+}
+
+function toggleMarketSelectMode() {
+  isMarketSelectMode = !isMarketSelectMode;
+  const selectBtn = document.getElementById("btn-select-markets");
+  const selectAllBtn = document.getElementById("btn-select-all-markets");
+  const applyBtn = document.getElementById("btn-apply-bulk-blacklist");
+
+  if (isMarketSelectMode) {
+    if (selectBtn) {
+      selectBtn.innerHTML = "❌ Cancelar Selección";
+      selectBtn.style.background = "rgba(239, 68, 68, 0.15)";
+      selectBtn.style.borderColor = "var(--red)";
+      selectBtn.style.color = "var(--red)";
+    }
+    if (selectAllBtn) selectAllBtn.style.display = "inline-flex";
+    if (applyBtn) applyBtn.style.display = "inline-flex";
+  } else {
+    selectedMarketsSet.clear();
+    if (selectBtn) {
+      selectBtn.innerHTML = "☑️ Seleccionar";
+      selectBtn.style.background = "rgba(99, 102, 241, 0.15)";
+      selectBtn.style.borderColor = "var(--accent)";
+      selectBtn.style.color = "var(--accent-light)";
+    }
+    if (selectAllBtn) selectAllBtn.style.display = "none";
+    if (applyBtn) applyBtn.style.display = "none";
+  }
+  updateBulkBlacklistButton();
+  renderFilteredMatches();
+}
+
+function toggleMarketSelection(marketName, isChecked) {
+  if (isChecked) {
+    selectedMarketsSet.add(marketName);
+  } else {
+    selectedMarketsSet.delete(marketName);
+  }
+  updateBulkBlacklistButton();
+  renderFilteredMatches();
+}
+
+function toggleSelectAllMarkets() {
+  if (!currentMarketsList || currentMarketsList.length === 0) return;
+  const allSelected = currentMarketsList.every((m) => selectedMarketsSet.has(m.name));
+  if (allSelected) {
+    selectedMarketsSet.clear();
+  } else {
+    currentMarketsList.forEach((m) => selectedMarketsSet.add(m.name));
+  }
+  updateBulkBlacklistButton();
+  renderFilteredMatches();
+}
+
+function updateBulkBlacklistButton() {
+  const applyBtn = document.getElementById("btn-apply-bulk-blacklist");
+  const selectAllBtn = document.getElementById("btn-select-all-markets");
+  if (!applyBtn) return;
+
+  const count = selectedMarketsSet.size;
+  applyBtn.textContent = `🚫 Aplicar Blacklist (${count})`;
+
+  if (count > 0) {
+    applyBtn.disabled = false;
+    applyBtn.style.opacity = "1";
+    applyBtn.style.cursor = "pointer";
+  } else {
+    applyBtn.disabled = true;
+    applyBtn.style.opacity = "0.6";
+    applyBtn.style.cursor = "not-allowed";
+  }
+
+  if (selectAllBtn && currentMarketsList.length > 0) {
+    const allSelected = currentMarketsList.every((m) => selectedMarketsSet.has(m.name));
+    selectAllBtn.textContent = allSelected ? "Deseleccionar Todos" : "Seleccionar Todos";
+  }
+}
+
+async function applyBulkBlacklist() {
+  if (!activeLeague || selectedMarketsSet.size === 0) return;
+  const count = selectedMarketsSet.size;
+  if (
+    !confirm(
+      `¿Deseas agregar los ${count} mercados seleccionados a la blacklist de la competición "${activeLeague}" y recalcular todo el historial?`
+    )
+  ) {
+    return;
+  }
+
+  try {
+    const res = await fetch("/api/v1/leagues/blacklist-markets", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        league: activeLeague,
+        markets: Array.from(selectedMarketsSet),
+      }),
+    });
+    const data = await res.json();
+    alert(data.message || "Mercados añadidos a blacklist.");
+
+    isMarketSelectMode = false;
+    selectedMarketsSet.clear();
+    const selectBtn = document.getElementById("btn-select-markets");
+    if (selectBtn) {
+      selectBtn.innerHTML = "☑️ Seleccionar";
+      selectBtn.style.background = "rgba(99, 102, 241, 0.15)";
+      selectBtn.style.borderColor = "var(--accent)";
+      selectBtn.style.color = "var(--accent-light)";
+    }
+    const selectAllBtn = document.getElementById("btn-select-all-markets");
+    if (selectAllBtn) selectAllBtn.style.display = "none";
+    const applyBtn = document.getElementById("btn-apply-bulk-blacklist");
+    if (applyBtn) applyBtn.style.display = "none";
+
+    await fetchLeagues();
+  } catch (err) {
+    console.error("Error al agregar mercados a blacklist:", err);
+    alert("Error al aplicar la blacklist: " + err.message);
+  }
 }
 
 function toggleLeaguesStake() {

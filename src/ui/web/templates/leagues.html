@@ -504,24 +504,62 @@
                 <div class="league-stat-box__val" id="lbl-profit">0.0 u</div>
                 <div class="league-stat-box__lbl">Beneficio</div>
               </div>
+              <div class="league-stat-box">
+                <div class="league-stat-box__val" id="lbl-avg-odds" style="color: #f59e0b;">0.00</div>
+                <div class="league-stat-box__lbl">Cuota Media</div>
+              </div>
+              <div class="league-stat-box">
+                <div class="league-stat-box__val" id="lbl-break-even" style="color: #38bdf8;">0.0%</div>
+                <div class="league-stat-box__lbl">% Equilibrio</div>
+              </div>
             </div>
           </div>
 
-          <div class="tabs-container">
-            <button
-              id="tab-matches"
-              class="tab-btn active"
-              onclick="switchView('matches')"
-            >
-              Partidos
-            </button>
-            <button
-              id="tab-markets"
-              class="tab-btn"
-              onclick="switchView('markets')"
-            >
-              Mercados
-            </button>
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
+            <div class="tabs-container" style="margin-bottom: 0;">
+              <button
+                id="tab-matches"
+                class="tab-btn active"
+                onclick="switchView('matches')"
+              >
+                Partidos
+              </button>
+              <button
+                id="tab-markets"
+                class="tab-btn"
+                onclick="switchView('markets')"
+              >
+                Mercados
+              </button>
+            </div>
+
+            <div id="markets-bulk-actions" style="display: none; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+              <button
+                id="btn-select-markets"
+                class="tab-btn"
+                onclick="toggleMarketSelectMode()"
+                style="background: rgba(99, 102, 241, 0.15); color: var(--accent-light); border: 1px solid var(--accent);"
+              >
+                ☑️ Seleccionar
+              </button>
+              <button
+                id="btn-select-all-markets"
+                class="tab-btn"
+                onclick="toggleSelectAllMarkets()"
+                style="display: none; background: rgba(255, 255, 255, 0.05); color: var(--text-secondary); border: 1px solid var(--border);"
+              >
+                Seleccionar Todos
+              </button>
+              <button
+                id="btn-apply-bulk-blacklist"
+                class="tab-btn"
+                onclick="applyBulkBlacklist()"
+                style="display: none; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); opacity: 0.6; cursor: not-allowed;"
+                disabled
+              >
+                🚫 Aplicar Blacklist (0)
+              </button>
+            </div>
           </div>
 
           <div id="matches-list">

@@ -84,7 +84,7 @@ class AnalysisSave(BaseModel):
     llm_timestamp: datetime | None = None
     compare_response_snapshot: Any | None = None
     needs_reanalysis: bool | None = False
-    count_in_profitability: bool | None = True
+    count_in_profitability: bool | None = None
     has_real_stats: bool | None = True
     pre_match_stats: Any | None = None
     recent_form_stats: Any | None = None

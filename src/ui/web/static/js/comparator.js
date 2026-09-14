@@ -1115,9 +1115,6 @@ async function saveAnalysisDataToDB(sport, payload, results = null) {
       llm_timestamp:
         results && results.llm_analysis ? new Date().toISOString() : null,
       compare_response_snapshot: results ? results : null,
-      count_in_profitability: document.getElementById("fb-count-profit")
-        ? document.getElementById("fb-count-profit").checked
-        : true,
     };
 
     const res = await fetch("/api/v1/analysis", {
@@ -1554,10 +1551,7 @@ async function loadHistoryEntry(id) {
       loadedHistoryEntryId = entry.id;
       loadedHistoryEntryDate = entry.match_date || entry.date;
 
-      if (document.getElementById("fb-count-profit")) {
-        document.getElementById("fb-count-profit").checked =
-          entry.count_in_profitability !== false;
-      }
+
 
       // Mostrar indicador de edición
       const indicator = document.getElementById("editing-indicator");
@@ -1675,9 +1669,7 @@ function cancelEditing() {
   if (indicator) {
     indicator.style.display = "none";
   }
-  if (document.getElementById("fb-count-profit")) {
-    document.getElementById("fb-count-profit").checked = true;
-  }
+
 }
 
 function populateAppForm(sport, data) {
@@ -3286,10 +3278,8 @@ async function saveToDB() {
       match_title: matchTitle,
       match_date: loadedHistoryEntryDate,
       payload: payload,
-      count_in_profitability: document.getElementById("fb-count-profit")
-        ? document.getElementById("fb-count-profit").checked
-        : true,
     };
+
 
     // Opcional: mostrar un indicador de carga al usuario
     const btn = document.querySelector('button[onclick="saveToDB()"]');
