@@ -19,7 +19,6 @@ env/
 data/raw/*
 data/processed/*
 data/manual/*
-data/*.db
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/manual/.gitkeep
@@ -49,6 +48,5 @@ htmlcov/
 .serena/
 
 planning.txt
-data/*
 backup/*
 scratch/

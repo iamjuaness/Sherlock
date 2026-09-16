@@ -67,16 +67,22 @@ _EPS = 1e-6
 @dataclass(frozen=True)
 class CalibrationSample:
     """
-    Una observación para calibrar.
+    Una observación histórica para ajustar la calibración.
 
-    `prob` es la probabilidad RAW del modelo en 0-1 (o 0-100, se autodetecta).
-    `hit_value` es 1.0 (acierto), 0.5 (half-win) o 0.0 (fallo). Un push debe
-    excluirse antes de llegar aquí (usar `outcome_hit_value`, que devuelve None).
+    `prob` puede venir en escala 0-1 o 0-100.
+    `hit_value` admite 1.0, 0.5 o 0.0. Los push deben excluirse antes.
+
+    La segmentación se conserva separada:
+      - market_family: goals, corners, cards, result, double_chance, etc.
+      - side: over, under, 1x, x2, home, away, draw, yes, no...
+      - line_bucket: línea exacta normalizada, por ejemplo "2.5".
     """
 
     prob: float
     hit_value: float
     market_family: str = "generic"
+    side: str = "generic"
+    line_bucket: str | None = None
     league: str | None = None
     timestamp: datetime | None = None
     weight: float = 1.0
@@ -232,18 +238,31 @@ class CalibrationCurve:
         return y * 100.0 if as_pct else y
 
     def _interpolate(self, p: float) -> float:
+        """
+        Interpolación lineal entre nodos observados.
+
+        Fuera del rango cubierto por los bins entrenados se mantiene el valor
+        del extremo más cercano. No se extrapola hacia (0, 0) ni (1, 1),
+        porque hacerlo puede reintroducir confianza artificial en las colas.
+        """
         xs, ys = self.knots_x, self.knots_y
+
         if p <= xs[0]:
             return ys[0]
+
         if p >= xs[-1]:
             return ys[-1]
+
         for i in range(len(xs) - 1):
             x0, x1 = xs[i], xs[i + 1]
+
             if x0 <= p <= x1:
                 if x1 - x0 <= 1e-12:
                     return ys[i + 1]
+
                 t = (p - x0) / (x1 - x0)
                 return ys[i] + t * (ys[i + 1] - ys[i])
+
         return ys[-1]
 
     def validate(self) -> None:
@@ -317,79 +336,126 @@ def fit_curve(
     segment: str = ROOT_KEY,
 ) -> CalibrationCurve:
     """
-    Ajusta una curva de calibración por Beta-Binomial + isotónica.
+    Ajusta una curva por Beta-Binomial + isotónica PAVA.
 
-    `prior_curve` es el nivel padre de la jerarquía. Si es None se usa la
-    identidad, es decir, se asume que el modelo ya está calibrado y solo la
-    evidencia puede moverlo.
+    Mejoras frente a la versión anterior:
+      - Los nodos de la curva corresponden solamente a evidencia observada.
+      - La extrapolación de extremos queda plana y conservadora.
+      - No se fuerzan las anclas (0, 0) y (1, 1), que pueden crear
+        sobreconfianza artificial fuera del rango de entrenamiento.
     """
     if not samples:
         return CalibrationCurve.identity(segment)
 
     prior_curve = prior_curve or CalibrationCurve.identity()
-    probs = [s.normalized_prob() for s in samples]
-    edges = _quantile_edges(probs, max_bins, min_bin_samples)
+
+    probs = [sample.normalized_prob() for sample in samples]
+    edges = _quantile_edges(
+        probs=probs,
+        max_bins=max_bins,
+        min_bin=min_bin_samples,
+    )
 
     bins: list[ReliabilityBin] = []
+
     for i in range(len(edges) - 1):
-        lo, hi = edges[i], edges[i + 1]
-        last = i == len(edges) - 2
+        lo = edges[i]
+        hi = edges[i + 1]
+        is_last_bin = i == len(edges) - 2
+
         members = [
-            s for s, p in zip(samples, probs)
-            if (lo <= p < hi) or (last and abs(p - hi) <= 1e-12)
+            sample
+            for sample, prob in zip(samples, probs)
+            if (lo <= prob < hi)
+            or (is_last_bin and abs(prob - hi) <= 1e-12)
         ]
+
         if not members:
             continue
 
-        n = sum(s.weight for s in members)
-        hits = sum(s.hit_value * s.weight for s in members)
-        mean_pred = sum(s.normalized_prob() * s.weight for s in members) / n if n else (lo + hi) / 2
+        n = sum(sample.weight for sample in members)
+        if n <= 0:
+            continue
+
+        hits = sum(sample.hit_value * sample.weight for sample in members)
+        mean_pred = (
+            sum(sample.normalized_prob() * sample.weight for sample in members)
+            / n
+        )
 
         prior = prior_curve.apply(mean_pred)
-        raw_rate = hits / n if n > 0 else None
-        # Media posterior Beta-Binomial: shrinkage hacia el padre.
-        calibrated = (hits + prior_strength * prior) / (n + prior_strength)
+        raw_rate = hits / n
+
+        calibrated = (
+            hits + prior_strength * prior
+        ) / (
+            n + prior_strength
+        )
 
         bins.append(
             ReliabilityBin(
-                lo=lo, hi=hi, n=n, hits=hits, mean_pred=mean_pred,
-                raw_rate=raw_rate, prior=prior, calibrated=calibrated,
+                lo=lo,
+                hi=hi,
+                n=n,
+                hits=hits,
+                mean_pred=mean_pred,
+                raw_rate=raw_rate,
+                prior=prior,
+                calibrated=calibrated,
             )
         )
 
     if not bins:
         return CalibrationCurve.identity(segment)
 
-    # Monotonía: PAVA ponderado por la evidencia efectiva (n + κ).
-    bins.sort(key=lambda b: b.mean_pred)
-    smoothed = pava(
-        [b.calibrated for b in bins],
-        [b.n + prior_strength for b in bins],
+    bins.sort(key=lambda item: item.mean_pred)
+
+    smoothed_values = pava(
+        values=[item.calibrated for item in bins],
+        weights=[item.n + prior_strength for item in bins],
     )
-    bins = [
+
+    smoothed_bins = [
         ReliabilityBin(
-            lo=b.lo, hi=b.hi, n=b.n, hits=b.hits, mean_pred=b.mean_pred,
-            raw_rate=b.raw_rate, prior=b.prior, calibrated=y,
+            lo=item.lo,
+            hi=item.hi,
+            n=item.n,
+            hits=item.hits,
+            mean_pred=item.mean_pred,
+            raw_rate=item.raw_rate,
+            prior=item.prior,
+            calibrated=calibrated,
         )
-        for b, y in zip(bins, smoothed)
+        for item, calibrated in zip(bins, smoothed_values)
     ]
 
-    xs = [0.0] + [b.mean_pred for b in bins] + [1.0]
-    ys = [0.0] + [b.calibrated for b in bins] + [1.0]
+    xs = [item.mean_pred for item in smoothed_bins]
+    ys = [item.calibrated for item in smoothed_bins]
 
-    # Fuerza monotonía global incluyendo las anclas.
-    for i in range(1, len(ys)):
-        if ys[i] < ys[i - 1]:
-            ys[i] = ys[i - 1]
     for i in range(1, len(xs)):
-        if xs[i] < xs[i - 1]:
-            xs[i] = xs[i - 1]
+        xs[i] = max(xs[i], xs[i - 1])
+
+    for i in range(1, len(ys)):
+        ys[i] = max(ys[i], ys[i - 1])
+
+    if len(xs) == 1:
+        center_x = xs[0]
+        center_y = ys[0]
+
+        xs = [
+            max(_EPS, center_x - 1e-6),
+            min(1.0 - _EPS, center_x + 1e-6),
+        ]
+        ys = [center_y, center_y]
 
     curve = CalibrationCurve(
-        knots_x=tuple(xs), knots_y=tuple(ys),
-        n_samples=sum(s.weight for s in samples),
-        bins=tuple(bins), segment=segment,
+        knots_x=tuple(xs),
+        knots_y=tuple(ys),
+        n_samples=sum(sample.weight for sample in samples),
+        bins=tuple(smoothed_bins),
+        segment=segment,
     )
+
     curve.validate()
     return curve
 
@@ -398,133 +464,294 @@ def fit_curve(
 # CALIBRADOR JERÁRQUICO
 # ═══════════════════════════════════════════════════════════════════════
 
-def family_key(market_family: str) -> str:
-    return f"family:{market_family or 'generic'}"
+def _clean_segment_value(value: str | None, fallback: str = "generic") -> str:
+    text = str(value or fallback).strip().lower()
+    text = " ".join(text.split())
+    return text or fallback
 
 
-def league_key(league: str | None, market_family: str) -> str:
-    return f"league:{league or '?'}|family:{market_family or 'generic'}"
+def family_key(market_family: str | None) -> str:
+    return f"family:{_clean_segment_value(market_family)}"
 
+
+def directional_key(market_family: str | None, side: str | None) -> str:
+    return (
+        f"family:{_clean_segment_value(market_family)}"
+        f"|side:{_clean_segment_value(side)}"
+    )
+
+
+def line_key(
+    market_family: str | None,
+    side: str | None,
+    line_bucket: str | None,
+) -> str | None:
+    if line_bucket is None:
+        return None
+
+    line = str(line_bucket).strip().lower()
+    if not line:
+        return None
+
+    return (
+        f"family:{_clean_segment_value(market_family)}"
+        f"|side:{_clean_segment_value(side)}"
+        f"|line:{line}"
+    )
+
+
+def league_key(
+    league: str | None,
+    market_family: str | None,
+    side: str | None,
+) -> str | None:
+    if not league:
+        return None
+
+    return (
+        f"league:{str(league).strip()}"
+        f"|family:{_clean_segment_value(market_family)}"
+        f"|side:{_clean_segment_value(side)}"
+    )
 
 @dataclass
 class HierarchicalCalibrator:
     """
-    Calibrador de 3 niveles con partial pooling.
+    Calibrador jerárquico y conservador.
 
-    Resolución en `apply`: liga×familia -> familia -> global -> identidad.
-    Se usa la curva MÁS ESPECÍFICA que exista; cada nivel ya está encogido
-    hacia su padre, así que no hay riesgo de saltos por falta de muestra.
+    Orden de resolución:
+
+      league × family × side
+        -> family × side × line
+        -> family × side
+        -> family
+        -> global
+        -> identidad
+
+    La línea solo obtiene curva propia cuando hay evidencia amplia.
+    En la mayoría de casos, con el volumen actual, heredará la curva de
+    familia + dirección, evitando sobreajuste por líneas individuales.
     """
 
     curves: dict[str, CalibrationCurve] = field(default_factory=dict)
-    prior_strength: float = DEFAULT_PRIOR_STRENGTH
-    min_samples: float = DEFAULT_MIN_SAMPLES
+    prior_strength: float = 35.0
+    min_samples: float = 60.0
+    min_line_samples: float = 120.0
+    min_league_samples: float = 80.0
     version: str = "unversioned"
     fitted_at: str | None = None
     metadata: dict = field(default_factory=dict)
 
-    # ── aplicación ──────────────────────────────────────────────────
     def resolve_curve(
-        self, market_family: str | None = None, league: str | None = None
+        self,
+        market_family: str | None = None,
+        side: str | None = None,
+        line_bucket: str | None = None,
+        league: str | None = None,
     ) -> CalibrationCurve:
-        for key in (
-            league_key(league, market_family or "generic") if league else None,
-            family_key(market_family or "generic"),
+        """
+        Devuelve la curva más específica disponible.
+
+        Nunca crea una curva implícita. Si un segmento no tiene muestra,
+        hereda de un padre entrenado.
+        """
+        candidates = (
+            league_key(league, market_family, side),
+            line_key(market_family, side, line_bucket),
+            directional_key(market_family, side),
+            family_key(market_family),
             ROOT_KEY,
-        ):
+        )
+
+        for key in candidates:
             if key and key in self.curves:
                 return self.curves[key]
+
         return CalibrationCurve.identity()
 
     def apply(
         self,
         prob: float,
         market_family: str | None = None,
+        side: str | None = None,
+        line_bucket: str | None = None,
         league: str | None = None,
     ) -> float:
         """
-        Calibra una probabilidad. Acepta y devuelve en la misma escala (0-1 o 0-100).
+        Calibra una probabilidad y conserva su escala de entrada.
 
-        Sin artefacto entrenado devuelve `prob` sin tocar: degradar a identidad
-        es seguro, inventar una corrección no lo es.
+        Entrada 0-1 -> salida 0-1.
+        Entrada 0-100 -> salida 0-100.
         """
         if prob is None:
             return prob
-        return self.resolve_curve(market_family, league).apply(prob)
+
+        curve = self.resolve_curve(
+            market_family=market_family,
+            side=side,
+            line_bucket=line_bucket,
+            league=league,
+        )
+
+        return curve.apply(prob)
 
     @property
     def is_trained(self) -> bool:
-        return any(not c.is_identity for c in self.curves.values())
+        return any(
+            not curve.is_identity
+            for curve in self.curves.values()
+        )
 
-    # ── ajuste ──────────────────────────────────────────────────────
     @classmethod
     def fit(
         cls,
         samples: Sequence[CalibrationSample],
-        prior_strength: float = DEFAULT_PRIOR_STRENGTH,
-        min_samples: float = DEFAULT_MIN_SAMPLES,
+        prior_strength: float = 35.0,
+        min_samples: float = 60.0,
+        min_line_samples: float = 120.0,
+        min_league_samples: float = 80.0,
         max_bins: int = DEFAULT_MAX_BINS,
         version: str | None = None,
     ) -> "HierarchicalCalibrator":
         """
-        Ajusta la jerarquía completa: global -> familia -> liga×familia.
+        Ajusta la jerarquía completa con partial pooling.
 
-        Un segmento solo recibe curva propia si tiene al menos `min_samples`
-        observaciones; en caso contrario hereda la del padre.
+        Los mínimos más altos evitan que una racha corta modifique el EV
+        y el Kelly. Con tus 778 picks resueltos, es preferible mantener
+        pocas curvas estables que producir una por liga/línea con ruido.
         """
         curves: dict[str, CalibrationCurve] = {}
+        total_weight = sum(sample.weight for sample in samples)
 
-        total_w = sum(s.weight for s in samples)
         global_curve = (
-            fit_curve(samples, None, prior_strength, max_bins, segment=ROOT_KEY)
-            if total_w >= min_samples
-            else CalibrationCurve.identity()
+            fit_curve(
+                samples=samples,
+                prior_curve=None,
+                prior_strength=prior_strength,
+                max_bins=max_bins,
+                segment=ROOT_KEY,
+            )
+            if total_weight >= min_samples
+            else CalibrationCurve.identity(ROOT_KEY)
         )
+
         curves[ROOT_KEY] = global_curve
 
-        # Nivel 2: familia de mercado
         by_family: dict[str, list[CalibrationSample]] = {}
-        for s in samples:
-            by_family.setdefault(s.market_family or "generic", []).append(s)
+        by_direction: dict[tuple[str, str], list[CalibrationSample]] = {}
+        by_line: dict[tuple[str, str, str], list[CalibrationSample]] = {}
+        by_league: dict[tuple[str, str, str], list[CalibrationSample]] = {}
 
-        for fam, subset in sorted(by_family.items()):
-            key = family_key(fam)
-            if sum(s.weight for s in subset) < min_samples:
+        for sample in samples:
+            family = _clean_segment_value(sample.market_family)
+            side = _clean_segment_value(sample.side)
+
+            by_family.setdefault(family, []).append(sample)
+            by_direction.setdefault((family, side), []).append(sample)
+
+            if sample.line_bucket:
+                line = str(sample.line_bucket).strip().lower()
+                by_line.setdefault((family, side, line), []).append(sample)
+
+            if sample.league:
+                league = str(sample.league).strip()
+                by_league.setdefault((league, family, side), []).append(sample)
+
+        for family, subset in sorted(by_family.items()):
+            if sum(item.weight for item in subset) < min_samples:
                 continue
+
+            key = family_key(family)
+
             curves[key] = fit_curve(
-                subset, global_curve, prior_strength, max_bins, segment=key
+                samples=subset,
+                prior_curve=global_curve,
+                prior_strength=prior_strength,
+                max_bins=max_bins,
+                segment=key,
             )
 
-        # Nivel 3: liga × familia
-        by_league: dict[tuple[str | None, str], list[CalibrationSample]] = {}
-        for s in samples:
-            if not s.league:
+        for (family, side), subset in sorted(by_direction.items()):
+            if sum(item.weight for item in subset) < min_samples:
                 continue
-            by_league.setdefault((s.league, s.market_family or "generic"), []).append(s)
 
-        for (lg, fam), subset in sorted(by_league.items(), key=lambda kv: (str(kv[0][0]), kv[0][1])):
-            if sum(s.weight for s in subset) < min_samples:
-                continue
-            key = league_key(lg, fam)
-            parent = curves.get(family_key(fam), global_curve)
+            key = directional_key(family, side)
+            parent = curves.get(family_key(family), global_curve)
+
             curves[key] = fit_curve(
-                subset, parent, prior_strength, max_bins, segment=key
+                samples=subset,
+                prior_curve=parent,
+                prior_strength=prior_strength,
+                max_bins=max_bins,
+                segment=key,
             )
+
+        for (family, side, line), subset in sorted(by_line.items()):
+            if sum(item.weight for item in subset) < min_line_samples:
+                continue
+
+            key = line_key(family, side, line)
+            parent = curves.get(
+                directional_key(family, side),
+                curves.get(family_key(family), global_curve),
+            )
+
+            curves[key] = fit_curve(
+                samples=subset,
+                prior_curve=parent,
+                prior_strength=prior_strength,
+                max_bins=max_bins,
+                segment=key,
+            )
+
+        for (league, family, side), subset in sorted(
+            by_league.items(),
+            key=lambda item: item[0],
+        ):
+            if sum(item.weight for item in subset) < min_league_samples:
+                continue
+
+            key = league_key(league, family, side)
+            parent = curves.get(
+                directional_key(family, side),
+                curves.get(family_key(family), global_curve),
+            )
+
+            curves[key] = fit_curve(
+                samples=subset,
+                prior_curve=parent,
+                prior_strength=prior_strength,
+                max_bins=max_bins,
+                segment=key,
+            )
+
+        fitted_at = datetime.now(timezone.utc).isoformat()
 
         return cls(
             curves=curves,
             prior_strength=prior_strength,
             min_samples=min_samples,
-            version=version or datetime.now(timezone.utc).strftime("cal-%Y%m%dT%H%M%SZ"),
-            fitted_at=datetime.now(timezone.utc).isoformat(),
+            min_line_samples=min_line_samples,
+            min_league_samples=min_league_samples,
+            version=version or datetime.now(timezone.utc).strftime(
+                "cal-v2-%Y%m%dT%H%M%SZ"
+            ),
+            fitted_at=fitted_at,
             metadata={
-                "n_samples": total_w,
+                "n_samples": total_weight,
                 "n_segments": len(curves),
                 "format_version": CALIBRATION_FORMAT_VERSION,
+                "hierarchy": [
+                    "global",
+                    "family",
+                    "family_side",
+                    "family_side_line",
+                    "league_family_side",
+                ],
+                "tail_policy": "flat_observed_tail",
             },
         )
 
-    # ── persistencia ────────────────────────────────────────────────
     def to_dict(self) -> dict:
         return {
             "format_version": CALIBRATION_FORMAT_VERSION,
@@ -532,44 +759,69 @@ class HierarchicalCalibrator:
             "fitted_at": self.fitted_at,
             "prior_strength": self.prior_strength,
             "min_samples": self.min_samples,
+            "min_line_samples": self.min_line_samples,
+            "min_league_samples": self.min_league_samples,
             "metadata": self.metadata,
-            "curves": {k: c.to_dict() for k, c in sorted(self.curves.items())},
+            "curves": {
+                key: curve.to_dict()
+                for key, curve in sorted(self.curves.items())
+            },
         }
 
     @classmethod
-    def from_dict(cls, d: dict) -> "HierarchicalCalibrator":
-        fmt = int(d.get("format_version", 0))
+    def from_dict(cls, data: dict) -> "HierarchicalCalibrator":
+        fmt = int(data.get("format_version", 0))
+
         if fmt != CALIBRATION_FORMAT_VERSION:
             raise ValueError(
-                f"Versión de formato de calibración no soportada: {fmt} "
-                f"(esperada {CALIBRATION_FORMAT_VERSION})"
+                f"Versión de calibración no soportada: {fmt}. "
+                f"Esperada: {CALIBRATION_FORMAT_VERSION}"
             )
+
         return cls(
-            curves={k: CalibrationCurve.from_dict(v) for k, v in d.get("curves", {}).items()},
-            prior_strength=float(d.get("prior_strength", DEFAULT_PRIOR_STRENGTH)),
-            min_samples=float(d.get("min_samples", DEFAULT_MIN_SAMPLES)),
-            version=str(d.get("version", "unversioned")),
-            fitted_at=d.get("fitted_at"),
-            metadata=d.get("metadata", {}),
+            curves={
+                key: CalibrationCurve.from_dict(value)
+                for key, value in data.get("curves", {}).items()
+            },
+            prior_strength=float(data.get("prior_strength", 35.0)),
+            min_samples=float(data.get("min_samples", 60.0)),
+            min_line_samples=float(data.get("min_line_samples", 120.0)),
+            min_league_samples=float(data.get("min_league_samples", 80.0)),
+            version=str(data.get("version", "unversioned")),
+            fitted_at=data.get("fitted_at"),
+            metadata=data.get("metadata", {}),
         )
 
     def save(self, path: str | Path) -> Path:
-        p = Path(path)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        p.write_text(
-            json.dumps(self.to_dict(), indent=2, ensure_ascii=False, sort_keys=True),
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        target.write_text(
+            json.dumps(
+                self.to_dict(),
+                indent=2,
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
             encoding="utf-8",
         )
-        return p
+
+        return target
 
     @classmethod
     def load(cls, path: str | Path) -> "HierarchicalCalibrator":
-        return cls.from_dict(json.loads(Path(path).read_text(encoding="utf-8")))
+        source = Path(path)
+
+        return cls.from_dict(
+            json.loads(source.read_text(encoding="utf-8"))
+        )
 
     @classmethod
     def identity(cls) -> "HierarchicalCalibrator":
-        return cls(curves={ROOT_KEY: CalibrationCurve.identity()}, version="identity")
-
+        return cls(
+            curves={ROOT_KEY: CalibrationCurve.identity(ROOT_KEY)},
+            version="identity",
+        )
 
 # ═══════════════════════════════════════════════════════════════════════
 # MÉTRICAS DE CALIDAD PROBABILÍSTICA
@@ -693,51 +945,104 @@ class WalkForwardResult:
 def walk_forward_calibrate(
     samples: Sequence[CalibrationSample],
     n_folds: int = 5,
-    prior_strength: float = DEFAULT_PRIOR_STRENGTH,
-    min_samples: float = DEFAULT_MIN_SAMPLES,
-    min_train: float = DEFAULT_MIN_SAMPLES,
+    prior_strength: float = 35.0,
+    min_samples: float = 60.0,
+    min_line_samples: float = 120.0,
+    min_league_samples: float = 80.0,
+    min_train: float = 120.0,
 ) -> WalkForwardResult:
     """
-    Evaluación walk-forward estricta, ordenada por tiempo.
+    Walk-forward estricto por grupos temporales.
 
-    El fold k se calibra SOLO con los datos anteriores a él. Nunca se evalúa
-    una predicción con una curva que vio su propio resultado, que es el
-    error que invalidaba el ROI histórico del notebook.
-
-    Las muestras sin timestamp se ordenan al final de forma estable, pero para
-    una evaluación honesta deberían tener kickoff UTC.
+    Un mismo timestamp se trata como una unidad indivisible: los picks del
+    mismo bloque de kickoff no pueden aparecer parcialmente en train y
+    parcialmente en test. Así se evita fuga temporal entre partidos
+    simultáneos o recomendaciones procesadas en el mismo lote.
     """
     ordered = sorted(
-        samples,
-        key=lambda s: (
-            s.timestamp is None,
-            s.timestamp or datetime.min.replace(tzinfo=timezone.utc),
-        ),
+        [sample for sample in samples if sample.timestamp is not None],
+        key=lambda sample: sample.timestamp,
     )
-    n = len(ordered)
-    res = WalkForwardResult(n_folds=n_folds)
-    if n == 0 or n_folds < 2:
-        return res
 
-    fold_size = max(1, n // n_folds)
-    for k in range(1, n_folds):
-        train = ordered[: k * fold_size]
-        test = ordered[k * fold_size : (k + 1) * fold_size] if k < n_folds - 1 else ordered[k * fold_size :]
+    result = WalkForwardResult(n_folds=n_folds)
+
+    if not ordered or n_folds < 2:
+        return result
+
+    grouped: list[list[CalibrationSample]] = []
+    current_timestamp = None
+    current_group: list[CalibrationSample] = []
+
+    for sample in ordered:
+        if current_timestamp is None or sample.timestamp == current_timestamp:
+            current_group.append(sample)
+            current_timestamp = sample.timestamp
+            continue
+
+        grouped.append(current_group)
+        current_group = [sample]
+        current_timestamp = sample.timestamp
+
+    if current_group:
+        grouped.append(current_group)
+
+    if len(grouped) < n_folds:
+        result.skipped = len(ordered)
+        return result
+
+    fold_size = max(1, len(grouped) // n_folds)
+
+    for fold_index in range(1, n_folds):
+        train_groups = grouped[: fold_index * fold_size]
+
+        if fold_index < n_folds - 1:
+            test_groups = grouped[
+                fold_index * fold_size:
+                (fold_index + 1) * fold_size
+            ]
+        else:
+            test_groups = grouped[fold_index * fold_size:]
+
+        train = [
+            sample
+            for group in train_groups
+            for sample in group
+        ]
+
+        test = [
+            sample
+            for group in test_groups
+            for sample in group
+        ]
+
         if not test:
             continue
-        if sum(s.weight for s in train) < min_train:
-            res.skipped += len(test)
+
+        if sum(sample.weight for sample in train) < min_train:
+            result.skipped += len(test)
             continue
 
-        cal = HierarchicalCalibrator.fit(
-            train, prior_strength=prior_strength, min_samples=min_samples
+        calibrator = HierarchicalCalibrator.fit(
+            samples=train,
+            prior_strength=prior_strength,
+            min_samples=min_samples,
+            min_line_samples=min_line_samples,
+            min_league_samples=min_league_samples,
         )
-        for s in test:
-            p = s.normalized_prob()
-            res.raw_probs.append(p)
-            res.calibrated_probs.append(
-                cal.apply(p, s.market_family, s.league)
-            )
-            res.outcomes.append(s.hit_value)
 
-    return res
+        for sample in test:
+            raw_prob = sample.normalized_prob()
+
+            result.raw_probs.append(raw_prob)
+            result.calibrated_probs.append(
+                calibrator.apply(
+                    prob=raw_prob,
+                    market_family=sample.market_family,
+                    side=sample.side,
+                    line_bucket=sample.line_bucket,
+                    league=sample.league,
+                )
+            )
+            result.outcomes.append(sample.hit_value)
+
+    return result

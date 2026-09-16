@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -80,11 +81,20 @@ RESULT_COLUMNS = (
 
 @dataclass
 class ExtractionStats:
-    """Contabilidad de por qué se descarta cada pick. Sin esto no hay auditoría."""
+    """
+    Contabilidad auditable de la extracción.
+
+    Separa ausencia de picks de JSON inválido. Una fila sin picks no es
+    necesariamente un error: puede corresponder a un partido analizado que
+    no produjo recomendaciones publicables.
+    """
 
     rows_seen: int = 0
     rows_without_results: int = 0
+    rows_no_picks: int = 0
+    rows_empty_picks: int = 0
     rows_bad_json: int = 0
+
     picks_seen: int = 0
     picks_no_prob: int = 0
     picks_unsettled: int = 0
@@ -97,11 +107,17 @@ class ExtractionStats:
 
     def summary(self) -> str:
         return (
-            f"filas={self.rows_seen} (sin resultado={self.rows_without_results}, "
-            f"json_malo={self.rows_bad_json}) | picks={self.picks_seen} "
+            f"filas={self.rows_seen} "
+            f"(sin_resultado={self.rows_without_results}, "
+            f"sin_picks={self.rows_no_picks}, "
+            f"picks_vacios={self.rows_empty_picks}, "
+            f"json_malo={self.rows_bad_json}) | "
+            f"picks={self.picks_seen} "
             f"-> aceptados={self.picks_accepted} "
-            f"(sin_prob={self.picks_no_prob}, sin_liquidar={self.picks_unsettled}, "
-            f"push={self.picks_push}, sin_fecha={self.picks_no_timestamp})"
+            f"(sin_prob={self.picks_no_prob}, "
+            f"sin_liquidar={self.picks_unsettled}, "
+            f"push={self.picks_push}, "
+            f"sin_fecha={self.picks_no_timestamp})"
         )
 
 
@@ -138,6 +154,76 @@ def _coerce_datetime(value: Any) -> datetime | None:
             return None
     return None
 
+def _normalize_market_text(value: str | None) -> str:
+    return " ".join(str(value or "").lower().strip().split())
+
+
+def _extract_line_bucket(selection: str) -> str | None:
+    """
+    Convierte una línea textual a una línea numérica normalizada.
+
+    Ejemplos:
+      - Under 2.5 Goles -> "2.5"
+      - Over 10.5 Corners -> "10.5"
+      - Hándicap -0.25 -> "-0.25"
+    """
+    text = _normalize_market_text(selection).replace(",", ".")
+
+    match = re.search(r"(?<!\\d)(-?\\d+(?:\\.\\d+)?)", text)
+
+    if not match:
+        return None
+
+    try:
+        return f"{float(match.group(1)):.2f}".rstrip("0").rstrip(".")
+    except ValueError:
+        return None
+
+
+def _resolve_market_side(
+    selection: str,
+    market_family: str,
+) -> str:
+    """
+    Obtiene la dirección del pick sin mezclar polaridades incompatibles.
+    """
+    text = _normalize_market_text(selection)
+    family = _normalize_market_text(market_family)
+
+    if family == "double_chance":
+        if "1x" in text:
+            return "1x"
+        if "x2" in text:
+            return "x2"
+        if re.search(r"(?<!\\d)12(?!\\d)", text):
+            return "12"
+        return "generic"
+
+    if family in {"goals", "corners", "cards", "shots", "shots_target", "fouls"}:
+        if "under" in text or "menos" in text:
+            return "under"
+        if "over" in text or "más" in text or "mas" in text:
+            return "over"
+        return "generic"
+
+    if family == "result":
+        if "local" in text or "home" in text:
+            return "home"
+        if "visitante" in text or "away" in text:
+            return "away"
+        if "empate" in text or "draw" in text:
+            return "draw"
+        return "generic"
+
+    if family == "btts":
+        if "sí" in text or "si" in text or "yes" in text:
+            return "yes"
+        if "no" in text:
+            return "no"
+        return "generic"
+
+    return "generic"
+
 
 def extract_samples(
     rows: Iterable[dict],
@@ -146,43 +232,17 @@ def extract_samples(
     require_timestamp: bool = True,
 ) -> tuple[list[CalibrationSample], ExtractionStats]:
     """
-    Convierte filas de analysis_history en muestras de calibración, preservando
-    la polaridad direccional (1X vs X2, Over vs Under, Home vs Away).
+    Convierte el histórico liquidado en muestras para calibración.
+
+    La probabilidad usada siempre es raw/model_prob, nunca calibrated_prob.
+    Se registra familia, dirección y línea para permitir pooling jerárquico
+    sin mezclar Under con Over, X2 con 1X ni líneas incompatibles.
     """
     if resolver is None:
         from src.ui.api.main import _check_pick_success as resolver  # type: ignore
+
     if market_family_fn is None:
         from src.ui.api.compare import _market_family as market_family_fn  # type: ignore
-
-    def _resolve_directional_market_family(selection_str: str, base_family: str) -> str:
-        sel = selection_str.lower().strip()
-        
-        # 1. Doble Oportunidad: segregación obligatoria
-        if base_family in ("family:double_chance", "family:doublechance") or "doble oportunidad" in sel or "1x" in sel or "x2" in sel:
-            if "1x" in sel:
-                return "family:double_chance|side:1x"
-            elif "x2" in sel:
-                return "family:double_chance|side:x2"
-            elif "12" in sel:
-                return "family:double_chance|side:12"
-            return "family:double_chance"
-
-        # 2. Over / Under: segregación por polaridad
-        if "under" in sel or "menos de" in sel or "menos" in sel:
-            return f"{base_family}|side:under"
-        if "over" in sel or "más de" in sel or "mas de" in sel or "más" in sel:
-            return f"{base_family}|side:over"
-
-        # 3. 1X2 (Moneyline / Result)
-        if base_family in ("family:result", "family:1x2", "family:moneyline"):
-            if any(k in sel for k in ("local", "home", "1")):
-                return f"{base_family}|side:home"
-            if any(k in sel for k in ("visitante", "away", "2")):
-                return f"{base_family}|side:away"
-            if any(k in sel for k in ("empate", "draw", "x")):
-                return f"{base_family}|side:draw"
-
-        return base_family
 
     stats = ExtractionStats()
     samples: list[CalibrationSample] = []
@@ -195,66 +255,123 @@ def extract_samples(
             continue
 
         raw_picks = row.get("picks_calculados")
+
+        if raw_picks is None:
+            stats.rows_no_picks += 1
+            continue
+
         if isinstance(raw_picks, str):
+            raw_picks = raw_picks.strip()
+
+            if not raw_picks:
+                stats.rows_no_picks += 1
+                continue
+
             try:
                 raw_picks = json.loads(raw_picks)
             except (json.JSONDecodeError, TypeError):
                 stats.rows_bad_json += 1
                 continue
+
         if isinstance(raw_picks, dict):
-            raw_picks = raw_picks.get("picks") or raw_picks.get("value_picks") or []
+            raw_picks = (
+                raw_picks.get("picks")
+                or raw_picks.get("value_picks")
+                or []
+            )
+
         if not isinstance(raw_picks, list):
             stats.rows_bad_json += 1
             continue
 
-        results = {k: row.get(k) for k in RESULT_COLUMNS}
-        ts = _coerce_datetime(row.get("match_date") or row.get("date"))
-        league = row.get("league") or row.get("competition") or row.get("league_name")
+        if not raw_picks:
+            stats.rows_empty_picks += 1
+            continue
+
+        results = {
+            column: row.get(column)
+            for column in RESULT_COLUMNS
+        }
+
+        timestamp = _coerce_datetime(
+            row.get("match_date")
+            or row.get("date")
+        )
+
+        league = (
+            row.get("league")
+            or row.get("competition")
+            or row.get("league_name")
+        )
 
         for pick in raw_picks:
             if not isinstance(pick, dict):
                 continue
+
             stats.picks_seen += 1
 
-            prob = _pick_probability(pick)
-            if prob is None:
+            probability = _pick_probability(pick)
+
+            if probability is None:
                 stats.picks_no_prob += 1
                 continue
 
-            if require_timestamp and ts is None:
+            if require_timestamp and timestamp is None:
                 stats.picks_no_timestamp += 1
                 continue
 
             try:
-                legacy = resolver(pick, results)
+                legacy_outcome = resolver(pick, results)
             except Exception as exc:
-                logger.debug("Resolver falló en pick %s: %s", pick.get("selection"), exc)
+                logger.debug(
+                    "Resolver falló para %s: %s",
+                    pick.get("selection"),
+                    exc,
+                )
                 stats.picks_unsettled += 1
                 continue
 
-            outcome = outcome_from_legacy(legacy)
+            outcome = outcome_from_legacy(legacy_outcome)
+
             if outcome is Outcome.UNSETTLED:
                 stats.picks_unsettled += 1
                 continue
 
-            hit = outcome_hit_value(outcome)
-            if hit is None:
+            hit_value = outcome_hit_value(outcome)
+
+            if hit_value is None:
                 stats.picks_push += 1
                 continue
 
-            selection = str(pick.get("selection") or pick.get("market") or "")
-            base_family = market_family_fn(selection)
-            directional_key = _resolve_directional_market_family(selection, base_family)
+            selection = str(
+                pick.get("selection")
+                or pick.get("market")
+                or ""
+            )
+
+            market_family = _normalize_market_text(
+                market_family_fn(selection)
+            )
+
+            side = _resolve_market_side(
+                selection=selection,
+                market_family=market_family,
+            )
+
+            line_bucket = _extract_line_bucket(selection)
 
             samples.append(
                 CalibrationSample(
-                    prob=prob,
-                    hit_value=hit,
-                    market_family=directional_key,
-                    league=str(league) if league else None,
-                    timestamp=ts,
+                    prob=float(probability),
+                    hit_value=float(hit_value),
+                    market_family=market_family,
+                    side=side,
+                    line_bucket=line_bucket,
+                    league=str(league).strip() if league else None,
+                    timestamp=timestamp,
                 )
             )
+
             stats.picks_accepted += 1
 
     return samples, stats
@@ -395,8 +512,13 @@ def train_calibrator(
         return report
 
     wf: WalkForwardResult = walk_forward_calibrate(
-        samples, n_folds=n_folds, prior_strength=prior_strength,
-        min_samples=min_samples, min_train=min_samples,
+        samples=samples,
+        n_folds=n_folds,
+        prior_strength=prior_strength,
+        min_samples=min_samples,
+        min_line_samples=120.0,
+        min_league_samples=80.0,
+        min_train=max(120.0, min_samples * 2.0),
     )
     report.walk_forward = wf.metrics()
 
@@ -416,7 +538,11 @@ def train_calibrator(
         return report
 
     calibrator = HierarchicalCalibrator.fit(
-        samples, prior_strength=prior_strength, min_samples=min_samples
+        samples=samples,
+        prior_strength=prior_strength,
+        min_samples=min_samples,
+        min_line_samples=120.0,
+        min_league_samples=80.0,
     )
     calibrator.metadata["walk_forward"] = report.walk_forward
     calibrator.metadata["extraction"] = report.extraction

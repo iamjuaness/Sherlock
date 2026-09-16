@@ -1,0 +1,148 @@
+{
+  "correlation_rules": {
+    "block_above_abs_rho": 0.3,
+    "penalize_above_abs_rho": 0.2,
+    "fallback_exclusive_groups": [
+      ["goals", "btts"],
+      ["shots", "shots_target"]
+    ]
+  },
+  "rules": [
+    {
+      "id": "btts_yes_rule",
+      "name": "BTTS Sí - Regla Defensiva",
+      "description": "Ambos equipos marcan solo si ambos tienen ataques fuertes y defensas débiles",
+      "market_family": "btts",
+      "market_side": "yes",
+      "enabled": true,
+      "conditions": [
+        {
+          "stat": "home_xg_per_game",
+          "operator": ">=",
+          "value": 1.2,
+          "label": "Local xG ≥ 1.2 por partido"
+        },
+        {
+          "stat": "away_xg_per_game",
+          "operator": ">=",
+          "value": 1.2,
+          "label": "Visitante xG ≥ 1.2 por partido"
+        },
+        {
+          "stat": "home_goals_conceded_per_game",
+          "operator": ">=",
+          "value": 1,
+          "label": "Local recibe ≥ 1 gol por partido"
+        },
+        {
+          "stat": "away_goals_conceded_per_game",
+          "operator": ">=",
+          "value": 1,
+          "label": "Visitante recibe ≥ 1 gol por partido"
+        },
+        {
+          "stat": "xg_xga_diff_max",
+          "operator": "<=",
+          "value": 0.4,
+          "label": "Diferencia xG-xGA máx. 0.4 (equilibrio ofensivo/defensivo)"
+        }
+      ]
+    },
+    {
+      "id": "btts_no_sterile_home_lock",
+      "name": "BTTS No - Local Inoperante y Bajo Ritmo",
+      "description": "Filtra partidos donde el local no domina ni genera peligro claro",
+      "market_family": "btts",
+      "market_side": "no",
+      "enabled": true,
+      "conditions": [
+        {
+          "stat": "home_xg_per_game",
+          "operator": "<=",
+          "value": 1.3,
+          "label": "Local xG ≤ 1.3 por partido"
+        },
+        {
+          "stat": "home_goals_per_game",
+          "operator": "<=",
+          "value": 1.3,
+          "label": "Local anota ≤ 1.3 goles/partido"
+        },
+        {
+          "stat": "home_possession_pct",
+          "operator": "<=",
+          "value": 46,
+          "label": "Local posesión ≤ 46%"
+        },
+        {
+          "stat": "away_goals_conceded_per_game",
+          "operator": "<=",
+          "value": 1.3,
+          "label": "Visitante recibe ≤ 1.3 goles/partido"
+        }
+      ]
+    },
+    {
+      "id": "home_win_rule",
+      "name": "Victoria Local - Regla de Forma",
+      "description": "Victoria local cuando el local tiene ventaja clara en rendimiento y xG",
+      "market_family": "result",
+      "market_side": "home",
+      "enabled": false,
+      "conditions": [
+        {
+          "stat": "home_xg_per_game",
+          "operator": ">=",
+          "value": 1.5,
+          "label": "Local xG ≥ 1.5 por partido"
+        },
+        {
+          "stat": "away_xg_per_game",
+          "operator": "<=",
+          "value": 1.2,
+          "label": "Visitante xG ≤ 1.2 por partido"
+        },
+        {
+          "stat": "home_goals_per_game",
+          "operator": ">",
+          "value": 1.4,
+          "label": "Local anota > 1.4 goles/partido"
+        }
+      ]
+    },
+    {
+      "id": "rule_1786208286947",
+      "name": "Empate - Equipos Parejos",
+      "description": "Sistema de empates para equipos parejos",
+      "market_family": "result",
+      "market_side": "draw",
+      "enabled": false,
+      "conditions": [
+        {
+          "stat": "odds_goals_under_2.5",
+          "operator": "<=",
+          "value": 1.8,
+          "label": "Cuota Goles Under 2.5 se paga máximo a 1.80"
+        },
+        {
+          "stat": "odds_draw",
+          "operator": "<=",
+          "value": 3.4,
+          "label": "Cuota Empate (X) se paga a máximo 3.40"
+        },
+        {
+          "stat": "odds_home",
+          "operator": ">=",
+          "value": 2,
+          "label": "Cuota Local (1) se paga a 2 o más"
+        },
+        {
+          "stat": "odds_away",
+          "operator": ">=",
+          "value": 2,
+          "label": "Cuota Visitante (2) se paga a 2 o más"
+        }
+      ]
+    }
+  ]
+}

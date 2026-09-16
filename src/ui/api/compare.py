@@ -943,35 +943,57 @@ def reset_calibrator_cache() -> None:
     _calibrator_cache["obj"] = None
 
 
-def apply_calibration(raw_prob: float, odds: float, market_family: str,
-                       league: "LeagueStats | None" = None,
-                       league_name: str | None = None) -> float:
+def apply_calibration(
+    raw_prob: float,
+    odds: float,
+    market_family: str,
+    selection: str | None = None,
+    league: "LeagueStats | None" = None,
+    league_name: str | None = None,
+) -> float:
     """
-    Calibra la probabilidad del modelo determinista contra el histórico real.
+    Aplica la curva jerárquica de calibración al pick.
 
-    Sustituye al GLM/IsotonicRegression retirados. En su lugar usa una
-    Beta-Binomial jerárquica (global -> familia de mercado -> liga × familia)
-    suavizada con isotónica PAVA:
+    La cuota se mantiene en la firma por compatibilidad con llamadas
+    existentes, pero no altera la probabilidad del evento. La calibración
+    usa exclusivamente evidencia histórica de probabilidad vs resultado.
 
-      p̂ = (aciertos + κ·prior_del_padre) / (n + κ)
-
-    Con muestra pequeña p̂ ≈ prior, así que un segmento con 5 picks apenas se
-    mueve de su padre y no puede introducir ruido. Sin artefacto entrenado
-    devuelve `raw_prob` intacta.
-
-    `raw_prob` está en escala 0-100 y el retorno mantiene esa escala.
+    La segmentación efectiva es:
+      global -> familia -> familia/dirección -> línea -> liga/dirección.
     """
     if raw_prob is None:
         return raw_prob
 
-    lg_name = league_name
-    if lg_name is None and league is not None:
-        lg_name = getattr(league, "name", None) or getattr(league, "league_name", None)
+    resolved_league = league_name
+
+    if resolved_league is None and league is not None:
+        resolved_league = (
+            getattr(league, "name", None)
+            or getattr(league, "league_name", None)
+        )
+
+    resolved_selection = selection or market_family
+    resolved_family = _market_family(resolved_selection)
+    resolved_side = _calibration_side(
+        selection=resolved_selection,
+        market_family=resolved_family,
+    )
+    resolved_line = _calibration_line_bucket(resolved_selection)
 
     try:
-        return get_calibrator().apply(raw_prob, market_family, lg_name)
+        return get_calibrator().apply(
+            prob=raw_prob,
+            market_family=resolved_family,
+            side=resolved_side,
+            line_bucket=resolved_line,
+            league=resolved_league,
+        )
     except Exception as exc:
-        logger.warning("Fallo al calibrar (%s). Se usa la probabilidad cruda.", exc)
+        logger.warning(
+            "Fallo al calibrar %s (%s). Se conserva la probabilidad raw.",
+            resolved_selection,
+            exc,
+        )
         return raw_prob
 
 
@@ -1307,8 +1329,14 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
 
     family = _market_family(sel)
+
     calibrated_p = apply_calibration(
-        modelp, odds, family, league=league, league_name=league_name
+        raw_prob=modelp,
+        odds=odds,
+        market_family=family,
+        selection=sel,
+        league=league,
+        league_name=league_name,
     )
 
     # Recorte heurístico de respaldo: SOLO cuando no hay curva entrenada.
@@ -2294,6 +2322,16 @@ def _safe_num(value, default=0.0) -> float:
 def _normalize_text(text: str) -> str:
     return " ".join((text or "").strip().lower().split())
 
+def _calibration_line_bucket(selection: str) -> str | None:
+    """
+    Extrae y normaliza una línea numérica presente en el texto del pick.
+    """
+    value = _extract_line_number(selection)
+
+    if value is None:
+        return None
+
+    return f"{value:.2f}".rstrip("0").rstrip(".")
 
 def _extract_line_number(text: str) -> float | None:
     if not text:
@@ -2311,6 +2349,47 @@ def _implied_prob_from_odds(odds: float | None) -> float | None:
 def _clip_0_100(x: float) -> float:
     return max(0.0, min(100.0, x))
 
+def _calibration_side(selection: str, market_family: str) -> str:
+    """
+    Normaliza la polaridad del pick para resolver correctamente la curva
+    jerárquica de calibración.
+    """
+    text = _normalize_text(selection)
+    family = _normalize_text(market_family)
+
+    if family == "double_chance":
+        if "1x" in text:
+            return "1x"
+        if "x2" in text:
+            return "x2"
+        if re.search(r"(?<!\\d)12(?!\\d)", text):
+            return "12"
+        return "generic"
+
+    if family in {"goals", "corners", "cards", "shots", "shots_target", "fouls"}:
+        if "under" in text or "menos" in text:
+            return "under"
+        if "over" in text or "más" in text or "mas" in text:
+            return "over"
+        return "generic"
+
+    if family == "result":
+        if "local" in text or "home" in text:
+            return "home"
+        if "visitante" in text or "away" in text:
+            return "away"
+        if "empate" in text or "draw" in text:
+            return "draw"
+        return "generic"
+
+    if family == "btts":
+        if "sí" in text or "si" in text or "yes" in text:
+            return "yes"
+        if "no" in text:
+            return "no"
+        return "generic"
+
+    return "generic"
 
 def _market_family(text: str) -> str:
     s = _normalize_text(text)

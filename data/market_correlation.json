@@ -1,0 +1,928 @@
+{
+  "generated_at": "2026-09-01T23:15:09.286440",
+  "min_co_occurrence": 30,
+  "pairs": [
+    {
+      "family_a": "btts_no",
+      "family_b": "btts_yes",
+      "rho": -1.0,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "result_away",
+      "rho": -1.0,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "result_home",
+      "rho": -1.0,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "result_draw",
+      "rho": -1.0,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "cards_under",
+      "rho": -0.6437,
+      "n_matches": 844
+    },
+    {
+      "family_a": "shots_over",
+      "family_b": "shots_under",
+      "rho": -0.6128,
+      "n_matches": 652
+    },
+    {
+      "family_a": "shotstarget_over",
+      "family_b": "shotstarget_under",
+      "rho": -0.5941,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "doublechance_home_draw",
+      "rho": -0.5733,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "result_away",
+      "family_b": "result_home",
+      "rho": -0.5733,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "result_home",
+      "rho": 0.5733,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "result_away",
+      "rho": 0.5733,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "result_draw",
+      "family_b": "result_home",
+      "rho": -0.5141,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "doublechance_home_away",
+      "rho": -0.5141,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "result_home",
+      "rho": 0.5141,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "result_draw",
+      "rho": 0.5141,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "shots_over",
+      "family_b": "shotstarget_over",
+      "rho": 0.4246,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "result_away",
+      "rho": 0.4081,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "result_away",
+      "family_b": "result_draw",
+      "rho": -0.4081,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "result_draw",
+      "rho": 0.4081,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "doublechance_home_draw",
+      "rho": -0.4081,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "goals_over",
+      "rho": -0.4061,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "goals_over",
+      "rho": 0.4061,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "shots_under",
+      "family_b": "shotstarget_over",
+      "rho": -0.3806,
+      "n_matches": 652
+    },
+    {
+      "family_a": "shots_over",
+      "family_b": "shotstarget_under",
+      "rho": -0.3798,
+      "n_matches": 652
+    },
+    {
+      "family_a": "shots_under",
+      "family_b": "shotstarget_under",
+      "rho": 0.3794,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "goals_under",
+      "rho": -0.3746,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "goals_under",
+      "rho": 0.3746,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "corners_under",
+      "rho": -0.3688,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "shotstarget_under",
+      "rho": -0.2928,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "shotstarget_under",
+      "rho": 0.2928,
+      "n_matches": 652
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "shotstarget_under",
+      "rho": -0.2632,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "shotstarget_over",
+      "rho": 0.2495,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "shotstarget_over",
+      "rho": -0.2495,
+      "n_matches": 652
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "shotstarget_over",
+      "rho": 0.2441,
+      "n_matches": 652
+    },
+    {
+      "family_a": "goals_under",
+      "family_b": "shotstarget_under",
+      "rho": 0.2362,
+      "n_matches": 652
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "goals_under",
+      "rho": -0.2191,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "goals_under",
+      "family_b": "shotstarget_over",
+      "rho": -0.1912,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "goals_under",
+      "rho": -0.1793,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "goals_under",
+      "family_b": "result_draw",
+      "rho": 0.1793,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "shots_under",
+      "rho": 0.1752,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "result_draw",
+      "rho": 0.1744,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "doublechance_home_away",
+      "rho": -0.1744,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "result_draw",
+      "rho": -0.1744,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "doublechance_home_away",
+      "rho": 0.1744,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "goals_over",
+      "rho": 0.1659,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "result_draw",
+      "rho": -0.1659,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "shots_under",
+      "rho": -0.1298,
+      "n_matches": 652
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "shots_under",
+      "rho": -0.1285,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "shots_under",
+      "rho": -0.1238,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "shots_under",
+      "rho": 0.1238,
+      "n_matches": 652
+    },
+    {
+      "family_a": "goals_under",
+      "family_b": "result_home",
+      "rho": -0.1222,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "goals_under",
+      "rho": 0.1222,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "goals_under",
+      "family_b": "shots_under",
+      "rho": 0.1171,
+      "n_matches": 652
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "shots_over",
+      "rho": -0.1159,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "shots_over",
+      "rho": 0.1009,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "shots_over",
+      "rho": -0.1009,
+      "n_matches": 652
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "shots_over",
+      "rho": 0.0996,
+      "n_matches": 652
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "result_home",
+      "rho": 0.0963,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "goals_over",
+      "rho": -0.0963,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "shots_over",
+      "rho": 0.0931,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "result_home",
+      "rho": -0.0864,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "result_home",
+      "rho": 0.0864,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "doublechance_draw_away",
+      "rho": 0.0864,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "doublechance_draw_away",
+      "rho": -0.0864,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "shotstarget_over",
+      "rho": 0.0825,
+      "n_matches": 652
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "doublechance_home_draw",
+      "rho": 0.0746,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "result_away",
+      "rho": 0.0746,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "doublechance_home_draw",
+      "rho": -0.0746,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "result_away",
+      "rho": -0.0746,
+      "n_matches": 1426
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "shotstarget_under",
+      "rho": 0.0663,
+      "n_matches": 652
+    },
+    {
+      "family_a": "result_away",
+      "family_b": "shots_under",
+      "rho": -0.0628,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "shots_under",
+      "rho": 0.0628,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "shotstarget_over",
+      "rho": -0.0609,
+      "n_matches": 631
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "shotstarget_over",
+      "rho": -0.0589,
+      "n_matches": 652
+    },
+    {
+      "family_a": "goals_under",
+      "family_b": "shots_over",
+      "rho": -0.0588,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "shots_under",
+      "rho": -0.0575,
+      "n_matches": 631
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "goals_over",
+      "rho": -0.0563,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "goals_over",
+      "family_b": "result_away",
+      "rho": 0.0563,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "result_draw",
+      "family_b": "shotstarget_over",
+      "rho": -0.0533,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "shotstarget_over",
+      "rho": 0.0533,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "shotstarget_under",
+      "rho": -0.0527,
+      "n_matches": 652
+    },
+    {
+      "family_a": "result_away",
+      "family_b": "shots_over",
+      "rho": 0.0527,
+      "n_matches": 652
+    },
+    {
+      "family_a": "result_draw",
+      "family_b": "shotstarget_under",
+      "rho": 0.0527,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "shots_over",
+      "rho": -0.0527,
+      "n_matches": 652
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "doublechance_draw_away",
+      "rho": 0.05,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "result_home",
+      "rho": -0.05,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "cards_over",
+      "rho": 0.0488,
+      "n_matches": 844
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "cards_over",
+      "rho": -0.0488,
+      "n_matches": 844
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "shots_under",
+      "rho": -0.048,
+      "n_matches": 652
+    },
+    {
+      "family_a": "result_home",
+      "family_b": "shots_under",
+      "rho": 0.048,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "corners_over",
+      "rho": 0.0455,
+      "n_matches": 839
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "shotstarget_under",
+      "rho": 0.0452,
+      "n_matches": 631
+    },
+    {
+      "family_a": "goals_under",
+      "family_b": "result_away",
+      "rho": -0.0416,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "goals_under",
+      "rho": 0.0416,
+      "n_matches": 1403
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "shotstarget_under",
+      "rho": 0.0402,
+      "n_matches": 652
+    },
+    {
+      "family_a": "result_away",
+      "family_b": "shotstarget_under",
+      "rho": -0.0402,
+      "n_matches": 652
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "goals_over",
+      "rho": -0.0399,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "doublechance_home_draw",
+      "rho": 0.0372,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "result_away",
+      "rho": -0.0372,
+      "n_matches": 844
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "result_away",
+      "rho": 0.0363,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "doublechance_home_draw",
+      "rho": -0.0363,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "goals_over",
+      "rho": -0.0358,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "shotstarget_over",
+      "rho": 0.0354,
+      "n_matches": 631
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "result_draw",
+      "rho": -0.034,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "doublechance_home_away",
+      "rho": 0.034,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "shotstarget_under",
+      "rho": -0.0337,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "goals_under",
+      "rho": -0.0312,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "corners_under",
+      "rho": -0.0301,
+      "n_matches": 839
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "result_away",
+      "rho": 0.0289,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "doublechance_home_draw",
+      "rho": -0.0289,
+      "n_matches": 844
+    },
+    {
+      "family_a": "result_draw",
+      "family_b": "shots_over",
+      "rho": -0.0283,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "shots_over",
+      "rho": 0.0283,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "corners_under",
+      "rho": -0.0281,
+      "n_matches": 839
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "shotstarget_over",
+      "rho": -0.0267,
+      "n_matches": 652
+    },
+    {
+      "family_a": "result_home",
+      "family_b": "shotstarget_over",
+      "rho": 0.0267,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "shotstarget_under",
+      "rho": -0.0247,
+      "n_matches": 631
+    },
+    {
+      "family_a": "result_home",
+      "family_b": "shots_over",
+      "rho": -0.0237,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "shots_over",
+      "rho": 0.0237,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_draw",
+      "family_b": "shotstarget_over",
+      "rho": -0.0229,
+      "n_matches": 652
+    },
+    {
+      "family_a": "result_away",
+      "family_b": "shotstarget_over",
+      "rho": 0.0229,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "result_home",
+      "rho": 0.0227,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "doublechance_draw_away",
+      "rho": -0.0227,
+      "n_matches": 844
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "doublechance_home_draw",
+      "rho": -0.0191,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "result_away",
+      "rho": 0.0191,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "cards_under",
+      "rho": 0.0189,
+      "n_matches": 844
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "cards_under",
+      "rho": -0.0189,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "doublechance_draw_away",
+      "rho": 0.018,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "result_home",
+      "rho": -0.018,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "corners_over",
+      "rho": -0.0178,
+      "n_matches": 839
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "doublechance_home_away",
+      "rho": -0.0175,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "result_draw",
+      "rho": 0.0175,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "result_draw",
+      "rho": 0.0137,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "doublechance_home_away",
+      "rho": -0.0137,
+      "n_matches": 844
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "doublechance_draw_away",
+      "rho": -0.0125,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "result_home",
+      "rho": 0.0125,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "corners_under",
+      "rho": 0.0125,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "corners_under",
+      "rho": -0.0125,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "result_draw",
+      "family_b": "shots_under",
+      "rho": 0.0118,
+      "n_matches": 652
+    },
+    {
+      "family_a": "doublechance_home_away",
+      "family_b": "shots_under",
+      "rho": -0.0118,
+      "n_matches": 652
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "goals_over",
+      "rho": 0.0116,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "shots_under",
+      "rho": 0.0108,
+      "n_matches": 631
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "doublechance_home_away",
+      "rho": 0.0103,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "result_draw",
+      "rho": -0.0103,
+      "n_matches": 844
+    },
+    {
+      "family_a": "doublechance_draw_away",
+      "family_b": "shotstarget_under",
+      "rho": 0.0101,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "shots_over",
+      "rho": -0.0101,
+      "n_matches": 631
+    },
+    {
+      "family_a": "result_home",
+      "family_b": "shotstarget_under",
+      "rho": -0.0101,
+      "n_matches": 652
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "shots_over",
+      "rho": -0.0058,
+      "n_matches": 631
+    },
+    {
+      "family_a": "cards_under",
+      "family_b": "goals_under",
+      "rho": 0.0045,
+      "n_matches": 844
+    },
+    {
+      "family_a": "cards_over",
+      "family_b": "goals_over",
+      "rho": -0.0041,
+      "n_matches": 844
+    },
+    {
+      "family_a": "corners_over",
+      "family_b": "goals_under",
+      "rho": -0.0032,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "btts_no",
+      "family_b": "corners_over",
+      "rho": -0.0031,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "btts_yes",
+      "family_b": "corners_over",
+      "rho": 0.0031,
+      "n_matches": 1354
+    },
+    {
+      "family_a": "corners_under",
+      "family_b": "goals_under",
+      "rho": -0.003,
+      "n_matches": 1354
+    }
+  ],
+  "suggested_thresholds": {
+    "block_above_abs_rho": 0.5,
+    "penalize_above_abs_rho": 0.3
+  }
+}
