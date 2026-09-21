@@ -343,6 +343,7 @@ class StatItem(BaseModel):
     hits: int
     accuracy: float
     profit: float = 0.0
+    roi: float = 0.0
 
 class BucketStat(BaseModel):
     bucket: str

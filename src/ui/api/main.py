@@ -2425,6 +2425,8 @@ def get_leagues_stats(
                 "total_hits": 0,
                 "accuracy": 0.0,
                 "total_profit": 0.0,
+                "total_staked": 0.0,
+                "roi": 0.0,
                 "has_pending_matches": False,
                 "odds_sum": 0.0,
                 "odds_count": 0,
@@ -2485,6 +2487,7 @@ def get_leagues_stats(
                                 leagues_data[comp_name]["total_profit"] += pick_profit
                                 if success != "void":
                                     leagues_data[comp_name]["total_picks"] += 1
+                                    leagues_data[comp_name]["total_staked"] += stake
                                     odds_val = float(pick.get("odds", 0.0) or 0.0)
                                     if odds_val > 0:
                                         leagues_data[comp_name]["odds_sum"] += odds_val
@@ -2570,6 +2573,10 @@ def get_leagues_stats(
         league["accuracy"] = round((league["total_hits"] / picks_cnt * 100), 1) if picks_cnt > 0 else 0.0
         league["total_profit"] = round(league["total_profit"], 2)
         
+        staked_amt = league.pop("total_staked", 0.0)
+        roi_val = (league["total_profit"] / staked_amt * 100) if staked_amt > 0 else ((league["total_profit"] / picks_cnt * 100) if picks_cnt > 0 else 0.0)
+        league["roi"] = round(roi_val, 1)
+        
         odds_cnt = league.pop("odds_count", 0)
         odds_s = league.pop("odds_sum", 0.0)
         avg_odds = round(odds_s / odds_cnt, 2) if odds_cnt > 0 else 0.0
@@ -2595,6 +2602,7 @@ def get_leagues_stats(
         league["historical_picks"] = picks_cnt
         league["historical_hits"] = league["total_hits"]
         league["historical_profit"] = league["total_profit"]
+        league["historical_roi"] = league["roi"]
         
         results.append(league)
         
@@ -4345,12 +4353,15 @@ def get_global_stats(
         for name, data in counters.items():
             if data["picks"] >= min_picks:
                 acc = (data["hits"] / data["picks"] * 100) if data["picks"] > 0 else 0.0
+                staked = data.get("staked", data["picks"])
+                roi_v = (data.get("profit", 0.0) / staked * 100) if staked > 0 else 0.0
                 result.append({
                     "name": name,
                     "picks": data["picks"],
                     "hits": data["hits"],
                     "accuracy": acc,
-                    "profit": round(data.get("profit", 0.0), 2)
+                    "profit": round(data.get("profit", 0.0), 2),
+                    "roi": round(roi_v, 1)
                 })
         return result
 

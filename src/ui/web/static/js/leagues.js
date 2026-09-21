@@ -176,10 +176,17 @@ function renderLeaguesList() {
       const profitClass =
         league.total_profit >= 0 ? "profit--positive" : "profit--negative";
       const profitSign = league.total_profit >= 0 ? "+" : "";
+      const roiVal = league.roi !== undefined
+        ? league.roi
+        : (league.total_picks > 0 ? (league.total_profit / league.total_picks * 100) : 0);
+      const roiSign = roiVal >= 0 ? "+" : "";
       return `
       <div class="league-list-item ${activeClass} ${pendingClass}" onclick="selectLeague('${escapeAttr(league.name)}')">
         <span class="league-list-item__name" title="${escapeHtml(league.name)}">🏆 ${escapeHtml(league.name)}</span>
-        <span class="league-list-item__profit ${profitClass}">${profitSign}${league.total_profit.toFixed(2)}u</span>
+        <span class="league-list-item__profit ${profitClass}">
+          ${profitSign}${league.total_profit.toFixed(2)}u
+          <span style="font-size: 0.78em; opacity: 0.85; font-weight: 500; margin-left: 2px;">(${roiSign}${roiVal.toFixed(1)}%)</span>
+        </span>
       </div>
     `;
     })
@@ -932,9 +939,19 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
       document.getElementById("lbl-accuracy").textContent =
         `${leagueInfo.accuracy}%`;
       const profitEl = document.getElementById("lbl-profit");
-      profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
-      profitEl.style.color =
-        leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
+      if (profitEl) {
+        profitEl.textContent = `${leagueInfo.total_profit >= 0 ? "+" : ""}${leagueInfo.total_profit.toFixed(2)}u`;
+        profitEl.style.color =
+          leagueInfo.total_profit >= 0 ? "var(--green)" : "var(--red)";
+      }
+      const roiEl = document.getElementById("lbl-roi");
+      if (roiEl) {
+        const roiVal = leagueInfo.roi !== undefined
+          ? leagueInfo.roi
+          : (leagueInfo.total_picks > 0 ? (leagueInfo.total_profit / leagueInfo.total_picks * 100) : 0);
+        roiEl.textContent = `(${roiVal >= 0 ? "+" : ""}${roiVal.toFixed(1)}%)`;
+        roiEl.style.color = roiVal >= 0 ? "var(--green)" : "var(--red)";
+      }
 
       const avgOddsEl = document.getElementById("lbl-avg-odds");
       if (avgOddsEl) {
@@ -1038,8 +1055,16 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
   document.getElementById("lbl-accuracy").textContent = `${accuracy}%`;
 
   const profitEl = document.getElementById("lbl-profit");
-  profitEl.textContent = `${totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)}u`;
-  profitEl.style.color = totalProfit >= 0 ? "var(--green)" : "var(--red)";
+  if (profitEl) {
+    profitEl.textContent = `${totalProfit >= 0 ? "+" : ""}${totalProfit.toFixed(2)}u`;
+    profitEl.style.color = totalProfit >= 0 ? "var(--green)" : "var(--red)";
+  }
+  const roiEl = document.getElementById("lbl-roi");
+  if (roiEl) {
+    const roiVal = totalPicks > 0 ? (totalProfit / totalPicks * 100) : 0;
+    roiEl.textContent = `(${roiVal >= 0 ? "+" : ""}${roiVal.toFixed(1)}%)`;
+    roiEl.style.color = roiVal >= 0 ? "var(--green)" : "var(--red)";
+  }
 
   const avgOddsEl = document.getElementById("lbl-avg-odds");
   if (avgOddsEl) {

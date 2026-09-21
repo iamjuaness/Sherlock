@@ -442,6 +442,10 @@ function renderRankings(items, containerId, emoji) {
       const profitClass =
         item.profit >= 0 ? "profit--positive" : "profit--negative";
       const profitSign = item.profit >= 0 ? "+" : "";
+      const roiVal = item.roi !== undefined
+        ? item.roi
+        : (item.picks > 0 ? (item.profit / item.picks * 100) : 0);
+      const roiSign = roiVal >= 0 ? "+" : "";
       return `
       <div class="ranking-item">
         <div class="ranking-item__info">
@@ -449,7 +453,7 @@ function renderRankings(items, containerId, emoji) {
           <span class="ranking-item__stats">${item.hits}/${item.picks} aciertos (${item.accuracy.toFixed(1)}%)</span>
         </div>
         <div class="ranking-item__profit ${profitClass}">
-          ${profitSign}${item.profit.toFixed(2)} u
+          ${profitSign}${item.profit.toFixed(2)} u <span style="font-size: 0.8em; opacity: 0.85; margin-left: 2px;">(${roiSign}${roiVal.toFixed(1)}%)</span>
         </div>
       </div>
     `;

@@ -285,6 +285,160 @@ function showError(msg) {
   alert("⚠️ " + msg);
 }
 
+function generatePickAnalysisText(v) {
+  const selection = v.selection || "Pick de valor";
+
+  // Categoría
+  let categoryName = "Profesional";
+  let categoryEmoji = "🎯";
+  if (v.is_underdog) {
+    categoryName = "Underdog";
+    categoryEmoji = "🐕";
+  }
+
+  const probVal = v.model_prob != null ? Number(v.model_prob).toFixed(1) : "0.0";
+  const oddsVal = v.odds != null ? Number(v.odds).toFixed(v.odds % 1 === 0 ? 0 : (v.odds * 10 % 1 === 0 ? 1 : 2)) : "1.00";
+  const edgeNum = Number(v.edge ?? 0);
+  const edgeVal = edgeNum >= 0 ? `+${edgeNum.toFixed(1)}%` : `${edgeNum.toFixed(1)}%`;
+
+  const stakeUnits = v.stake_units !== undefined && v.stake_units !== null
+    ? v.stake_units
+    : (v.kelly_fraction > 0 ? Math.min(MAX_STAKE, Math.max(MIN_STAKE, Math.round(v.kelly_fraction * 100))) : MIN_STAKE);
+  const stakeText = typeof stakeUnits === "number"
+    ? (stakeUnits % 1 === 0 ? stakeUnits.toFixed(0) : stakeUnits.toFixed(1))
+    : stakeUnits;
+
+  // Nombres de equipos
+  let homeName = v.home_team;
+  if (!homeName || homeName === "---") {
+    homeName = window.currentResults?.home_name || window.currentResults?.home_team;
+  }
+  if (!homeName || homeName === "---") {
+    const textHome = document.getElementById("prefill-home-team")?.textContent?.trim();
+    if (textHome && textHome !== "---" && textHome.toLowerCase() !== "local") {
+      homeName = textHome;
+    }
+  }
+  if (!homeName || homeName === "---") homeName = "Equipo Local";
+
+  let awayName = v.away_team;
+  if (!awayName || awayName === "---") {
+    awayName = window.currentResults?.away_name || window.currentResults?.away_team;
+  }
+  if (!awayName || awayName === "---") {
+    const textAway = document.getElementById("prefill-away-team")?.textContent?.trim();
+    if (textAway && textAway !== "---" && textAway.toLowerCase() !== "visitante") {
+      awayName = textAway;
+    }
+  }
+  if (!awayName || awayName === "---") awayName = "Equipo Visitante";
+
+  // Determinar si es mercado de Resultado Directo (1X2) o Doble Oportunidad
+  const selLower = (v.selection || "").toLowerCase();
+  const is1X2OrDC = selLower.includes("doble oportunidad") ||
+                    selLower.includes("1x") || selLower.includes("x2") || selLower.includes("12") ||
+                    selLower.includes("gana") || selLower.includes("victoria") ||
+                    selLower.includes("resultado final") || selLower.includes("empate") ||
+                    selLower === "local" || selLower === "visitante" ||
+                    selLower.includes("gana local") || selLower.includes("gana visitante") ||
+                    selLower.includes("local o empate") || selLower.includes("empate o visitante") ||
+                    selLower.includes("local o visitante") ||
+                    selLower.includes("equipo local") || selLower.includes("equipo visitante") ||
+                    selLower === "1" || selLower === "x" || selLower === "2";
+
+  // Hit rate local y visitante con muestra
+  const homeHrVal = v.home_hit_rate != null ? Number(v.home_hit_rate).toFixed(1) : null;
+  const awayHrVal = v.away_hit_rate != null ? Number(v.away_hit_rate).toFixed(1) : null;
+  const empHrVal = v.empirical_hit_rate != null ? Number(v.empirical_hit_rate).toFixed(1) : null;
+
+  const homeHits = v.home_hits;
+  const homeCount = v.home_matches_count;
+  const awayHits = v.away_hits;
+  const awayCount = v.away_matches_count;
+
+  const homeSampleStr = (homeHits != null && homeCount != null) ? ` (${homeHits}/${homeCount})` : "";
+  const awaySampleStr = (awayHits != null && awayCount != null) ? ` (${awayHits}/${awayCount})` : "";
+
+  let teamText = "";
+  if (is1X2OrDC) {
+    // 1X2 o Doble Oportunidad: especificar localía / visitante
+    if (homeHrVal != null && awayHrVal != null) {
+      const emp = empHrVal != null ? `${empHrVal}%` : "N/A";
+      teamText = `${homeName} ha dado este pick en el ${homeHrVal}%${homeSampleStr} de los partidos esta temporada que jugó de local y ${awayName} lo ha dado en ${awayHrVal}%${awaySampleStr} de los partidos que jugó de visita, para un ponderado de un ${emp} que ambos equipos han dado este pick en la temporada.`;
+    } else if (homeHrVal != null) {
+      teamText = `${homeName} ha dado este pick en el ${homeHrVal}%${homeSampleStr} de los partidos esta temporada que jugó de local.`;
+    } else if (awayHrVal != null) {
+      teamText = `${awayName} ha dado este pick en el ${awayHrVal}%${awaySampleStr} de los partidos esta temporada que jugó de visita.`;
+    } else if (empHrVal != null) {
+      teamText = `Ambos equipos registran un porcentaje ponderado del ${empHrVal}% de cumplimiento para este pick en la temporada.`;
+    } else {
+      teamText = `Ambos equipos acumulan datos estadísticos de la temporada para evaluar esta selección.`;
+    }
+  } else {
+    // Otros mercados (Goles, Córners, Tarjetas, BTTS, Faltas, Tiros, etc.): SIN especificar local/visita
+    if (homeHrVal != null && awayHrVal != null) {
+      const emp = empHrVal != null ? `${empHrVal}%` : "N/A";
+      teamText = `${homeName} ha dado este pick en el ${homeHrVal}%${homeSampleStr} de los partidos esta temporada y ${awayName} lo ha dado en ${awayHrVal}%${awaySampleStr}, para un ponderado de un ${emp} que ambos equipos han dado este pick en la temporada.`;
+    } else if (homeHrVal != null) {
+      teamText = `${homeName} ha dado este pick en el ${homeHrVal}%${homeSampleStr} de los partidos esta temporada.`;
+    } else if (awayHrVal != null) {
+      teamText = `${awayName} ha dado este pick en el ${awayHrVal}%${awaySampleStr} de los partidos esta temporada.`;
+    } else if (empHrVal != null) {
+      teamText = `Ambos equipos registran un porcentaje ponderado del ${empHrVal}% de cumplimiento para este pick en la temporada.`;
+    } else {
+      teamText = `Ambos equipos acumulan datos estadísticos de la temporada para evaluar esta selección.`;
+    }
+  }
+
+  // H2H
+  let h2hText = "";
+  const h2hHits = v.h2h_hits != null ? v.h2h_hits : (Array.isArray(v.h2h_matches) ? v.h2h_matches.filter(m => m.hit === true).length : null);
+  const h2hCount = v.h2h_samples != null ? v.h2h_samples : (Array.isArray(v.h2h_matches) ? v.h2h_matches.length : 0);
+  const h2hPct = v.h2h_hit_rate != null ? Number(v.h2h_hit_rate).toFixed(0) : (v.h2h_raw_hit_rate != null ? Number(v.h2h_raw_hit_rate).toFixed(0) : (h2hCount > 0 && h2hHits != null ? Math.round((h2hHits / h2hCount) * 100) : null));
+
+  if (h2hCount > 0 && h2hHits != null) {
+    const pctStr = h2hPct != null ? `${h2hPct}%` : "N/A";
+    h2hText = `En sus enfrentamientos h2h, se ha dado en ${h2hHits}/${h2hCount} partidos para un porcentaje de ${pctStr}`;
+  } else {
+    h2hText = `En sus enfrentamientos h2h, no registran enfrentamientos directos en los últimos años.`;
+  }
+
+  return `Apuesta de valor - ${selection}
+
+Categoría [${categoryName}] ${categoryEmoji}
+
+Prob. Modelo = ${probVal}%
+Cuota = ${oddsVal}
+Edge = ${edgeVal}
+Stake = ${stakeText}%
+
+${teamText}
+
+${h2hText}`;
+}
+
+async function copyPickAnalysis(pickIndex, btnEl) {
+  const v = window._currentPicksList ? window._currentPicksList[pickIndex] : null;
+  if (!v) return;
+  const text = generatePickAnalysisText(v);
+  try {
+    await navigator.clipboard.writeText(text);
+    const origText = btnEl.innerHTML;
+    btnEl.innerHTML = "✅ ¡Copiado!";
+    btnEl.style.background = "rgba(34, 197, 94, 0.2)";
+    btnEl.style.borderColor = "#22c55e";
+    btnEl.style.color = "#22c55e";
+    setTimeout(() => {
+      btnEl.innerHTML = origText;
+      btnEl.style.background = "";
+      btnEl.style.borderColor = "";
+      btnEl.style.color = "";
+    }, 2000);
+  } catch (err) {
+    console.error("Error al copiar análisis:", err);
+  }
+}
+
 function renderMultiLineCards(values) {
   const grid = document.getElementById("multi-line-grid");
   const card = document.getElementById("multi-line-card");
@@ -329,8 +483,14 @@ function renderMultiLineCards(values) {
   if (underdogCard)
     underdogCard.style.display = underdogPicks.length > 0 ? "block" : "none";
 
+  // Reset active picks cache
+  window._currentPicksList = [];
+
   // Función auxiliar de renderizado de item
   const renderItem = (v, targetGrid) => {
+    const pickIdx = window._currentPicksList.length;
+    window._currentPicksList.push(v);
+
     const edgeVal = Number(v.edge ?? 0);
     const probText = `${Number(v.model_prob ?? 0).toFixed(1)}%`;
     const oddsText = Number(v.odds).toFixed(2);
@@ -471,7 +631,10 @@ function renderMultiLineCards(values) {
       <div class="value-line-card__edge" style="font-weight:bold;font-size:1.1rem;margin-top:0.5rem;">
         Edge: ${edgeText}
       </div>
-      <span class="value-line-card__badge badge--${mod}">${badgeText}</span>
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-top:0.5rem;">
+        <span class="value-line-card__badge badge--${mod}" style="margin-top:0">${badgeText}</span>
+      </div>
+      <button class="btn-copy-analysis" onclick="copyPickAnalysis(${pickIdx}, this)">📋 Copiar Análisis</button>
     `;
     targetGrid.appendChild(el);
   };
@@ -3699,11 +3862,15 @@ function renderCategoryStats(category) {
         const profitText =
           (profitVal >= 0 ? "+" : "") + profitVal.toFixed(2) + " u";
         const profitColor = profitVal >= 0 ? "#22c55e" : "#ef4444";
+        const roiVal = item.roi !== undefined
+          ? item.roi
+          : (item.picks > 0 ? (profitVal / item.picks * 100) : 0);
+        const roiText = ` (${roiVal >= 0 ? "+" : ""}${roiVal.toFixed(1)}%)`;
 
         el.innerHTML = `
             <div class="analytics-item__main">
                 <span class="analytics-item__name">${item.name}</span>
-                <span class="analytics-item__stat">${item.hits} aciertos de ${item.picks} picks | <strong style="color: ${profitColor}">${profitText}</strong></span>
+                <span class="analytics-item__stat">${item.hits} aciertos de ${item.picks} picks | <strong style="color: ${profitColor}">${profitText}${roiText}</strong></span>
             </div>
             <span class="analytics-item__acc">${item.accuracy.toFixed(0)}%</span>
         `;

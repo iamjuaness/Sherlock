@@ -560,13 +560,20 @@ class ValueIndicator(BaseModel):
     bookmaker: Optional[str] = None
 
     # ── Frecuencia real / Hit Rate empírico (% de partidos donde se dio el pick) ──
+    home_team: Optional[str] = None
+    away_team: Optional[str] = None
     home_hit_rate: Optional[float] = None
     away_hit_rate: Optional[float] = None
+    home_hits: Optional[int] = None
+    home_matches_count: Optional[int] = None
+    away_hits: Optional[int] = None
+    away_matches_count: Optional[int] = None
     empirical_hit_rate: Optional[float] = None
     h2h_hit_rate: Optional[float] = None
     h2h_raw_hit_rate: Optional[float] = None
     hit_rate_samples: Optional[int] = None
     h2h_samples: Optional[int] = None
+    h2h_hits: Optional[int] = None
     h2h_matches: Optional[List[Dict[str, Any]]] = None
 
     # ── Reglas de pick: True si fue bloqueado por una regla estadística o de correlación ──
@@ -4169,7 +4176,36 @@ async def compare_football(
     else:
         relevant_records = [r for r in historical_records if _record_involves_team(r)]
 
+    # ── Filtro por Temporada Actual para Hit Rates de Equipos ──
+    target_year = current_match_time.year if current_match_time else datetime.now().year
+    if isinstance(req, dict) and req.get("season_year"):
+        try:
+            target_year = int(req.get("season_year"))
+        except Exception:
+            pass
+
+    def _is_current_season_record(rec: dict) -> bool:
+        s_year = rec.get("season_year") or rec.get("season")
+        if s_year is not None:
+            if str(target_year) in str(s_year):
+                return True
+        m_date = rec.get("match_date")
+        if m_date:
+            try:
+                if isinstance(m_date, datetime):
+                    return m_date.year == target_year
+                m_s = str(m_date)
+                return str(target_year) in m_s[:4]
+            except Exception:
+                pass
+        return False
+
+    season_records = [r for r in relevant_records if _is_current_season_record(r)]
+    team_hr_records = season_records if season_records else relevant_records
+
     for v in values:
+        v.home_team = h.name
+        v.away_team = a.name
         if match_incomplete_stats:
             block_pick(
                 v,
@@ -4178,7 +4214,7 @@ async def compare_football(
             )
             continue
 
-        # ── Hit Rate empírico (% de acierto real en partidos históricos para TODOS los mercados) ──
+        # ── Hit Rate empírico (% de acierto real en partidos históricos de LA TEMPORADA ACTUAL para TODOS los mercados) ──
         if relevant_records:
             fam = _market_family(v.selection)
             side = _market_side(v.selection)
@@ -4187,14 +4223,21 @@ async def compare_football(
 
             # Mapeo según familia de mercado
             if fam in {"goals", "corners", "cards", "shots", "shots_target", "fouls"} and line is not None:
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(relevant_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(relevant_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, fam, line=line, is_over=is_ov, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
+                v.home_team = h.name
+                v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_hits = hr_h.get("hits")
+                v.home_matches_count = hr_h.get("sample_size")
+                v.away_hits = hr_a.get("hits")
+                v.away_matches_count = hr_a.get("sample_size")
                 h2h_n = hr_h2h.get("sample_size", 0)
                 v.h2h_samples = h2h_n
+                v.h2h_hits = hr_h2h.get("hits")
                 # Ponderación de Hit Rate H2H por tamaño de muestra (planning.txt punto 3):
                 # Si H2H tiene menos de 3 partidos se excluye (ruido), si tiene 3-4 se exige muestra mínima
                 v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
@@ -4209,14 +4252,21 @@ async def compare_football(
 
             elif fam in {"btts", "btts_yes", "btts_no"}:
                 btts_fam = "btts_no" if "no" in side or "no" in v.selection.lower() else "btts_yes"
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(relevant_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(relevant_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, btts_fam, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
+                v.home_team = h.name
+                v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_hits = hr_h.get("hits")
+                v.home_matches_count = hr_h.get("sample_size")
+                v.away_hits = hr_a.get("hits")
+                v.away_matches_count = hr_a.get("sample_size")
                 h2h_n = hr_h2h.get("sample_size", 0)
                 v.h2h_samples = h2h_n
+                v.h2h_hits = hr_h2h.get("hits")
                 v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
                 v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if h2h_n >= 3 else None
                 v.h2h_matches = hr_h2h.get("h2h_matches", [])
@@ -4237,11 +4287,11 @@ async def compare_football(
                     tside = "draw"
 
                 hr_h = LeagueMathEngine.compute_pick_hit_rate(
-                    relevant_records, h.name, "1x2", role_filter="home", target_side=tside,
+                    team_hr_records, h.name, "1x2", role_filter="home", target_side=tside,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
                 hr_a = LeagueMathEngine.compute_pick_hit_rate(
-                    relevant_records, a.name, "1x2", role_filter="away", target_side=tside,
+                    team_hr_records, a.name, "1x2", role_filter="away", target_side=tside,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(
@@ -4249,10 +4299,17 @@ async def compare_football(
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
 
+                v.home_team = h.name
+                v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_hits = hr_h.get("hits")
+                v.home_matches_count = hr_h.get("sample_size")
+                v.away_hits = hr_a.get("hits")
+                v.away_matches_count = hr_a.get("sample_size")
                 h2h_n = hr_h2h.get("sample_size", 0)
                 v.h2h_samples = h2h_n
+                v.h2h_hits = hr_h2h.get("hits")
                 v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
                 v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if h2h_n >= 3 else None
                 v.h2h_matches = hr_h2h.get("h2h_matches", [])
@@ -4276,11 +4333,11 @@ async def compare_football(
                     tside = "12"
 
                 hr_h = LeagueMathEngine.compute_pick_hit_rate(
-                    relevant_records, h.name, "double_chance", role_filter="home", target_side=tside,
+                    team_hr_records, h.name, "double_chance", role_filter="home", target_side=tside,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
                 hr_a = LeagueMathEngine.compute_pick_hit_rate(
-                    relevant_records, a.name, "double_chance", role_filter="away", target_side=tside,
+                    team_hr_records, a.name, "double_chance", role_filter="away", target_side=tside,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(
@@ -4288,10 +4345,17 @@ async def compare_football(
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
 
+                v.home_team = h.name
+                v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_hits = hr_h.get("hits")
+                v.home_matches_count = hr_h.get("sample_size")
+                v.away_hits = hr_a.get("hits")
+                v.away_matches_count = hr_a.get("sample_size")
                 h2h_n = hr_h2h.get("sample_size", 0)
                 v.h2h_samples = h2h_n
+                v.h2h_hits = hr_h2h.get("hits")
                 v.h2h_raw_hit_rate = hr_h2h.get("hit_rate_pct")
                 v.h2h_hit_rate = hr_h2h.get("hit_rate_pct") if h2h_n >= 3 else None
                 v.h2h_matches = hr_h2h.get("h2h_matches", [])

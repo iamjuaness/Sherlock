@@ -12,13 +12,13 @@
     <link rel="stylesheet" href="/static/css/styles.css?v={{ css_version }}" />
     <style>
       .leagues-container {
-        max-width: 1400px;
+        max-width: 1750px;
         margin: 0 auto;
         padding: 1.5rem 1.5rem 2rem 1.5rem;
       }
       .leagues-layout {
         display: grid;
-        grid-template-columns: 320px 1fr;
+        grid-template-columns: 420px 1fr;
         gap: 1.5rem;
         margin-top: 1rem;
         align-items: start;
@@ -83,11 +83,15 @@
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
-        max-width: 180px;
+        flex: 1;
+        min-width: 0;
+        margin-right: 0.75rem;
       }
       .league-list-item__profit {
         font-size: 0.85rem;
         font-weight: 700;
+        white-space: nowrap;
+        flex-shrink: 0;
       }
 
       /* Detail section */
@@ -501,8 +505,11 @@
                 <div class="league-stat-box__lbl">Acierto</div>
               </div>
               <div class="league-stat-box">
-                <div class="league-stat-box__val" id="lbl-profit">0.0 u</div>
-                <div class="league-stat-box__lbl">Beneficio</div>
+                <div class="league-stat-box__val">
+                  <span id="lbl-profit">0.0 u</span>
+                  <span id="lbl-roi" style="font-size: 0.85rem; font-weight: 600; opacity: 0.9; margin-left: 4px;">(+0.0%)</span>
+                </div>
+                <div class="league-stat-box__lbl">Beneficio (ROI)</div>
               </div>
               <div class="league-stat-box">
                 <div class="league-stat-box__val" id="lbl-avg-odds" style="color: #f59e0b;">0.00</div>
