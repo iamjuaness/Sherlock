@@ -174,7 +174,7 @@ async function triggerRecalculateAndFetch() {
 
   try {
     const res = await fetch(
-      `/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}&threshold_date=${thresholdDate}`,
+      `/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}&threshold_date=${thresholdDate}&parallel=true`,
       {
         method: "POST",
       },
@@ -442,9 +442,12 @@ function renderRankings(items, containerId, emoji) {
       const profitClass =
         item.profit >= 0 ? "profit--positive" : "profit--negative";
       const profitSign = item.profit >= 0 ? "+" : "";
-      const roiVal = item.roi !== undefined
-        ? item.roi
-        : (item.picks > 0 ? (item.profit / item.picks * 100) : 0);
+      const roiVal =
+        item.roi !== undefined
+          ? item.roi
+          : item.picks > 0
+            ? (item.profit / item.picks) * 100
+            : 0;
       const roiSign = roiVal >= 0 ? "+" : "";
       return `
       <div class="ranking-item">

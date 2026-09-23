@@ -1990,10 +1990,37 @@ def deduplicate_competition_matches(competition_name: str, db: Session = Depends
             matches_without_odds = []
             
             for m in matches:
-                pdata = json.loads(m.payload) if isinstance(m.payload, str) else m.payload
-                # Verificar si tiene cuotas reales guardadas
-                has_odds = bool(pdata.get("odds") and pdata["odds"].get("home"))
+                pdata = json.loads(m.payload) if isinstance(m.payload, str) else (m.payload or {})
+                if not isinstance(pdata, dict):
+                    pdata = {}
+
+                # Verificar si tiene cuotas reales guardadas en odds o en fuentes (sources)
+                odds_data = pdata.get("odds") if isinstance(pdata, dict) else {}
+                has_odds_in_payload = bool(
+                    isinstance(odds_data, dict) and 
+                    (odds_data.get("home") is not None or odds_data.get("away") is not None or odds_data.get("draw") is not None)
+                )
                 
+                sources_data = pdata.get("sources") if isinstance(pdata, dict) else None
+                has_sources_odds = False
+                if sources_data:
+                    if isinstance(sources_data, dict):
+                        for src_k, src_v in sources_data.items():
+                            if isinstance(src_v, dict) and src_v.get("odds"):
+                                src_odds = src_v.get("odds")
+                                if isinstance(src_odds, dict) and (src_odds.get("home") is not None or src_odds.get("away") is not None or src_odds.get("draw") is not None):
+                                    has_sources_odds = True
+                                    break
+                    elif isinstance(sources_data, list):
+                        for src_item in sources_data:
+                            if isinstance(src_item, dict) and src_item.get("odds"):
+                                src_odds = src_item.get("odds")
+                                if isinstance(src_odds, dict) and (src_odds.get("home") is not None or src_odds.get("away") is not None or src_odds.get("draw") is not None):
+                                    has_sources_odds = True
+                                    break
+
+                has_odds = has_odds_in_payload or has_sources_odds
+
                 if has_odds:
                     matches_with_odds.append(m)
                 else:
@@ -3060,6 +3087,7 @@ def get_recalculate_count(
 async def recalculate_all_accuracy(
     use_general_stats: bool = Query(False),
     threshold_date: str | None = Query(None),
+    parallel: bool = Query(True),
     db: Session = Depends(get_db)
 ):
     """
@@ -3069,6 +3097,7 @@ async def recalculate_all_accuracy(
     2. Actualiza los snapshots y los picks calculados.
     3. Si hay resultados finales, recalcula el acierto (accuracy_percentage).
     """
+    import time, sys
     threshold_dt = None
     if threshold_date:
         try:
@@ -3078,7 +3107,6 @@ async def recalculate_all_accuracy(
                 threshold_dt = datetime.fromisoformat(threshold_date)
             except Exception:
                 pass
-
 
     from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
     rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "pick_rules.json")
@@ -3092,7 +3120,6 @@ async def recalculate_all_accuracy(
         except Exception:
             pass
 
-
     query = db.query(AnalysisHistory).filter(AnalysisHistory.picks_calculados != None)
     if threshold_dt:
         query = query.filter(
@@ -3105,7 +3132,6 @@ async def recalculate_all_accuracy(
     total_to_process = len(history_list)
     count = 0
     updated_accuracy_count = 0
-
 
     from sqlalchemy import text as _sql_text
     _q_hist_batch = _sql_text("""
@@ -3122,8 +3148,98 @@ async def recalculate_all_accuracy(
     """)
     shared_historical_records = [dict(r) for r in db.execute(_q_hist_batch).mappings().all()]
 
+    if parallel:
+        from concurrent.futures import ProcessPoolExecutor
+        from src.core.parallel_recalc import split_into_chunks, _recalc_chunk
 
-    # ── Índice por (competición, equipo) y por equipo: O(1) lookup ──
+        n_workers = max((os.cpu_count() or 2) - 1, 1)
+
+        matches_plain = []
+        for h in history_list:
+            m_date_val = h.match_date or h.date
+            matches_plain.append({
+                "id": h.id,
+                "payload": h.payload,
+                "match_date": m_date_val.isoformat() if m_date_val else None,
+                "sport": h.sport.value if isinstance(h.sport, Sport) else str(h.sport),
+                "final_score_home": h.final_score_home,
+                "final_score_away": h.final_score_away,
+                "final_corners_home": h.final_corners_home,
+                "final_corners_away": h.final_corners_away,
+                "final_yellow_cards_home": h.final_yellow_cards_home,
+                "final_yellow_cards_away": h.final_yellow_cards_away,
+                "final_red_cards_home": h.final_red_cards_home,
+                "final_red_cards_away": h.final_red_cards_away,
+                "final_shots_home": h.final_shots_home,
+                "final_shots_away": h.final_shots_away,
+                "final_shots_on_target_home": h.final_shots_on_target_home,
+                "final_shots_on_target_away": h.final_shots_on_target_away,
+                "final_fouls_home": h.final_fouls_home,
+                "final_fouls_away": h.final_fouls_away,
+            })
+
+        chunks = split_into_chunks(matches_plain, n_workers)
+        chunk_payloads = []
+        for ch in chunks:
+            chunk_payloads.append({
+                "matches": ch,
+                "shared_historical_records": shared_historical_records,
+                "use_general_stats": use_general_stats,
+                "threshold_dt_iso": threshold_dt.isoformat() if threshold_dt else None,
+                "enabled_rules": enabled_rules,
+            })
+
+        print(
+            f"Iniciando recalculate-all PARALELO con {n_workers} workers en {len(chunk_payloads)} chunks "
+            f"({total_to_process} partidos totales)...",
+            flush=True,
+        )
+        t_start = time.perf_counter()
+        results_by_id = {}
+
+        with ProcessPoolExecutor(max_workers=n_workers) as executor:
+            for chunk_idx, chunk_results in enumerate(executor.map(_recalc_chunk, chunk_payloads), start=1):
+                print(f"Chunk [{chunk_idx}/{len(chunk_payloads)}] completado ({len(chunk_results)} partidos)", flush=True)
+                for res in chunk_results:
+                    results_by_id[res["id"]] = res
+
+        for history in history_list:
+            res = results_by_id.get(history.id)
+            if not res:
+                continue
+            if res.get("error"):
+                print(f"Error re-analizando registro {history.id}: {res['error']}", flush=True)
+                continue
+            if res.get("has_odds") is False:
+                history.has_odds = False
+                continue
+            if res.get("skipped"):
+                continue
+
+            history.picks_calculados = res["picks_calculados"]
+            history.compare_response_snapshot = res["compare_response_snapshot"]
+            history.accuracy_percentage = res["accuracy_percentage"]
+            if res.get("has_final_score"):
+                updated_accuracy_count += 1
+
+            history.last_recalculated_at = datetime.utcnow()
+            history.needs_recalc = False
+            count += 1
+
+        db.commit()
+        t_total = time.perf_counter() - t_start
+        print(f"Recalculate-all paralelo completado en {t_total:.2f}s ({count} procesados, {updated_accuracy_count} aciertos actualizados)", flush=True)
+        return {
+            "message": f"Se han re-analizado {count} partidos en modo paralelo ({n_workers} workers). Se actualizó el acierto en {updated_accuracy_count} de ellos.",
+            "total_reanalyzed": count,
+            "accuracy_updated": updated_accuracy_count,
+            "total_to_recalculate": total_to_process,
+            "execution_time_seconds": round(t_total, 2),
+            "workers_used": n_workers,
+            "mode": "parallel",
+        }
+
+    # ── FALLBACK SECUENCIAL (parallel=False) ──
     _team_index: dict[str, list] = {}
     for r in shared_historical_records:
         title = r.get("match_title", "") or ""
@@ -3139,16 +3255,14 @@ async def recalculate_all_accuracy(
             if comp:
                 _team_index.setdefault(f"{comp}::{at}", []).append(r)
 
-
     import time, sys
     _timings = {"payload_load": 0.0, "engine_calc": 0.0, "eligibility": 0.0, "db_write": 0.0}
     _slowest = []
 
-
     for idx, history in enumerate(history_list, start=1):
         m_date = history.match_date or history.date
         print(
-            f"[{idx}/{total_to_process}] Analizando: {history.match_title} "
+            f"[{idx}/{total_to_process}] Analizando (secuencial): {history.match_title} "
             f"({m_date.strftime('%Y-%m-%d') if m_date else 'sin fecha'}) — id={history.id}",
             flush=True,
         )
@@ -3156,18 +3270,15 @@ async def recalculate_all_accuracy(
             if not history.payload:
                 continue
 
-
             if not _check_payload_has_odds(history.payload):
                 history.has_odds = False
                 continue
-
 
             t0 = time.perf_counter()
             payload_dict = json.loads(str(history.payload))
             local_payload = dict(payload_dict)
             sport = history.sport
             _timings["payload_load"] += time.perf_counter() - t0
-
 
             target_use_gen = False
             if use_general_stats:
@@ -3179,9 +3290,7 @@ async def recalculate_all_accuracy(
                 else:
                     target_use_gen = True
 
-
             local_payload["use_general_stats"] = target_use_gen
-
 
             new_response = None
             bookmaker_map: dict = {}
@@ -3207,15 +3316,12 @@ async def recalculate_all_accuracy(
                 _slowest.append((dt, history.id, history.match_title))
                 print(f"  -> Terminado en {dt:.2f}s", flush=True)
 
-
             if new_response:
                 if bookmaker_map:
                     _annotate_best_bookmaker(new_response, bookmaker_map, req.home.name, req.away.name)
 
-
                 t0 = time.perf_counter()
                 picks = [v.model_dump() if hasattr(v, 'model_dump') else v.__dict__ for v in new_response.values]
-
 
                 if enabled_rules:
                     home_stats = local_payload.get("home", {})
@@ -3231,11 +3337,9 @@ async def recalculate_all_accuracy(
                             pick["quality_score"] = -1
                 _timings["eligibility"] += time.perf_counter() - t0
 
-
                 t0 = time.perf_counter()
                 history.picks_calculados = json.dumps(picks)
                 history.compare_response_snapshot = json.dumps(new_response.model_dump() if hasattr(new_response, 'model_dump') else new_response.__dict__)
-
 
                 if history.final_score_home is not None:
                     results_dict = {
@@ -3253,7 +3357,6 @@ async def recalculate_all_accuracy(
                         "final_shots_on_target_away": history.final_shots_on_target_away,
                     }
 
-
                     hits = 0
                     total = 0
                     for pick in picks:
@@ -3267,10 +3370,8 @@ async def recalculate_all_accuracy(
                             if _is_pick_hit(success):
                                 hits += 1
 
-
                     history.accuracy_percentage = (hits / total) * 100 if total > 0 else None
                     updated_accuracy_count += 1
-
 
                 history.last_recalculated_at = datetime.utcnow()
                 history.needs_recalc = False
@@ -3279,18 +3380,18 @@ async def recalculate_all_accuracy(
         except Exception as e:
             print(f"Error re-analizando registro {history.id}: {e}", flush=True)
 
-
     db.commit()
     _slowest.sort(reverse=True)
     print("TIMINGS TOTALES:", _timings, flush=True)
     print("TOP 10 MÁS LENTOS:", _slowest[:10], flush=True)
     return {
-        "message": f"Se han re-analizado {count} partidos. Se actualizó el acierto en {updated_accuracy_count} de ellos.",
+        "message": f"Se han re-analizado {count} partidos (secuencial). Se actualizó el acierto en {updated_accuracy_count} de ellos.",
         "total_reanalyzed": count,
         "accuracy_updated": updated_accuracy_count,
         "total_to_recalculate": total_to_process,
         "timings_debug": _timings,
         "slowest_5": [{"seconds": s, "id": i, "match": m} for s, i, m in _slowest[:5]],
+        "mode": "sequential",
     }
 
 
@@ -5722,7 +5823,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-    liga = "LaLiga"
+    liga = "LigaPro Serie A"
 
     #----------Contar equipos de liga--------------------------------
 
@@ -5736,8 +5837,8 @@ if __name__ == "__main__":
 
     
     ##---------Cambiar nombre de liga---------------
-    # old_name = "Egyptian Premier League, Championship Round"
-    # new_name = "Egyptian Premier League"
+    # old_name = "1. Liga, Qualification Playoffs"
+    # new_name = "Czech First League"
     
     # db = next(get_db())
     # try:
@@ -5759,12 +5860,12 @@ if __name__ == "__main__":
 
     #------------------Eliminar duplicados-------------------
 
-    # db = next(get_db())
-    # try:
-    #     resultado = deduplicate_competition_matches(liga, db)
-    #     print(resultado)
-    # finally:
-    #     db.close()
+    db = next(get_db())
+    try:
+        resultado = deduplicate_competition_matches(liga, db)
+        print(resultado)
+    finally:
+        db.close()
 
     # -----------------Eliminar partidos--------------------
     # db = next(get_db())
@@ -5775,13 +5876,13 @@ if __name__ == "__main__":
     #     db.close()
 
     #----------Renombra equipos de una liga especifica---------------
-    db = next(get_db())
-    try:
+    # db = next(get_db())
+    # try:
                        
-        # Puedes ir encadenando las demás correcciones usando kwargs:
-        rename_team_matches(old_name="Atl. Madrid", new_name="Atlético Madrid", competition=liga, db=db)
+    #     # Puedes ir encadenando las demás correcciones usando kwargs:
+    #     rename_team_matches(old_name="Técnico", new_name="Técnico U.", competition=liga, db=db)
 
-        print("Equipos renombrados exitosamente.")
+    #     print("Equipos renombrados exitosamente.")
         
-    finally:
-        db.close()
+    # finally:
+    #     db.close()

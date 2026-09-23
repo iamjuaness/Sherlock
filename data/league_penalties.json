@@ -6,8 +6,8 @@
   },
   {
     "league": "Brasileirão Série B",
-    "market_family": "shots_target",
-    "market_side": "over"
+    "market_family": "double_chance",
+    "market_side": "draw_away"
   },
   {
     "league": "Brasileirão Série B",
@@ -15,14 +15,39 @@
     "market_side": "over"
   },
   {
+    "league": "MLS",
+    "market_family": "result",
+    "market_side": "away"
+  },
+  {
+    "league": "MLS",
+    "market_family": "result",
+    "market_side": "home"
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "cards",
+    "market_side": "under"
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "corners",
+    "market_side": "over"
+  },
+  {
     "league": "Liga Profesional de Fútbol",
     "market_family": "shots_target",
     "market_side": "under"
   },
   {
     "league": "Liga Profesional de Fútbol",
-    "market_family": "shots",
+    "market_family": "corners",
     "market_side": "under"
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
   },
   {
     "league": "Brasileirão Betano",
@@ -31,11 +56,51 @@
   },
   {
     "league": "Brasileirão Betano",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "Brasileirão Betano",
+    "market_family": "result",
+    "market_side": "away"
+  },
+  {
+    "league": "Brasileirão Betano",
     "market_family": "shots",
     "market_side": "under"
   },
   {
-    "league": "MLS",
+    "league": "LigaPro Serie A",
+    "market_family": "result",
+    "market_side": "away"
+  },
+  {
+    "league": "LigaPro Serie A",
+    "market_family": "result",
+    "market_side": "draw"
+  },
+  {
+    "league": "Premier League",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "HNL",
+    "market_family": "double_chance",
+    "market_side": "draw_away"
+  },
+  {
+    "league": "Primera A",
+    "market_family": "corners",
+    "market_side": "over"
+  },
+  {
+    "league": "Primera A",
+    "market_family": "corners",
+    "market_side": "under"
+  },
+  {
+    "league": "Primera A",
     "market_family": "result",
     "market_side": "away"
   },
@@ -45,76 +110,61 @@
     "market_side": "under"
   },
   {
-    "league": "LigaPro Serie A",
-    "market_family": "result",
-    "market_side": "draw"
-  },
-  {
-    "league": "Premier League",
-    "market_family": "result",
-    "market_side": "draw"
-  },
-  {
-    "league": "Liga de Primera",
-    "market_family": "result",
-    "market_side": "home"
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "double_chance",
-    "market_side": "draw_away"
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "goals",
-    "market_side": "over",
-    "stake_modifier": 0.5,
-    "blacklist": false
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "btts",
-    "market_side": "yes"
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "result",
-    "market_side": "draw"
-  },
-  {
-    "league": "Serie A",
-    "market_family": "result",
-    "market_side": "home"
-  },
-  {
-    "league": "Serie A",
-    "market_family": "goals",
-    "market_side": "under"
-  },
-  {
-    "league": "Serie A",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "Serie A",
+    "league": "Primera A",
     "market_family": "double_chance",
     "market_side": "home_draw"
   },
   {
-    "league": "Saudi Pro League",
-    "market_family": "goals",
+    "league": "Liga de Primera",
+    "market_family": "cards",
     "market_side": "over"
   },
   {
-    "league": "Saudi Pro League",
+    "league": "Liga de Primera",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "Liga de Primera",
     "market_family": "result",
-    "market_side": "home"
+    "market_side": "home",
+    "stake_modifier": 0.5,
+    "blacklist": false
   },
   {
-    "league": "Saudi Pro League",
+    "league": "Czech First League",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "Czech First League",
+    "market_family": "result",
+    "market_side": "away"
+  },
+  {
+    "league": "Czech First League",
+    "market_family": "goals",
+    "market_side": "under"
+  },
+  {
+    "league": "Czech First League",
     "market_family": "corners",
-    "market_side": "over"
+    "market_side": "under"
+  },
+  {
+    "league": "Czech First League",
+    "market_family": "shots",
+    "market_side": "under"
+  },
+  {
+    "league": "Czech First League",
+    "market_family": "shots_target",
+    "market_side": "under"
+  },
+  {
+    "league": "LaLiga",
+    "market_family": "result",
+    "market_side": "away"
   },
   {
     "league": "LaLiga",
@@ -123,57 +173,21 @@
   },
   {
     "league": "LaLiga",
-    "market_family": "result",
-    "market_side": "home"
+    "market_family": "double_chance",
+    "market_side": "home_draw"
   },
   {
-    "league": "LaLiga",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "LaLiga",
-    "market_family": "shots_target",
-    "market_side": "under"
-  },
-  {
-    "league": "LaLiga",
-    "market_family": "corners",
+    "league": "Czech First League",
+    "market_family": "goals",
     "market_side": "over"
   },
   {
-    "league": "Bundesliga",
+    "league": "Brasileirão Série B",
     "market_family": "shots_target",
-    "market_side": "under"
+    "market_side": "over"
   },
   {
-    "league": "Bundesliga",
-    "market_family": "result",
-    "market_side": "home"
-  },
-  {
-    "league": "Bundesliga",
-    "market_family": "goals",
-    "market_side": "over",
-    "stake_modifier": 0.5,
-    "blacklist": false
-  },
-  {
-    "league": "LaLiga",
-    "market_family": "double_chance",
-    "market_side": "home_draw",
-    "stake_modifier": 0.5,
-    "blacklist": false
-  },
-  {
-    "league": "Serie A",
-    "market_family": "double_chance",
-    "market_side": "draw_away",
-    "stake_modifier": 0.5,
-    "blacklist": false
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
+    "league": "Liga Profesional de Fútbol",
     "market_family": "result",
     "market_side": "home"
   }

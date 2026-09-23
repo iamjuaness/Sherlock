@@ -1,7 +1,7 @@
 {
   "backup_db.py": {
-    "mtime": 1789365478.5117836,
-    "seen": 1789829184.037495,
+    "mtime": 1790174595.3170283,
+    "seen": 1790176380.1187718,
     "ast_hash": "37a53e1fa80861821e7cb5df02d00647",
     "semantic_hash": "37a53e1fa80861821e7cb5df02d00647"
   },
@@ -30,16 +30,16 @@
     "semantic_hash": "8c6682821680a07f388976c845c2932d"
   },
   "data/competitions.json": {
-    "mtime": 1789445855.990341,
-    "seen": 1789829184.0375154,
-    "ast_hash": "93862b37917201d2743aebae392c101e",
-    "semantic_hash": "93862b37917201d2743aebae392c101e"
+    "mtime": 1789966056.1155667,
+    "seen": 1790176380.118801,
+    "ast_hash": "18d04b2b36482d9d9bad76b67486197b",
+    "semantic_hash": ""
   },
   "data/league_penalties.json": {
-    "mtime": 1789767518.8834462,
-    "seen": 1789829184.0375178,
-    "ast_hash": "442002f217eb38e74c4c20c4ef8dfa57",
-    "semantic_hash": "442002f217eb38e74c4c20c4ef8dfa57"
+    "mtime": 1789965813.4537096,
+    "seen": 1790176380.1188037,
+    "ast_hash": "f8acc3b2641ae9792294ee0f7690da79",
+    "semantic_hash": ""
   },
   "data/market_correlation.json": {
     "mtime": 1788304509.2961838,
@@ -222,15 +222,15 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "src/ui/api/compare.py": {
-    "mtime": 1789791644.524353,
-    "seen": 1789829184.0375776,
-    "ast_hash": "1d164a289c1b32b694db75f96af5de2d",
-    "semantic_hash": "1d164a289c1b32b694db75f96af5de2d"
+    "mtime": 1789963208.0221338,
+    "seen": 1790176380.1188955,
+    "ast_hash": "b2d32b8bc048c9b61acc92eb55e81501",
+    "semantic_hash": ""
   },
   "src/ui/api/main.py": {
-    "mtime": 1789830152.448606,
-    "seen": 1789830427.9330938,
-    "ast_hash": "2c15158df374686dffa79ab40d357cba",
+    "mtime": 1790176321.966405,
+    "seen": 1790176380.118898,
+    "ast_hash": "60d8147b69ab382ac6d773e1c05adb15",
     "semantic_hash": ""
   },
   "src/ui/api/schemas.py": {
@@ -526,5 +526,11 @@
     "seen": 1789829184.0376763,
     "ast_hash": "5c4ccfbc52a5869f81b3ef41b78c1ceb",
     "semantic_hash": "5c4ccfbc52a5869f81b3ef41b78c1ceb"
+  },
+  "src/core/parallel_recalc.py": {
+    "mtime": 1790176307.1927605,
+    "seen": 1790176380.118843,
+    "ast_hash": "add01744fad83c43a95c0a1219da566e",
+    "semantic_hash": ""
   }
 }
