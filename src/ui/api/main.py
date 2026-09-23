@@ -1876,7 +1876,7 @@ def rename_team_matches(
     de todos los partidos históricos asociados. Opcionalmente filtrado por liga.
     """
     # Filtrar solo los partidos cuyo título contenga el nombre antiguo
-    history_list = db.query(AnalysisHistory).filter(AnalysisHistory.match_title == old_name).all()
+    history_list = db.query(AnalysisHistory).filter(AnalysisHistory.match_title.ilike(f"%{old_name}%")).all()
     updated_count = 0
     
     for h in history_list:
@@ -2378,7 +2378,7 @@ def get_leagues_stats(
     from sqlalchemy.orm import load_only
     history = (
         db.query(AnalysisHistory)
-        .filter(AnalysisHistory.picks_calculados != None)
+        # .filter(AnalysisHistory.picks_calculados != None)
         .options(load_only(
             AnalysisHistory.id,
             AnalysisHistory.competition,
@@ -3109,7 +3109,7 @@ async def recalculate_all_accuracy(
 
     from sqlalchemy import text as _sql_text
     _q_hist_batch = _sql_text("""
-        SELECT id, match_title, match_date,
+        SELECT id, match_title, match_date, competition,
                final_score_home, final_score_away,
                final_corners_home, final_corners_away,
                final_yellow_cards_home, final_yellow_cards_away,
@@ -3123,17 +3123,21 @@ async def recalculate_all_accuracy(
     shared_historical_records = [dict(r) for r in db.execute(_q_hist_batch).mappings().all()]
 
 
-    # ── Índice por equipo: O(1) lookup en vez de escanear todo el histórico
-    # 1.428 veces. Se construye UNA sola vez para todo el batch. ──
+    # ── Índice por (competición, equipo) y por equipo: O(1) lookup ──
     _team_index: dict[str, list] = {}
     for r in shared_historical_records:
         title = r.get("match_title", "") or ""
+        comp = (r.get("competition") or "").strip().lower()
         ht = (r.get("home_team") or (title.split(" vs ")[0] if " vs " in title else "")).strip().lower()
         at = (r.get("away_team") or (title.split(" vs ")[1] if " vs " in title else "")).strip().lower()
         if ht:
             _team_index.setdefault(ht, []).append(r)
+            if comp:
+                _team_index.setdefault(f"{comp}::{ht}", []).append(r)
         if at:
             _team_index.setdefault(at, []).append(r)
+            if comp:
+                _team_index.setdefault(f"{comp}::{at}", []).append(r)
 
 
     import time, sys
@@ -5718,7 +5722,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-    liga = "Chinese Super League"
+    liga = "LaLiga"
 
     #----------Contar equipos de liga--------------------------------
 
@@ -5775,12 +5779,7 @@ if __name__ == "__main__":
     try:
                        
         # Puedes ir encadenando las demás correcciones usando kwargs:
-        rename_team_matches(old_name="Qingdao", new_name="Qingdao ", competition=liga, db=db)
-        # rename_team_matches(old_name="Ca Lanús", new_name="Lanús", competition=liga, db=db)
-        # rename_team_matches(old_name="Vasco Da Gama", new_name="Vasco", competition=liga, db=db)
-        # rename_team_matches(old_name="Caracas F.C.", new_name="Caracas", competition=liga, db=db)
-        # rename_team_matches(old_name="Club Sporting Cristal", new_name="Sporting Cristal", competition=liga, db=db)
-        # rename_team_matches(old_name="River", new_name="River Plate", competition=liga, db=db)
+        rename_team_matches(old_name="Atl. Madrid", new_name="Atlético Madrid", competition=liga, db=db)
 
         print("Equipos renombrados exitosamente.")
         

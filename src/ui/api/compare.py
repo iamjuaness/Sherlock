@@ -4064,6 +4064,15 @@ async def compare_football(
         except Exception as e:
             print(f"[DEBUG COMPARE] Error parseando raw_date: {e}")
 
+    # ── Extraer Competición / Liga actual ──
+    target_competition = None
+    if hasattr(req, "competition") and req.competition:
+        target_competition = str(req.competition).strip().lower()
+    elif hasattr(req, "league") and req.league:
+        target_competition = str(req.league).strip().lower()
+    elif isinstance(req, dict):
+        target_competition = (req.get("competition") or req.get("league") or "").strip().lower()
+
     current_match_time = _to_naive_utc(current_match_time)
     curr_date_only = current_match_time.date() if current_match_time else None
     historical_records = []
@@ -4073,7 +4082,7 @@ async def compare_football(
         try:
             from sqlalchemy import text
             q_hist = text("""
-                SELECT id, match_title, match_date,
+                SELECT id, match_title, match_date, competition,
                        final_score_home, final_score_away,
                        final_corners_home, final_corners_away,
                        final_yellow_cards_home, final_yellow_cards_away,
@@ -4096,6 +4105,12 @@ async def compare_football(
 
             if exclude_analysis_id and m_id and str(m_id).strip() == str(exclude_analysis_id).strip():
                 continue
+
+            # Filtro por competición/liga para evitar contaminar con estadísticas de otras ligas/homónimos
+            if target_competition:
+                r_comp = (r_dict.get("competition") or "").strip().lower()
+                if r_comp and r_comp != target_competition and target_competition not in r_comp and r_comp not in target_competition:
+                    continue
 
             m_date = r_dict.get("match_date")
             m_dt = None
@@ -4143,7 +4158,7 @@ async def compare_football(
 
     match_incomplete_stats = _team_has_only_rating_and_possession(h) or _team_has_only_rating_and_possession(a)
 
-    # ── Filtro de relevancia: solo records que involucren a H o A ──
+    # ── Filtro de relevancia: solo records que involucren a H o A en la misma liga ──
     _h_lower = h.name.strip().lower()
     _a_lower = a.name.strip().lower()
 
@@ -4158,11 +4173,19 @@ async def compare_football(
 
     if precomputed_team_index is not None:
         def _lookup_team(team_lower: str) -> list:
+            if target_competition:
+                exact_comp = precomputed_team_index.get(f"{target_competition}::{team_lower}")
+                if exact_comp is not None:
+                    return exact_comp
             exact = precomputed_team_index.get(team_lower)
             if exact is not None:
+                if target_competition:
+                    return [
+                        r for r in exact
+                        if not r.get("competition") or target_competition in str(r.get("competition")).lower() or str(r.get("competition")).lower() in target_competition
+                    ]
                 return exact
-            # Fallback: solo si el nombre no está en el índice (variación rara
-            # de escritura), se hace el escaneo completo como respaldo.
+            # Fallback: solo si el nombre no está en el índice
             return [r for r in historical_records if team_lower in r.get("match_title", "").lower()]
 
         _seen_ids = set()
