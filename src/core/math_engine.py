@@ -521,6 +521,245 @@ class LeagueMathEngine:
         }
 
     @classmethod
+    def compute_league_pick_hit_rate(
+        cls,
+        matches: List[Dict[str, Any]],
+        market_family: str,
+        line: Optional[float] = None,
+        is_over: bool = True,
+        target_side: str = "home",
+        exclude_match_id: Optional[Any] = None,
+        current_match_date: Optional[Any] = None,
+        cutoff: Optional[TemporalCutoff] = None,
+        is_team_specific: bool = False,
+    ) -> float:
+        """
+        Calcula el hit rate global a nivel de liga para un mercado específico
+        para servir como prior Bayesiano.
+        """
+        if cutoff is None:
+            cutoff = TemporalCutoff.create(current_match_date)
+        if cutoff is None or not matches:
+            return 0.50
+
+        total_valid = 0
+        hits = 0
+
+        for m in matches:
+            if exclude_match_id is not None:
+                m_id = m.get("id") or m.get("match_id")
+                if m_id is not None and str(m_id).strip() == str(exclude_match_id).strip():
+                    continue
+
+            if not cutoff.allows_record(m):
+                continue
+
+            if is_team_specific:
+                h_home = cls._evaluate_match_metric_pick(
+                    m, market_family, line=line, is_over=is_over, team_role="home", target_side=target_side, is_team_specific=True
+                )
+                if h_home is not None:
+                    total_valid += 1
+                    if h_home:
+                        hits += 1
+
+                h_away = cls._evaluate_match_metric_pick(
+                    m, market_family, line=line, is_over=is_over, team_role="away", target_side=target_side, is_team_specific=True
+                )
+                if h_away is not None:
+                    total_valid += 1
+                    if h_away:
+                        hits += 1
+            else:
+                h = cls._evaluate_match_metric_pick(
+                    m, market_family, line=line, is_over=is_over, team_role="home", target_side=target_side, is_team_specific=False
+                )
+                if h is not None:
+                    total_valid += 1
+                    if h:
+                        hits += 1
+
+        if total_valid == 0:
+            return 0.50
+        return hits / total_valid
+
+    @classmethod
+    def compute_pick_hit_rate_recency(
+        cls,
+        matches: List[Dict[str, Any]],
+        team_name: str,
+        market_family: str,
+        line: Optional[float] = None,
+        is_over: bool = True,
+        role_filter: Optional[str] = None,  # "home", "away", or None (all)
+        target_side: str = "home",
+        exclude_match_id: Optional[Any] = None,
+        current_match_date: Optional[Any] = None,
+        cutoff: Optional[TemporalCutoff] = None,
+        is_team_specific: bool = False,
+        half_life: float = 10.0,
+        prior_rate: Optional[float] = None,
+        prior_strength: float = 12.0,
+    ) -> Dict[str, Any]:
+        """
+        Calcula el hit rate enriquecido con ponderación por reciencia exponencial,
+        suavizado Bayesiano Beta-Binomial y ventanas fijas de forma reciente (5, 10, 15).
+        """
+        p_rate = prior_rate if prior_rate is not None else 0.50
+        p_strength = max(0.1, prior_strength)
+
+        if cutoff is None:
+            cutoff = TemporalCutoff.create(current_match_date)
+        if cutoff is None:
+            return {
+                "sample_size": 0,
+                "hits": 0,
+                "hit_rate_pct": 0.0,
+                "ewma_hit_rate_pct": 0.0,
+                "bayesian_ewma_hit_rate_pct": round(p_rate * 100.0, 1),
+                "weighted_hits": 0.0,
+                "effective_sample_size": 0.0,
+                "half_life": half_life,
+                "prior_rate_pct": round(p_rate * 100.0, 1),
+                "prior_strength": p_strength,
+                "windows": {
+                    "last_5": {"sample_size": 0, "hits": 0, "hit_rate_pct": 0.0},
+                    "last_10": {"sample_size": 0, "hits": 0, "hit_rate_pct": 0.0},
+                    "last_15": {"sample_size": 0, "hits": 0, "hit_rate_pct": 0.0},
+                },
+                "trend_delta_pp": 0.0,
+                "trend_label": "insufficient_data",
+                "cutoff_missing": True,
+            }
+
+        t_lower = team_name.strip().lower()
+        valid_evaluations: List[Tuple[Any, bool]] = []
+
+        for m in matches:
+            if exclude_match_id is not None:
+                m_id = m.get("id") or m.get("match_id")
+                if m_id is not None and str(m_id).strip() == str(exclude_match_id).strip():
+                    continue
+
+            if not cutoff.allows_record(m):
+                continue
+
+            ht = (m.get("home_team") or m.get("match_title", "").split(" vs ")[0]).strip().lower()
+            at = (m.get("away_team") or (m.get("match_title", "").split(" vs ")[1] if " vs " in m.get("match_title", "") else "")).strip().lower()
+
+            is_home = (t_lower == ht) or (t_lower in ht)
+            is_away = (t_lower == at) or (t_lower in at)
+
+            if not (is_home or is_away):
+                continue
+
+            if role_filter == "home" and not is_home:
+                continue
+            if role_filter == "away" and not is_away:
+                continue
+
+            role = "home" if is_home else "away"
+            hit = cls._evaluate_match_metric_pick(
+                m,
+                market_family,
+                line=line,
+                is_over=is_over,
+                team_role=role,
+                target_side=target_side,
+                is_team_specific=is_team_specific,
+            )
+
+            if hit is not None:
+                d_val = record_date(m)
+                valid_evaluations.append((d_val, bool(hit)))
+
+        def get_match_datetime(item):
+            d = item[0]
+            if d is None:
+                return datetime.min
+            if isinstance(d, datetime):
+                return d
+            if isinstance(d, str):
+                try:
+                    return datetime.fromisoformat(d.replace("Z", "+00:00"))
+                except Exception:
+                    pass
+            return datetime.min
+
+        # Ordenar del más reciente al más antiguo
+        valid_evaluations.sort(key=get_match_datetime, reverse=True)
+
+        sample_size = len(valid_evaluations)
+        hits = sum(1 for _, h in valid_evaluations if h)
+        season_hit_rate = (hits / sample_size) if sample_size > 0 else 0.0
+        season_hit_rate_pct = round(season_hit_rate * 100.0, 1)
+
+        half_life_val = max(1.0, half_life)
+        alpha_decay = math.log(2) / half_life_val
+
+        weighted_hits = 0.0
+        effective_sample_size = 0.0
+
+        for i, (_, hit) in enumerate(valid_evaluations):
+            w = math.exp(-alpha_decay * i)
+            effective_sample_size += w
+            if hit:
+                weighted_hits += w
+
+        if effective_sample_size > 0:
+            ewma_hit_rate = weighted_hits / effective_sample_size
+        else:
+            ewma_hit_rate = season_hit_rate
+
+        ewma_hit_rate_pct = round(ewma_hit_rate * 100.0, 1)
+
+        alpha_prior = p_rate * p_strength
+        beta_prior = (1.0 - p_rate) * p_strength
+
+        posterior_rate = (alpha_prior + weighted_hits) / (alpha_prior + beta_prior + effective_sample_size)
+        bayesian_ewma_hit_rate_pct = round(posterior_rate * 100.0, 1)
+
+        windows = {}
+        for w_size in [5, 10, 15]:
+            slice_w = valid_evaluations[:w_size]
+            w_sample = len(slice_w)
+            w_hits = sum(1 for _, h in slice_w if h)
+            w_pct = round((w_hits / w_sample * 100.0), 1) if w_sample > 0 else 0.0
+            windows[f"last_{w_size}"] = {
+                "sample_size": w_sample,
+                "hits": w_hits,
+                "hit_rate_pct": w_pct,
+            }
+
+        base_ref_rate = season_hit_rate if sample_size > 0 else p_rate
+        trend_delta_pp = round((posterior_rate - base_ref_rate) * 100.0, 1)
+
+        if sample_size < 5:
+            trend_label = "insufficient_data"
+        elif trend_delta_pp >= 10.0:
+            trend_label = "improving"
+        elif trend_delta_pp <= -10.0:
+            trend_label = "deteriorating"
+        else:
+            trend_label = "stable"
+
+        return {
+            "sample_size": sample_size,
+            "hits": hits,
+            "hit_rate_pct": season_hit_rate_pct,
+            "ewma_hit_rate_pct": ewma_hit_rate_pct,
+            "bayesian_ewma_hit_rate_pct": bayesian_ewma_hit_rate_pct,
+            "weighted_hits": round(weighted_hits, 2),
+            "effective_sample_size": round(effective_sample_size, 1),
+            "half_life": float(half_life),
+            "prior_rate_pct": round(p_rate * 100.0, 1),
+            "prior_strength": float(p_strength),
+            "windows": windows,
+            "trend_delta_pp": trend_delta_pp,
+            "trend_label": trend_label,
+        }
+
+    @classmethod
     def compute_h2h_hit_rate(
         cls,
         matches: List[Dict[str, Any]],

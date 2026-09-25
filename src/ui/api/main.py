@@ -1570,16 +1570,19 @@ def save_analysis(
                 }
 
             if not pick_rates_data:
-                # `current_match_date` no se pasaba, asi que estas dos hit rates
-                # se calculaban SIN cutoff alguno.
+                league_prior_over25 = LeagueMathEngine.compute_league_pick_hit_rate(
+                    prior_records, "goals", 2.5, is_over=True, current_match_date=record_date
+                )
                 pick_rates_data = {
-                    "home_over25_home": LeagueMathEngine.compute_pick_hit_rate(
+                    "home_over25_home": LeagueMathEngine.compute_pick_hit_rate_recency(
                         prior_records, h_name, "goals", 2.5, is_over=True,
                         role_filter="home", current_match_date=record_date,
+                        prior_rate=league_prior_over25,
                     ),
-                    "away_over25_away": LeagueMathEngine.compute_pick_hit_rate(
+                    "away_over25_away": LeagueMathEngine.compute_pick_hit_rate_recency(
                         prior_records, a_name, "goals", 2.5, is_over=True,
                         role_filter="away", current_match_date=record_date,
+                        prior_rate=league_prior_over25,
                     ),
                 }
     except _SkipPriorParams as skip:
@@ -2409,6 +2412,9 @@ def get_leagues_stats(
         .options(load_only(
             AnalysisHistory.id,
             AnalysisHistory.competition,
+            AnalysisHistory.payload,
+            AnalysisHistory.match_date,
+            AnalysisHistory.date,
             AnalysisHistory.picks_calculados,
             AnalysisHistory.final_score_home,
             AnalysisHistory.final_score_away,
@@ -2434,12 +2440,16 @@ def get_leagues_stats(
     for h in history:
         # Resolve competition name using index column first
         comp_name = h.competition
-        if not comp_name and getattr(h, "payload", None):
+        p_data = None
+        if getattr(h, "payload", None):
             try:
                 p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                comp_name = p_data.get("competition") or "Desconocida"
             except:
                 pass
+
+        if not comp_name and p_data and isinstance(p_data, dict):
+            comp_name = p_data.get("competition") or "Desconocida"
+
         if not comp_name:
             comp_name = "Desconocida"
                 
@@ -2460,9 +2470,24 @@ def get_leagues_stats(
                 # Per-market tracking: {family: {"hits": 0, "total": 0}}
                 "_market_stats": {},
                 "_detailed_markets": {},
+                "_seasons": set(),
             }
             
         leagues_data[comp_name]["total_matches"] += 1
+        
+        # Extract season year for season filter
+        s_year = None
+        if p_data and isinstance(p_data, dict):
+            s_year = p_data.get("season_year") or p_data.get("season")
+        if not s_year:
+            m_dt = getattr(h, "match_date", None) or getattr(h, "date", None)
+            if m_dt:
+                try:
+                    s_year = m_dt.year
+                except:
+                    pass
+        if s_year:
+            leagues_data[comp_name]["_seasons"].add(str(s_year))
         
         if h.picks_calculados:
             try:
@@ -2624,6 +2649,10 @@ def get_leagues_stats(
         detailed_markets.sort(key=lambda x: x["totalPicks"], reverse=True)
         league["markets"] = detailed_markets
 
+        # Seasons list sorted descending
+        raw_seasons = league.pop("_seasons", set())
+        league["seasons"] = sorted(list(raw_seasons), reverse=True)
+
         # Historical data for LRS
         league["historical_matches"] = league["total_matches"]
         league["historical_picks"] = picks_cnt
@@ -2643,6 +2672,7 @@ def get_league_matches(
     limit: int = Query(50, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     use_stake: bool = Query(False),
+    season: str | None = Query(None),
     db: Session = Depends(get_db),
 ) -> list[AnalysisHistoryOut]:
     """
@@ -2650,7 +2680,7 @@ def get_league_matches(
     cargando únicamente los campos necesarios para la vista de la liga (picks, resultados, id, etc.).
     """
     from sqlalchemy.orm import load_only
-    from sqlalchemy import or_, and_
+    from sqlalchemy import or_, and_, func
     comp_str = league_name.strip()
 
     query = db.query(AnalysisHistory).filter(
@@ -2661,7 +2691,22 @@ def get_league_matches(
                 AnalysisHistory.payload.like(f'%"{comp_str}"%')
             )
         )
-    ).options(
+    )
+
+    if season and season.strip().lower() != "all":
+        s_str = season.strip()
+        season_conds = [
+            AnalysisHistory.payload.like(f'%"season_year": {s_str}%'),
+            AnalysisHistory.payload.like(f'%"season_year": "{s_str}"%'),
+            AnalysisHistory.payload.like(f'%"season": "{s_str}"%'),
+            AnalysisHistory.payload.like(f'%"season": {s_str}%'),
+        ]
+        if s_str.isdigit():
+            season_conds.append(func.strftime('%Y', AnalysisHistory.match_date) == s_str)
+            season_conds.append(func.strftime('%Y', AnalysisHistory.date) == s_str)
+        query = query.filter(or_(*season_conds))
+
+    query = query.options(
         load_only(
             AnalysisHistory.id,
             AnalysisHistory.sport,
@@ -4916,10 +4961,25 @@ def export_excel_report(
                             "Cuota": odds,
                             "Cuota Cierre": closing_odds if closing_odds else "",   # placeholder CLV
                             "CLV (%)": clv_pct if clv_pct is not None else "",       # placeholder CLV
+                            # ── Hit Rates básicos ──
                             "Hit Rate Local (%)": pick.get("home_hit_rate"),
                             "Hit Rate Visitante (%)": pick.get("away_hit_rate"),
                             "Hit Rate Total (%)": pick.get("empirical_hit_rate"),
                             "Hit Rate H2H (%)": pick.get("h2h_hit_rate"),
+                            # ── Hit Rates de recencia (EWMA Bayesiano) ──
+                            # Probabilidad suavizada con prior de liga + decaimiento exponencial
+                            "HR Recencia Local (%)": pick.get("home_bayesian_ewma_hit_rate"),
+                            "HR Recencia Visitante (%)": pick.get("away_bayesian_ewma_hit_rate"),
+                            # Tendencia: improving / stable / deteriorating
+                            "Tendencia Local": pick.get("home_trend_label"),
+                            "Tendencia Visitante": pick.get("away_trend_label"),
+                            # Delta en puntos porcentuales: recencia bayesiana vs. hit rate base
+                            "Delta Tendencia Local (pp)": pick.get("home_trend_delta_pp"),
+                            "Delta Tendencia Visitante (pp)": pick.get("away_trend_delta_pp"),
+                            # Tamaño de muestra utilizado
+                            "Muestra Local (n)": pick.get("home_matches_count"),
+                            "Muestra Visitante (n)": pick.get("away_matches_count"),
+                            # ── Probabilidades y criterios de selección ──
                             "Prob Calibrada (%)": float(pick.get("calibrated_prob", 0.0)) if pick.get("calibrated_prob") is not None else None,
                             "Prob Modelo (%)": float(pick.get("model_prob", 0.0)) if pick.get("model_prob") is not None else None,
                             "Edge Prob (%)": edge_prob,          # ANTES mal llamado "EV Edge (%)"

@@ -1135,6 +1135,13 @@ function buildHistoricalPayload(
   incidentsData,
   tournamentName,
 ) {
+  // Normalizar nombre: tomar sólo la parte antes de la primera coma
+  // p.ej. "LigaPro Serie A, Playoffs" → "LigaPro Serie A"
+  const rawName = tournamentName || event.tournament?.name || null;
+  const normalizedName = rawName
+    ? rawName.split(",")[0].trim()
+    : null;
+
   const payload = {
     sport: "football",
     home_team: event.homeTeam?.shortName || event.homeTeam?.name || "",
@@ -1145,8 +1152,8 @@ function buildHistoricalPayload(
     season_year: event._seasonYear || null,
     season_id: event._seasonId || null,
     tournament_id: event.tournament?.id || null,
-    tournament_name: tournamentName || event.tournament?.name || null,
-    competition: tournamentName || event.tournament?.name || null,
+    tournament_name: normalizedName,
+    competition: normalizedName,
     final_score_home: event.homeScore?.normaltime ?? 0,
     final_score_away: event.awayScore?.normaltime ?? 0,
   };

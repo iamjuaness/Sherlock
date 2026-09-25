@@ -564,6 +564,12 @@ class ValueIndicator(BaseModel):
     away_team: Optional[str] = None
     home_hit_rate: Optional[float] = None
     away_hit_rate: Optional[float] = None
+    home_bayesian_ewma_hit_rate: Optional[float] = None
+    away_bayesian_ewma_hit_rate: Optional[float] = None
+    home_trend_label: Optional[str] = None
+    away_trend_label: Optional[str] = None
+    home_trend_delta_pp: Optional[float] = None
+    away_trend_delta_pp: Optional[float] = None
     home_hits: Optional[int] = None
     home_matches_count: Optional[int] = None
     away_hits: Optional[int] = None
@@ -4246,15 +4252,26 @@ async def compare_football(
 
             # Mapeo según familia de mercado
             if fam in {"goals", "corners", "cards", "shots", "shots_target", "fouls"} and line is not None:
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                league_prior = LeagueMathEngine.compute_league_pick_hit_rate(
+                    team_hr_records, fam, line=line, is_over=is_ov,
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
+                )
+                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, fam, line=line, is_over=is_ov, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_team = h.name
                 v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_bayesian_ewma_hit_rate = hr_h.get("bayesian_ewma_hit_rate_pct")
+                v.away_bayesian_ewma_hit_rate = hr_a.get("bayesian_ewma_hit_rate_pct")
+                v.home_trend_label = hr_h.get("trend_label")
+                v.away_trend_label = hr_a.get("trend_label")
+                v.home_trend_delta_pp = hr_h.get("trend_delta_pp")
+                v.away_trend_delta_pp = hr_a.get("trend_delta_pp")
                 v.home_hits = hr_h.get("hits")
+                v.home_matches_count = hr_h.get("sample_size")
                 v.home_matches_count = hr_h.get("sample_size")
                 v.away_hits = hr_a.get("hits")
                 v.away_matches_count = hr_a.get("sample_size")
@@ -4275,14 +4292,24 @@ async def compare_football(
 
             elif fam in {"btts", "btts_yes", "btts_no"}:
                 btts_fam = "btts_no" if "no" in side or "no" in v.selection.lower() else "btts_yes"
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(team_hr_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
+                league_prior = LeagueMathEngine.compute_league_pick_hit_rate(
+                    team_hr_records, btts_fam,
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
+                )
+                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, btts_fam, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_team = h.name
                 v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_bayesian_ewma_hit_rate = hr_h.get("bayesian_ewma_hit_rate_pct")
+                v.away_bayesian_ewma_hit_rate = hr_a.get("bayesian_ewma_hit_rate_pct")
+                v.home_trend_label = hr_h.get("trend_label")
+                v.away_trend_label = hr_a.get("trend_label")
+                v.home_trend_delta_pp = hr_h.get("trend_delta_pp")
+                v.away_trend_delta_pp = hr_a.get("trend_delta_pp")
                 v.home_hits = hr_h.get("hits")
                 v.home_matches_count = hr_h.get("sample_size")
                 v.away_hits = hr_a.get("hits")
@@ -4309,13 +4336,17 @@ async def compare_football(
                 else:
                     tside = "draw"
 
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(
-                    team_hr_records, h.name, "1x2", role_filter="home", target_side=tside,
+                league_prior = LeagueMathEngine.compute_league_pick_hit_rate(
+                    team_hr_records, "1x2", target_side=tside,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(
+                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(
+                    team_hr_records, h.name, "1x2", role_filter="home", target_side=tside,
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
+                )
+                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(
                     team_hr_records, a.name, "1x2", role_filter="away", target_side=tside,
-                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
                 )
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(
                     relevant_records, h.name, a.name, "1x2", target_side=tside,
@@ -4326,6 +4357,12 @@ async def compare_football(
                 v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_bayesian_ewma_hit_rate = hr_h.get("bayesian_ewma_hit_rate_pct")
+                v.away_bayesian_ewma_hit_rate = hr_a.get("bayesian_ewma_hit_rate_pct")
+                v.home_trend_label = hr_h.get("trend_label")
+                v.away_trend_label = hr_a.get("trend_label")
+                v.home_trend_delta_pp = hr_h.get("trend_delta_pp")
+                v.away_trend_delta_pp = hr_a.get("trend_delta_pp")
                 v.home_hits = hr_h.get("hits")
                 v.home_matches_count = hr_h.get("sample_size")
                 v.away_hits = hr_a.get("hits")
@@ -4355,13 +4392,17 @@ async def compare_football(
                 else:
                     tside = "12"
 
-                hr_h = LeagueMathEngine.compute_pick_hit_rate(
-                    team_hr_records, h.name, "double_chance", role_filter="home", target_side=tside,
+                league_prior = LeagueMathEngine.compute_league_pick_hit_rate(
+                    team_hr_records, "double_chance", target_side=tside,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
-                hr_a = LeagueMathEngine.compute_pick_hit_rate(
+                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(
+                    team_hr_records, h.name, "double_chance", role_filter="home", target_side=tside,
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
+                )
+                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(
                     team_hr_records, a.name, "double_chance", role_filter="away", target_side=tside,
-                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
                 )
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(
                     relevant_records, h.name, a.name, "double_chance", target_side=tside,
@@ -4372,6 +4413,12 @@ async def compare_football(
                 v.away_team = a.name
                 v.home_hit_rate = hr_h.get("hit_rate_pct")
                 v.away_hit_rate = hr_a.get("hit_rate_pct")
+                v.home_bayesian_ewma_hit_rate = hr_h.get("bayesian_ewma_hit_rate_pct")
+                v.away_bayesian_ewma_hit_rate = hr_a.get("bayesian_ewma_hit_rate_pct")
+                v.home_trend_label = hr_h.get("trend_label")
+                v.away_trend_label = hr_a.get("trend_label")
+                v.home_trend_delta_pp = hr_h.get("trend_delta_pp")
+                v.away_trend_delta_pp = hr_a.get("trend_delta_pp")
                 v.home_hits = hr_h.get("hits")
                 v.home_matches_count = hr_h.get("sample_size")
                 v.away_hits = hr_a.get("hits")

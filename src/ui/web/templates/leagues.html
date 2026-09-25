@@ -370,46 +370,6 @@
           <div id="leagues-list">
             <!-- Rellenado dinámicamente -->
           </div>
-
-          <!-- Filtro de Temporadas -->
-          <div
-            id="season-filter-card"
-            style="
-              margin-top: 1.5rem;
-              padding-top: 1rem;
-              border-top: 1px solid var(--border);
-              display: none;
-            "
-          >
-            <div
-              class="sidebar-title"
-              style="
-                font-size: 0.95rem;
-                margin-bottom: 0.75rem;
-                border: none;
-                padding-bottom: 0;
-              "
-            >
-              Temporada
-            </div>
-            <select
-              id="selected-season"
-              style="
-                width: 100%;
-                background: rgba(0, 0, 0, 0.4);
-                border: 1px solid var(--border);
-                padding: 0.5rem;
-                border-radius: var(--radius-sm);
-                font-size: 0.85rem;
-                color: #fff;
-                cursor: pointer;
-                outline: none;
-              "
-              onchange="changeSelectedSeason()"
-            >
-              <option value="all">Todas las temporadas</option>
-            </select>
-          </div>
         </div>
 
         <!-- Columna Derecha: Detalles de la Liga seleccionada -->
@@ -566,6 +526,39 @@
               >
                 🚫 Aplicar Blacklist (0)
               </button>
+            </div>
+
+            <!-- Filtro de Temporadas de la Liga -->
+            <div
+              id="season-filter-card"
+              style="
+                display: none;
+                align-items: center;
+                gap: 0.5rem;
+                background: rgba(255, 255, 255, 0.03);
+                padding: 4px 10px;
+                border-radius: var(--radius-sm);
+                border: 1px solid var(--border);
+                margin-left: auto;
+              "
+            >
+              <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); white-space: nowrap;">📅 Temporada:</span>
+              <select
+                id="selected-season"
+                style="
+                  background: rgba(0, 0, 0, 0.4);
+                  border: 1px solid var(--border);
+                  padding: 0.35rem 0.65rem;
+                  border-radius: var(--radius-sm);
+                  font-size: 0.85rem;
+                  color: #fff;
+                  cursor: pointer;
+                  outline: none;
+                "
+                onchange="changeSelectedSeason()"
+              >
+                <option value="all">Todas las temporadas</option>
+              </select>
             </div>
           </div>
 

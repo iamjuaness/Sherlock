@@ -102,5 +102,11 @@
     "id": 808,
     "season": 100148,
     "active": true
+  },
+  {
+    "name": "3. Liga",
+    "id": 491,
+    "season": 98012,
+    "active": true
   }
 ]

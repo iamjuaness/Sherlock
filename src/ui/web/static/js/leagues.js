@@ -228,6 +228,9 @@ function selectLeague(name, updateUrl = true, replaceUrl = false) {
     chkProf.checked = leagueInfo.is_profitable !== false;
   }
 
+  // Populate season dropdown from backend data (all matches, not just loaded ones)
+  populateSeasonDropdown(leagueInfo.seasons || []);
+
   fetchMatchesForLeague(name, false, currentLeagueFetchController.signal);
 }
 
@@ -289,8 +292,9 @@ async function fetchMatchesForLeague(name, isLoadMore = false, signal = null) {
   try {
     const useStake = localStorage.getItem("use_stake_system") === "true";
     const fetchOptions = signal ? { signal } : {};
+    const seasonParam = activeSeason && activeSeason !== "all" ? `&season=${encodeURIComponent(activeSeason)}` : "";
     const res = await fetch(
-      `/api/v1/leagues/${encodeURIComponent(name)}/matches?use_stake=${useStake}&limit=50&offset=${currentOffset}`,
+      `/api/v1/leagues/${encodeURIComponent(name)}/matches?use_stake=${useStake}&limit=50&offset=${currentOffset}${seasonParam}`,
       fetchOptions,
     );
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -309,9 +313,6 @@ async function fetchMatchesForLeague(name, isLoadMore = false, signal = null) {
       visibleMatchesLimit += newMatches.length;
     }
 
-    // Populate Season selector dropdown
-    populateSeasonDropdown();
-
     renderFilteredMatches();
   } catch (error) {
     if (error.name === "AbortError") {
@@ -325,73 +326,57 @@ async function fetchMatchesForLeague(name, isLoadMore = false, signal = null) {
   }
 }
 
-function populateSeasonDropdown() {
+function populateSeasonDropdown(seasons) {
   const select = document.getElementById("selected-season");
   const container = document.getElementById("season-filter-card");
   if (!select || !container) return;
 
-  // Extract all distinct season_years from matches payload
-  const seasons = new Set();
-  currentMatchesCache.forEach((m) => {
-    let sYear = null;
-    if (m.payload) {
-      try {
-        const p =
-          typeof m.payload === "string" ? JSON.parse(m.payload) : m.payload;
-        sYear = p.season_year || p.season;
-      } catch (e) {}
-    }
-    if (sYear) {
-      seasons.add(String(sYear));
-    }
-  });
-
-  if (seasons.size > 0) {
-    container.style.display = "block";
-
-    // Sort seasons descending (e.g. 2026, 2025...)
-    const sortedSeasons = Array.from(seasons).sort((a, b) =>
-      b.localeCompare(a),
-    );
-
-    let html = '<option value="all">Todas las temporadas</option>';
-    sortedSeasons.forEach((s) => {
-      html += `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`;
-    });
-    select.innerHTML = html;
-    select.value = activeSeason;
-  } else {
+  // seasons comes from backend: already sorted descending (all matches, not just loaded)
+  if (!seasons || seasons.length === 0) {
     container.style.display = "none";
+    return;
   }
+
+  container.style.display = "flex";
+
+  let html = '<option value="all">Todas las temporadas</option>';
+  seasons.forEach((s) => {
+    html += `<option value="${escapeHtml(String(s))}">${escapeHtml(String(s))}</option>`;
+  });
+  select.innerHTML = html;
+  select.value = activeSeason;
 }
 
 function changeSelectedSeason() {
   const select = document.getElementById("selected-season");
   if (!select) return;
+
+  if (currentLeagueFetchController) {
+    currentLeagueFetchController.abort();
+  }
+  currentLeagueFetchController = new AbortController();
+
   activeSeason = select.value;
-  visibleMatchesLimit = 50; // reset pagination limit
-  renderFilteredMatches();
+  visibleMatchesLimit = 50;
+  currentOffset = 0;
+  hasMoreMatches = true;
+  currentMatchesCache = [];
+
+  const matchesContainer = document.getElementById("matches-list");
+  if (matchesContainer) {
+    matchesContainer.innerHTML = `<div class="dashboard-loader"><div class="spinner"></div><span>Cargando partidos...</span></div>`;
+  }
+
+  fetchMatchesForLeague(activeLeague, false, currentLeagueFetchController.signal);
 }
 
 function renderFilteredMatches() {
   const matchesContainer = document.getElementById("matches-list");
   if (!matchesContainer) return;
 
-  // Filter matches based on activeSeason
+  // El filtro de temporada lo aplica el backend al fetchear.
+  // currentMatchesCache ya contiene solo los partidos de la temporada activa.
   let filtered = currentMatchesCache;
-  if (activeSeason !== "all") {
-    filtered = currentMatchesCache.filter((m) => {
-      let sYear = null;
-      if (m.payload) {
-        try {
-          const p =
-            typeof m.payload === "string" ? JSON.parse(m.payload) : m.payload;
-          sYear = p.season_year || p.season;
-        } catch (e) {}
-      }
-      return String(sYear) === activeSeason;
-    });
-  }
 
   // Sort matches by match_date desc
   filtered.sort(

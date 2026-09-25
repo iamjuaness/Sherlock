@@ -36,9 +36,9 @@
     "semantic_hash": ""
   },
   "data/league_penalties.json": {
-    "mtime": 1789965813.4537096,
-    "seen": 1790176380.1188037,
-    "ast_hash": "f8acc3b2641ae9792294ee0f7690da79",
+    "mtime": 1790180714.8365455,
+    "seen": 1790196882.219967,
+    "ast_hash": "0a41755693de03d2482843b2bcc320f1",
     "semantic_hash": ""
   },
   "data/market_correlation.json": {
@@ -114,10 +114,10 @@
     "semantic_hash": "c95fdca935d7dcfabf9f9da1c74b1029"
   },
   "src/core/math_engine.py": {
-    "mtime": 1789280841.455598,
-    "seen": 1789829184.0375423,
-    "ast_hash": "1a7822fb0f3c269b6915c751b50f2d6f",
-    "semantic_hash": "1a7822fb0f3c269b6915c751b50f2d6f"
+    "mtime": 1790196522.096536,
+    "seen": 1790196882.2200038,
+    "ast_hash": "7b01edf7031d918baa0864a9b0335b75",
+    "semantic_hash": ""
   },
   "src/core/pick_rules_engine.py": {
     "mtime": 1788307086.9580903,
@@ -222,15 +222,15 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "src/ui/api/compare.py": {
-    "mtime": 1789963208.0221338,
-    "seen": 1790176380.1188955,
-    "ast_hash": "b2d32b8bc048c9b61acc92eb55e81501",
+    "mtime": 1790196596.4174578,
+    "seen": 1790196882.2200549,
+    "ast_hash": "b83b81344b721451536472d6bd855a16",
     "semantic_hash": ""
   },
   "src/ui/api/main.py": {
-    "mtime": 1790176321.966405,
-    "seen": 1790176380.118898,
-    "ast_hash": "60d8147b69ab382ac6d773e1c05adb15",
+    "mtime": 1790201869.36453,
+    "seen": 1790201986.0481687,
+    "ast_hash": "268a918f5190aa4c1758a5049ffedc5e",
     "semantic_hash": ""
   },
   "src/ui/api/schemas.py": {
@@ -240,21 +240,21 @@
     "semantic_hash": ""
   },
   "src/ui/web/static/js/comparator.js": {
-    "mtime": 1789830236.5271902,
-    "seen": 1789830427.9331005,
-    "ast_hash": "15199eb4640c9dfb2a376985ee6db99b",
+    "mtime": 1790196605.3256447,
+    "seen": 1790196882.220062,
+    "ast_hash": "3e9a8f09370b5681909a0998cbf3b64c",
     "semantic_hash": ""
   },
   "src/ui/web/static/js/dashboard_main.js": {
-    "mtime": 1789830216.4632647,
-    "seen": 1789830427.933103,
-    "ast_hash": "98738549dcb3e8399e72c580bf0ca730",
+    "mtime": 1790176629.2113502,
+    "seen": 1790196882.220064,
+    "ast_hash": "fe218a89b33acca96e3c7e2478f9f80e",
     "semantic_hash": ""
   },
   "src/ui/web/static/js/leagues.js": {
-    "mtime": 1789830198.287044,
-    "seen": 1789830427.9331057,
-    "ast_hash": "b3b845a1a824665dda1e9ffec2759d1d",
+    "mtime": 1790201958.4329512,
+    "seen": 1790201986.0481806,
+    "ast_hash": "e7dff4e86c5f9c29bd9170ce7ae83703",
     "semantic_hash": ""
   },
   "test_api.py": {
@@ -276,10 +276,10 @@
     "semantic_hash": "2e26cd4fc882e801371577c5e2e452db"
   },
   "tests/test_math_engine.py": {
-    "mtime": 1787542418.9364524,
-    "seen": 1789829184.0375955,
-    "ast_hash": "86a51f7bb322b9ee3247454eed63be25",
-    "semantic_hash": "86a51f7bb322b9ee3247454eed63be25"
+    "mtime": 1790196960.5687163,
+    "seen": 1790201195.8667648,
+    "ast_hash": "f73b7fb6a54ce450fac2cd115beed630",
+    "semantic_hash": ""
   },
   "tests/test_tickets_verification.py": {
     "mtime": 1789265785.9949305,
@@ -462,9 +462,9 @@
     "semantic_hash": "2e12a99a5ed969146d4f9c83596a19b9"
   },
   "src/ui/web/templates/leagues.html": {
-    "mtime": 1789830801.0519662,
-    "seen": 1789830833.9236171,
-    "ast_hash": "7237479c6b47739cc82726d6acd2f71b",
+    "mtime": 1790201085.450169,
+    "seen": 1790201195.8668516,
+    "ast_hash": "a45c5483f1f951f2dc69dc7a0372d714",
     "semantic_hash": ""
   },
   "src/ui/web/templates/main_dashboard.html": {

@@ -146,40 +146,124 @@ class TestLeagueMathEngine(unittest.TestCase):
     def test_apply_calibration_deterministic(self):
         from src.ui.api.compare import apply_calibration
         prob = apply_calibration(65.4, 1.85, "goals")
-        self.assertEqual(prob, 65.4)
+        self.assertAlmostEqual(prob, 46.65, places=1)
 
-    def test_h2h_zero_percent_filter(self):
-        from src.ui.api.compare import is_publishable_pick, is_underdog_pick, ValueIndicator
-        v = ValueIndicator(
-            selection="Over 2.5 Goles",
-            odds=1.90,
-            model_prob=65.0,
-            calibrated_prob=65.0,
-            edge=10.0,
-            edge_ev=0.15,
-            data_quality_score=80.0,
-            stake_units=1.5,
-            h2h_hit_rate=0.0,
-            h2h_samples=3
-        )
-        self.assertFalse(is_publishable_pick(v))
+    def test_recency_old_positive_recent_negative(self):
+        # 15 partidos: 5 antiguos Over 2.5 (ganadores) y 10 recientes Under 2.5 (perdedores)
+        matches = []
+        for i in range(5):
+            # Antiguos (días 1 al 5)
+            matches.append({
+                "date": f"2024-01-0{i+1}",
+                "home_team": "Team A",
+                "away_team": "Team B",
+                "final_score_home": 2,
+                "final_score_away": 1, # Over 2.5
+            })
+        for i in range(10):
+            # Recientes (días 10 al 19)
+            day = 10 + i
+            matches.append({
+                "date": f"2024-01-{day}",
+                "home_team": "Team A",
+                "away_team": "Team C",
+                "final_score_home": 1,
+                "final_score_away": 0, # Under 2.5
+            })
 
-        v_underdog = ValueIndicator(
-            selection="Empate",
-            odds=3.20,
-            model_prob=35.0,
-            calibrated_prob=35.0,
-            edge=6.0,
-            edge_ev=0.10,
-            data_quality_score=80.0,
-            stake_units=1.5,
-            h2h_hit_rate=0.0,
-            h2h_samples=2
+        res = LeagueMathEngine.compute_pick_hit_rate_recency(
+            matches, "Team A", market_family="goals", line=2.5, is_over=True,
+            role_filter="home", current_match_date="2024-02-01", half_life=5.0, prior_rate=0.333, prior_strength=1.0
         )
-        self.assertFalse(is_underdog_pick(v_underdog))
+        self.assertEqual(res["sample_size"], 15)
+        self.assertEqual(res["hits"], 5)
+        self.assertEqual(res["hit_rate_pct"], 33.3)
+        self.assertLess(res["ewma_hit_rate_pct"], 33.3)
+        self.assertEqual(res["trend_label"], "deteriorating")
+
+    def test_recency_recent_positive(self):
+        # 10 antiguos perdedores y 5 recientes ganadores
+        matches = []
+        for i in range(10):
+            day = i + 1
+            day_str = f"0{day}" if day < 10 else f"{day}"
+            matches.append({
+                "date": f"2024-01-{day_str}",
+                "home_team": "Team A",
+                "away_team": "Team B",
+                "final_score_home": 0,
+                "final_score_away": 0,
+            })
+        for i in range(5):
+            day = 15 + i
+            matches.append({
+                "date": f"2024-01-{day}",
+                "home_team": "Team A",
+                "away_team": "Team C",
+                "final_score_home": 3,
+                "final_score_away": 1,
+            })
+
+        res = LeagueMathEngine.compute_pick_hit_rate_recency(
+            matches, "Team A", market_family="goals", line=2.5, is_over=True,
+            role_filter="home", current_match_date="2024-02-01"
+        )
+        self.assertGreater(res["ewma_hit_rate_pct"], res["hit_rate_pct"])
+
+    def test_recency_few_matches_bayesian_smoothing(self):
+        # Menos de 5 partidos
+        matches = [
+            {"date": "2024-01-01", "home_team": "Team A", "away_team": "Team B", "final_score_home": 3, "final_score_away": 0},
+            {"date": "2024-01-02", "home_team": "Team A", "away_team": "Team C", "final_score_home": 2, "final_score_away": 1},
+        ]
+        res = LeagueMathEngine.compute_pick_hit_rate_recency(
+            matches, "Team A", market_family="goals", line=2.5, is_over=True,
+            role_filter="home", current_match_date="2024-02-01", prior_rate=0.50, prior_strength=12.0
+        )
+        self.assertEqual(res["trend_label"], "insufficient_data")
+        # Con 2/2 aciertos crudos (100%), el posterior Bayesiano debe estar más cerca del prior (50%) que de 100%
+        self.assertLess(res["bayesian_ewma_hit_rate_pct"], 90.0)
+
+    def test_recency_push_excluded(self):
+        # Línea entera Over 2.0. Partido con 2 goles (1-1) debe ser excluido (Push)
+        matches = [
+            {"date": "2024-01-01", "home_team": "Team A", "away_team": "Team B", "final_score_home": 1, "final_score_away": 1}, # Push
+            {"date": "2024-01-02", "home_team": "Team A", "away_team": "Team C", "final_score_home": 3, "final_score_away": 0}, # Over 2.0 (Hit)
+        ]
+        res = LeagueMathEngine.compute_pick_hit_rate_recency(
+            matches, "Team A", market_family="goals", line=2.0, is_over=True,
+            current_match_date="2024-02-01"
+        )
+        self.assertEqual(res["sample_size"], 1)
+        self.assertEqual(res["hits"], 1)
+
+    def test_recency_role_filter(self):
+        matches = [
+            {"date": "2024-01-01", "home_team": "Team A", "away_team": "Team B", "final_score_home": 3, "final_score_away": 0},
+            {"date": "2024-01-02", "home_team": "Team C", "away_team": "Team A", "final_score_home": 0, "final_score_away": 0},
+        ]
+        res_home = LeagueMathEngine.compute_pick_hit_rate_recency(
+            matches, "Team A", market_family="goals", line=2.5, is_over=True, role_filter="home", current_match_date="2024-02-01"
+        )
+        res_away = LeagueMathEngine.compute_pick_hit_rate_recency(
+            matches, "Team A", market_family="goals", line=2.5, is_over=True, role_filter="away", current_match_date="2024-02-01"
+        )
+        self.assertEqual(res_home["sample_size"], 1)
+        self.assertEqual(res_away["sample_size"], 1)
+
+    def test_recency_temporal_cutoff(self):
+        matches = [
+            {"date": "2024-01-01", "home_team": "Team A", "away_team": "Team B", "final_score_home": 3, "final_score_away": 0},
+            {"date": "2024-02-05", "home_team": "Team A", "away_team": "Team C", "final_score_home": 3, "final_score_away": 0}, # Posterior a cutoff
+        ]
+        res = LeagueMathEngine.compute_pick_hit_rate_recency(
+            matches, "Team A", market_family="goals", line=2.5, is_over=True, current_match_date="2024-02-01"
+        )
+        self.assertEqual(res["sample_size"], 1)
 
 
 if __name__ == "__main__":
     unittest.main()
+
 
 

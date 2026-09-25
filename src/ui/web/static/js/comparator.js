@@ -403,6 +403,29 @@ function generatePickAnalysisText(v) {
     h2hText = `En sus enfrentamientos h2h, no registran enfrentamientos directos en los últimos años.`;
   }
 
+  // Recency form (Bayesian EWMA & Trend)
+  let recencyText = "";
+  if (v.home_bayesian_ewma_hit_rate != null || v.away_bayesian_ewma_hit_rate != null) {
+    const hEwma = v.home_bayesian_ewma_hit_rate != null ? `${Number(v.home_bayesian_ewma_hit_rate).toFixed(1)}%` : null;
+    const aEwma = v.away_bayesian_ewma_hit_rate != null ? `${Number(v.away_bayesian_ewma_hit_rate).toFixed(1)}%` : null;
+    const trendMap = {
+      "improving": "mejora reciente ↗️",
+      "deteriorating": "deterioro reciente ↘️",
+      "stable": "estable ➡️",
+      "insufficient_data": "datos insuficientes"
+    };
+    const hTr = v.home_trend_label ? (trendMap[v.home_trend_label] || v.home_trend_label) : "";
+    const aTr = v.away_trend_label ? (trendMap[v.away_trend_label] || v.away_trend_label) : "";
+
+    if (hEwma && aEwma) {
+      recencyText = `Forma reciente ponderada (EWMA Bayesiano): ${homeName} ${hEwma} (${hTr}), ${awayName} ${aEwma} (${aTr}).`;
+    } else if (hEwma) {
+      recencyText = `Forma reciente ponderada (EWMA Bayesiano): ${homeName} ${hEwma} (${hTr}).`;
+    } else if (aEwma) {
+      recencyText = `Forma reciente ponderada (EWMA Bayesiano): ${awayName} ${aEwma} (${aTr}).`;
+    }
+  }
+
   return `Apuesta de valor - ${selection}
 
 Categoría [${categoryName}] ${categoryEmoji}
@@ -412,7 +435,7 @@ Cuota = ${oddsVal}
 Edge = ${edgeVal}
 Stake = ${stakeText}%
 
-${teamText}
+${teamText}${recencyText ? "\n\n" + recencyText : ""}
 
 ${h2hText}`;
 }
