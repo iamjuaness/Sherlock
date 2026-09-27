@@ -6,149 +6,129 @@
   },
   {
     "league": "Brasileirão Série B",
-    "market_family": "double_chance",
-    "market_side": "draw_away"
+    "market_family": "corners",
+    "market_side": "under"
   },
   {
     "league": "Brasileirão Série B",
-    "market_family": "goals",
-    "market_side": "over"
-  },
-  {
-    "league": "MLS",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "MLS",
-    "market_family": "result",
-    "market_side": "home"
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "cards",
-    "market_side": "under"
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "corners",
-    "market_side": "over"
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
     "market_family": "shots_target",
-    "market_side": "under"
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "corners",
-    "market_side": "under"
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "cards",
-    "market_side": "over"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "shots",
-    "market_side": "under"
-  },
-  {
-    "league": "LigaPro Serie A",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "LigaPro Serie A",
-    "market_family": "result",
-    "market_side": "draw"
-  },
-  {
-    "league": "Premier League",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "HNL",
-    "market_family": "double_chance",
-    "market_side": "draw_away"
-  },
-  {
-    "league": "Primera A",
-    "market_family": "corners",
-    "market_side": "over"
-  },
-  {
-    "league": "Primera A",
-    "market_family": "corners",
-    "market_side": "under"
-  },
-  {
-    "league": "Primera A",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "Primera A",
-    "market_family": "goals",
-    "market_side": "under"
-  },
-  {
-    "league": "Primera A",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "Liga de Primera",
-    "market_family": "cards",
-    "market_side": "over"
-  },
-  {
-    "league": "Liga de Primera",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "Liga de Primera",
-    "market_family": "result",
-    "market_side": "home",
+    "market_side": "over",
     "stake_modifier": 0.5,
     "blacklist": false
   },
   {
-    "league": "Czech First League",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots",
+    "market_side": "under"
   },
   {
-    "league": "Czech First League",
+    "league": "Brasileirão Betano",
+    "market_family": "goals",
+    "market_side": "over"
+  },
+  {
+    "league": "Brasileirão Betano",
+    "market_family": "shots_target",
+    "market_side": "under"
+  },
+  {
+    "league": "Brasileirão Betano",
+    "market_family": "cards",
+    "market_side": "over"
+  },
+  {
+    "league": "Brasileirão Betano",
+    "market_family": "shots",
+    "market_side": "under"
+  },
+  {
+    "league": "Brasileirão Betano",
+    "market_family": "shots_target",
+    "market_side": "over"
+  },
+  {
+    "league": "MLS",
     "market_family": "result",
     "market_side": "away"
   },
   {
-    "league": "Czech First League",
+    "league": "MLS",
+    "market_family": "result",
+    "market_side": "home"
+  },
+  {
+    "league": "Primera A",
     "market_family": "goals",
     "market_side": "under"
   },
   {
-    "league": "Czech First League",
+    "league": "Liga 1 Te Apuesto",
     "market_family": "corners",
+    "market_side": "under"
+  },
+  {
+    "league": "Liga 1 Te Apuesto",
+    "market_family": "goals",
+    "market_side": "over"
+  },
+  {
+    "league": "Liga 1 Te Apuesto",
+    "market_family": "result",
+    "market_side": "draw"
+  },
+  {
+    "league": "Liga 1 Te Apuesto",
+    "market_family": "cards",
+    "market_side": "over"
+  },
+  {
+    "league": "Liga MX, Apertura",
+    "market_family": "goals",
+    "market_side": "over"
+  },
+  {
+    "league": "Liga MX, Apertura",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "Liga MX, Apertura",
+    "market_family": "result",
+    "market_side": "draw"
+  },
+  {
+    "league": "Liga MX, Apertura",
+    "market_family": "corners",
+    "market_side": "over"
+  },
+  {
+    "league": "VriendenLoterij Eredivisie",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "VriendenLoterij Eredivisie",
+    "market_family": "corners",
+    "market_side": "under"
+  },
+  {
+    "league": "Liga de Primera",
+    "market_family": "double_chance",
+    "market_side": "draw_away"
+  },
+  {
+    "league": "Liga de Primera",
+    "market_family": "corners",
+    "market_side": "over"
+  },
+  {
+    "league": "Czech First League",
+    "market_family": "goals",
+    "market_side": "over"
+  },
+  {
+    "league": "Czech First League",
+    "market_family": "shots_target",
     "market_side": "under"
   },
   {
@@ -157,38 +137,18 @@
     "market_side": "under"
   },
   {
-    "league": "Czech First League",
-    "market_family": "shots_target",
+    "league": "División Profesional",
+    "market_family": "goals",
     "market_side": "under"
   },
   {
-    "league": "LaLiga",
+    "league": "División Profesional",
     "market_family": "result",
     "market_side": "away"
   },
   {
-    "league": "LaLiga",
-    "market_family": "cards",
-    "market_side": "under"
-  },
-  {
-    "league": "LaLiga",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "Czech First League",
-    "market_family": "goals",
-    "market_side": "over"
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "shots_target",
-    "market_side": "over"
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
+    "league": "División Profesional",
     "market_family": "result",
-    "market_side": "home"
+    "market_side": "draw"
   }
 ]

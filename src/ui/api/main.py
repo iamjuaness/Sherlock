@@ -48,6 +48,7 @@ from openpyxl.utils import get_column_letter
 # ---------------------------------------------------------------------------
 
 from contextlib import asynccontextmanager
+from src.ui.api.admin_routes import admin_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -60,6 +61,9 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+app.include_router(admin_router)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -1449,7 +1453,11 @@ def save_analysis(
     except ValueError:
         raise HTTPException(status_code=400, detail=f"Invalid sport: {req.sport}")
 
+    if req.match_date is None:
+        raise HTTPException(status_code=400, detail="Fecha del partido no detectada o inválida")
+
     # Check for existing record (Upsert logic)
+
     existing = None
     if req.id:
         existing = db.query(AnalysisHistory).filter(AnalysisHistory.id == req.id).first()

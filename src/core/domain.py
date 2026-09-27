@@ -398,3 +398,24 @@ class AnalysisHistory(Base):
 
     def __repr__(self) -> str:
         return f"<AnalysisHistory {self.match_title} ({self.date})>"
+
+
+class AdminAuditLog(Base):
+    """Audit log for administrative actions in Sherlock Admin Panel."""
+
+    __tablename__ = "admin_audit_log"
+
+    id = Column(String(36), primary_key=True, default=_new_id)
+    timestamp = Column(DateTime, nullable=False, default=datetime.utcnow, index=True)
+    admin_user = Column(String(100), nullable=True)
+    action = Column(String(100), nullable=False, index=True)
+    target_table = Column(String(100), nullable=True, index=True)
+    record_id = Column(String(100), nullable=True, index=True)
+    old_values = Column(Text, nullable=True)
+    new_values = Column(Text, nullable=True)
+    origin = Column(String(100), nullable=True)
+    status = Column(String(50), nullable=False, default="success")
+    error_message = Column(Text, nullable=True)
+
+    def __repr__(self) -> str:
+        return f"<AdminAuditLog {self.action} on {self.target_table}:{self.record_id} at {self.timestamp}>"

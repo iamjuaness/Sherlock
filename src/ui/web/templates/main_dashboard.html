@@ -1,3 +1,4 @@
+{% if not embedded_in_admin %}
 <!doctype html>
 <html lang="es">
   <head>
@@ -15,6 +16,7 @@
     />
     <link rel="stylesheet" href="/static/css/styles.css?v={{ css_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
+{% endif %}
     <style>
       :root {
         --dash-glow: rgba(99, 102, 241, 0.15);
@@ -330,6 +332,7 @@
         }
       }
     </style>
+{% if not embedded_in_admin %}
   </head>
   <body>
     <header class="header">
@@ -342,6 +345,7 @@
         Estadísticas Globales de Acierto y Rentabilidad de Pronósticos
       </p>
     </header>
+{% endif %}
 
     <div class="dashboard-container">
       <!-- Loader Inicial -->
@@ -928,7 +932,9 @@
       </div>
     </div>
 
+{% if not embedded_in_admin %}
     <!-- Script de control principal -->
     <script src="/static/js/dashboard_main.js?v={{ js_version }}"></script>
   </body>
 </html>
+{% endif %}

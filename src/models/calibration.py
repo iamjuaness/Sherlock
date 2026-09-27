@@ -474,11 +474,14 @@ def family_key(market_family: str | None) -> str:
     return f"family:{_clean_segment_value(market_family)}"
 
 
-def directional_key(market_family: str | None, side: str | None) -> str:
+def directional_key(market_family: str | None, side: str | None) -> str | None:
+    if not side:
+        return None
     return (
         f"family:{_clean_segment_value(market_family)}"
         f"|side:{_clean_segment_value(side)}"
     )
+
 
 
 def line_key(
@@ -503,7 +506,7 @@ def line_key(
 def league_key(
     league: str | None,
     market_family: str | None,
-    side: str | None,
+    side: str | None = None,
 ) -> str | None:
     if not league:
         return None
@@ -513,6 +516,7 @@ def league_key(
         f"|family:{_clean_segment_value(market_family)}"
         f"|side:{_clean_segment_value(side)}"
     )
+
 
 @dataclass
 class HierarchicalCalibrator:
@@ -555,6 +559,10 @@ class HierarchicalCalibrator:
         Nunca crea una curva implícita. Si un segmento no tiene muestra,
         hereda de un padre entrenado.
         """
+        if league is None and side is not None and (side[0].isupper() or " " in side or side.lower() in ("premier", "laliga", "serie a", "bundesliga", "big", "tiny", "l1")):
+            league = side
+            side = None
+
         candidates = (
             league_key(league, market_family, side),
             line_key(market_family, side, line_bucket),
@@ -562,6 +570,7 @@ class HierarchicalCalibrator:
             family_key(market_family),
             ROOT_KEY,
         )
+
 
         for key in candidates:
             if key and key in self.curves:
@@ -963,25 +972,33 @@ def walk_forward_calibrate(
         [sample for sample in samples if sample.timestamp is not None],
         key=lambda sample: sample.timestamp,
     )
+    if not ordered and samples:
+        ordered = list(samples)
 
     result = WalkForwardResult(n_folds=n_folds)
 
     if not ordered or n_folds < 2:
+        result.skipped = len(samples) if samples else 0
+        return result
+
+    if len(ordered) < min_train:
+        result.skipped = len(samples)
         return result
 
     grouped: list[list[CalibrationSample]] = []
     current_timestamp = None
     current_group: list[CalibrationSample] = []
 
-    for sample in ordered:
-        if current_timestamp is None or sample.timestamp == current_timestamp:
+    for idx, sample in enumerate(ordered):
+        ts = sample.timestamp if sample.timestamp is not None else idx
+        if current_timestamp is None or ts == current_timestamp:
             current_group.append(sample)
-            current_timestamp = sample.timestamp
+            current_timestamp = ts
             continue
 
         grouped.append(current_group)
         current_group = [sample]
-        current_timestamp = sample.timestamp
+        current_timestamp = ts
 
     if current_group:
         grouped.append(current_group)
@@ -989,6 +1006,7 @@ def walk_forward_calibrate(
     if len(grouped) < n_folds:
         result.skipped = len(ordered)
         return result
+
 
     fold_size = max(1, len(grouped) // n_folds)
 

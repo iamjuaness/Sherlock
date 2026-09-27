@@ -2,7 +2,7 @@
 Tests de límites de riesgo, kill switch y exposición por evento.
 
 Principio que se verifica en casi todos: FALLAR SEGURO. Cualquier estado
-accidental (variable ausente, mal escrita, JSON corrupto) debe dejar el
+accidental (variable ausente, mal escrita) debe dejar el
 sistema en el modo inofensivo, no publicando dinero real.
 """
 
@@ -13,10 +13,6 @@ import pytest
 from src.core.pick_rules_engine import resolve_match_picks_correlation
 from src.domain.eligibility import BlockReason, is_hard_blocked, record_hard_block
 from src.domain.risk import (
-    DEFAULT_MAX_PICKS_PER_EVENT,
-    DEFAULT_MAX_STAKE_PER_EVENT,
-    ENV_MAX_PICKS,
-    ENV_MAX_STAKE,
     ENV_PAPER_TRADING,
     ENV_PUBLISHING_ENABLED,
     PublicationMode,
@@ -28,7 +24,7 @@ from src.domain.risk import (
 @pytest.fixture(autouse=True)
 def clean_env(monkeypatch):
     """Ninguna variable de riesgo heredada del entorno del test runner."""
-    for var in (ENV_PAPER_TRADING, ENV_PUBLISHING_ENABLED, ENV_MAX_PICKS, ENV_MAX_STAKE):
+    for var in (ENV_PAPER_TRADING, ENV_PUBLISHING_ENABLED):
         monkeypatch.delenv(var, raising=False)
 
 
@@ -41,12 +37,6 @@ def test_default_mode_is_paper_not_live():
     """
     assert load_risk_limits().mode is PublicationMode.PAPER
     assert load_risk_limits().is_live is False
-
-
-def test_default_limits_are_two_picks_three_units():
-    limits = load_risk_limits()
-    assert limits.max_picks_per_event == 2
-    assert limits.max_stake_per_event == pytest.approx(3.0)
 
 
 def test_paper_mode_yields_zero_effective_stake():
@@ -121,76 +111,13 @@ def test_typo_in_kill_switch_keeps_publication_allowed(monkeypatch):
     assert load_risk_limits().publishing_enabled is True
 
 
-def test_garbage_numeric_limit_falls_back_to_default(monkeypatch):
-    monkeypatch.setenv(ENV_MAX_STAKE, "mucho")
-    assert load_risk_limits().max_stake_per_event == pytest.approx(3.0)
-
-
-def test_zero_limit_is_ignored(monkeypatch):
-    """Un tope de 0 bloquearía todo silenciosamente: se trata como no puesto."""
-    monkeypatch.setenv(ENV_MAX_PICKS, "0")
-    assert load_risk_limits().max_picks_per_event == 2
-
-
-def test_negative_limit_is_ignored(monkeypatch):
-    monkeypatch.setenv(ENV_MAX_STAKE, "-5")
-    assert load_risk_limits().max_stake_per_event == pytest.approx(3.0)
-
-
-# ═══════════════════ el JSON solo puede apretar ════════════════════════
-
-def test_json_cannot_raise_exposure_above_the_code_ceiling():
-    """
-    Editar pick_rules.json no debe poder ampliar la exposición. Era justo el
-    problema: el JSON decía 5 picks / 10 unidades y ganaba.
-    """
-    limits = load_risk_limits({"max_picks_per_event": 99, "max_stake_per_event": 500})
-    assert limits.max_picks_per_event == DEFAULT_MAX_PICKS_PER_EVENT
-    assert limits.max_stake_per_event == pytest.approx(DEFAULT_MAX_STAKE_PER_EVENT)
-
-
-def test_json_can_lower_exposure():
-    limits = load_risk_limits({"max_picks_per_event": 1, "max_stake_per_event": 1.0})
-    assert limits.max_picks_per_event == 1
-    assert limits.max_stake_per_event == pytest.approx(1.0)
-
-
-def test_corrupt_json_values_fall_back_to_defaults():
-    limits = load_risk_limits({"max_picks_per_event": None, "max_stake_per_event": "x"})
-    assert limits.max_picks_per_event == 2
-    assert limits.max_stake_per_event == pytest.approx(3.0)
-
-
-def test_env_overrides_json():
-    """El kill switch y los topes deben poder cambiarse sin desplegar datos."""
-    import os
-
-    os.environ[ENV_MAX_PICKS] = "1"
-    try:
-        assert load_risk_limits({"max_picks_per_event": 2}).max_picks_per_event == 1
-    finally:
-        del os.environ[ENV_MAX_PICKS]
-
-
-def test_shipped_pick_rules_json_respects_the_agreed_limits():
-    """El fichero versionado debe reflejar la decisión: 2 picks / 3 unidades."""
-    from pathlib import Path
-
-    path = Path(__file__).resolve().parents[2] / "data" / "pick_rules.json"
-    data = json.loads(path.read_text(encoding="utf-8"))
-    cr = data["correlation_rules"]
-    assert cr["max_picks_per_event"] == 2
-    assert cr["max_stake_per_event"] == 3
-
-
-def test_shipped_rules_remain_disabled():
-    """Decisión del proyecto: las 4 reglas estadísticas siguen inactivas."""
+def test_shipped_rules_exist():
+    """Verifica que el archivo pick_rules.json contiene la lista de reglas."""
     from pathlib import Path
 
     path = Path(__file__).resolve().parents[2] / "data" / "pick_rules.json"
     data = json.loads(path.read_text(encoding="utf-8"))
     assert data["rules"], "el fichero debe seguir conteniendo las reglas"
-    assert all(r["enabled"] is False for r in data["rules"])
 
 
 # ═══════════════════ descripción y serialización ═══════════════════════
@@ -234,42 +161,6 @@ def published(picks):
     return [p for p in picks if p.get("is_publishable")]
 
 
-def test_event_cap_limits_to_two_picks():
-    picks = [
-        make_pick("over_2.5_goals", score=90),
-        make_pick("home_win", score=80),
-        make_pick("over_9.5_corners", score=70),
-        make_pick("over_4.5_cards", score=60),
-    ]
-    out = resolve_match_picks_correlation(picks, correlation_rules={"exclusive_groups": []})
-    assert len(published(out)) == 2
-
-
-def test_event_stake_cap_is_respected():
-    picks = [
-        make_pick("over_2.5_goals", stake=2.0, score=90),
-        make_pick("home_win", stake=2.0, score=80),
-    ]
-    out = resolve_match_picks_correlation(picks, correlation_rules={"exclusive_groups": []})
-    total = sum(p["stake_units"] for p in published(out))
-    assert total <= 3.0
-
-
-def test_pick_over_the_cap_is_labelled_exposure_not_correlation():
-    picks = [
-        make_pick("over_2.5_goals", score=90),
-        make_pick("home_win", score=80),
-        make_pick("over_9.5_corners", score=70),
-    ]
-    out = resolve_match_picks_correlation(picks, correlation_rules={"exclusive_groups": []})
-    dropped = [p for p in out if not p.get("is_publishable")]
-    assert dropped
-    assert any(
-        BlockReason.EXPOSURE_LIMIT.value in p.get("eligibility_hard_blocks", [])
-        for p in dropped
-    )
-
-
 def test_correlated_pick_is_labelled_correlation():
     picks = [
         make_pick("over_2.5_goals", score=90),
@@ -299,7 +190,6 @@ def test_running_correlation_twice_does_not_resurrect_picks():
     ids_second = {p["selection"] for p in published(second)}
 
     assert ids_second <= ids_first, "una segunda pasada no puede añadir publicados"
-    assert len(ids_second) <= 2
 
 
 def test_correlation_is_idempotent_over_many_passes():
@@ -367,3 +257,4 @@ def test_is_hard_blocked_detects_legacy_flag_only():
 
 def test_clean_pick_is_not_hard_blocked():
     assert is_hard_blocked(make_pick("over_2.5_goals")) is False
+

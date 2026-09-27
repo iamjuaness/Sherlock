@@ -149,7 +149,81 @@ class LeagueMathEngine:
             self.defaults.update(league_defaults)
 
     @classmethod
+    def compute_last_round_corner_averages(cls, matches: List[Dict[str, Any]], reference_date: Optional[str] = None) -> Dict[str, Any]:
+        """
+        Calcula el promedio de córners de la última jornada completada antes de `reference_date`.
+        """
+        if not matches:
+            return {
+                "source": "default",
+                "last_round_date": None,
+                "home_corners": 5.2,
+                "away_corners": 4.1,
+                "avg_corners_per_game": 9.3,
+            }
+
+        ref_dt = None
+        if reference_date:
+            try:
+                ref_dt = datetime.fromisoformat(str(reference_date).replace("Z", "+00:00"))
+            except Exception:
+                ref_dt = None
+
+        past_matches = []
+        for m in matches:
+            ch = m.get("final_corners_home")
+            ca = m.get("final_corners_away")
+            if ch is None or ca is None:
+                continue
+
+            m_date_str = m.get("match_date") or m.get("date")
+            if not m_date_str:
+                continue
+
+            try:
+                m_dt = datetime.fromisoformat(str(m_date_str).replace("Z", "+00:00"))
+            except Exception:
+                continue
+
+            if ref_dt and m_dt >= ref_dt:
+                continue
+
+            past_matches.append((m_dt, m))
+
+        if not past_matches:
+            return {
+                "source": "default",
+                "last_round_date": None,
+                "home_corners": 5.2,
+                "away_corners": 4.1,
+                "avg_corners_per_game": 9.3,
+            }
+
+        past_matches.sort(key=lambda x: x[0], reverse=True)
+        latest_dt = past_matches[0][0]
+        latest_date_str = latest_dt.strftime("%Y-%m-%d")
+
+        last_round_matches = [m for m_dt, m in past_matches if m_dt.strftime("%Y-%m-%d") == latest_date_str]
+
+        tot_home = sum(float(m.get("final_corners_home", 0)) for m in last_round_matches)
+        tot_away = sum(float(m.get("final_corners_away", 0)) for m in last_round_matches)
+        cnt = len(last_round_matches)
+
+        avg_home = tot_home / cnt if cnt > 0 else 5.2
+        avg_away = tot_away / cnt if cnt > 0 else 4.1
+
+        return {
+            "source": "last_round",
+            "last_round_date": latest_date_str,
+            "home_corners": avg_home,
+            "away_corners": avg_away,
+            "avg_corners_per_game": avg_home + avg_away,
+            "sample_size": cnt,
+        }
+
+    @classmethod
     def compute_league_averages(cls, historical_matches: List[Dict[str, Any]]) -> Dict[str, float]:
+
         """
         Calcula los promedios específicos de la liga basándose en los partidos históricos jugados.
         """
@@ -783,6 +857,7 @@ class LeagueMathEngine:
         a_lower = away_team_name.strip().lower()
         matching_count = 0
         hit_count = 0
+        total_any_venue_count = 0
         h2h_matches_list = []
 
         if cutoff is None:
@@ -794,7 +869,12 @@ class LeagueMathEngine:
                 "hit_rate_pct": None,
                 "h2h_matches": [],
                 "cutoff_missing": True,
+                "total_any_venue_count": 0,
+                "strict_venue_applied": False,
             }
+
+        fam = market_family.lower().strip()
+        is_strict_venue_market = bool(strict_venue and fam in {"result", "moneyline", "1x2", "double_chance", "doublechance"})
 
         for m in matches:
             m_id = m.get("id") or m.get("match_id")
@@ -819,11 +899,11 @@ class LeagueMathEngine:
             if not (is_exact_fixture or is_reverse_fixture):
                 continue
 
-            fam = market_family.lower().strip()
+            total_any_venue_count += 1
+
             # Si el mercado depende estrictamente del estadio (1X2, Doble Oportunidad)
-            if strict_venue and fam in {"result", "moneyline", "1x2", "double_chance", "doublechance"}:
-                if not is_exact_fixture:
-                    continue
+            if is_strict_venue_market and not is_exact_fixture:
+                continue
 
             role = "home" if is_exact_fixture else "away"
             hit = cls._evaluate_match_metric_pick(
@@ -862,5 +942,7 @@ class LeagueMathEngine:
             "sample_size": matching_count,
             "hits": hit_count,
             "hit_rate_pct": round(hit_rate, 1) if hit_rate is not None else None,
-            "h2h_matches": h2h_matches_list
+            "h2h_matches": h2h_matches_list,
+            "total_any_venue_count": total_any_venue_count,
+            "strict_venue_applied": is_strict_venue_market,
         }

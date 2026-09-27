@@ -301,11 +301,17 @@ def create_indexes():
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_matches_away_team_id ON matches(away_team_id);"
         ))
-        # ── FK indexes missing on stat_lines tables ──
+        # ── Admin audit & search performance indexes ──
         conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_stat_team_team_id ON stat_lines_team(team_id);"
+            "CREATE INDEX IF NOT EXISTS idx_ah_match_date ON analysis_history(match_date);"
         ))
         conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_stat_player_player_id ON stat_lines_player(player_id);"
+            "CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON admin_audit_log(timestamp);"
         ))
-        conn.commit()
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_audit_action ON admin_audit_log(action);"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_audit_target ON admin_audit_log(target_table, record_id);"
+        ))
+        conn.commit()

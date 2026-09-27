@@ -352,7 +352,7 @@ DEFAULT_CORRELATION_RULES: dict[str, Any] = {
 }
 
 
-_correlation_matrix_cache: dict[str, dict[tuple[str, str], float]] = {}
+_correlation_matrix_cache: dict[str, tuple[float, dict[tuple[str, str], float]]] = {}
 
 def _resolve_data_path(relative_or_abs_path: Optional[str]) -> str:
     if relative_or_abs_path and os.path.isabs(relative_or_abs_path) and os.path.exists(relative_or_abs_path):
@@ -378,8 +378,17 @@ def load_market_correlation_matrix(path: Optional[str] = None) -> dict[tuple[str
     resolved_path = _resolve_data_path(path)
     cache_key = resolved_path
 
+    mtime = 0.0
+    if os.path.exists(resolved_path):
+        try:
+            mtime = os.path.getmtime(resolved_path)
+        except Exception:
+            pass
+
     if cache_key in _correlation_matrix_cache:
-        return _correlation_matrix_cache[cache_key]
+        cached_mtime, cached_matrix = _correlation_matrix_cache[cache_key]
+        if cached_mtime == mtime:
+            return cached_matrix
 
     matrix: dict[tuple[str, str], float] = {}
     if os.path.exists(resolved_path):
@@ -402,7 +411,7 @@ def load_market_correlation_matrix(path: Optional[str] = None) -> dict[tuple[str
             resolved_path,
         )
 
-    _correlation_matrix_cache[cache_key] = matrix
+    _correlation_matrix_cache[cache_key] = (mtime, matrix)
     return matrix
 
 
@@ -506,8 +515,6 @@ def resolve_match_picks_correlation(
     BlockReason, is_hard_blocked, record_hard_block, load_risk_limits = _risk_imports()
 
     limits = load_risk_limits(correlation_rules)
-    max_picks = max_picks_per_match if max_picks_per_match is not None else limits.max_picks_per_event
-    max_stake = max_total_stake if max_total_stake is not None else limits.max_stake_per_event
 
     fallback_exclusive_groups = correlation_rules.get(
         "fallback_exclusive_groups",
@@ -554,7 +561,7 @@ def resolve_match_picks_correlation(
         return bool(pub or und or val)
 
     valid_picks = [v for v in candidates if is_candidate_valid(v)]
-    if len(valid_picks) <= 1 and max_picks >= 1:
+    if len(valid_picks) <= 1:
         return candidates
 
     def pick_merit_score(x: Any) -> tuple[float, float, float, float, str]:
