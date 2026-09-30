@@ -376,12 +376,20 @@ def extract_samples(
 
     return samples, stats
 
-def load_rows_from_db(session=None, limit: int | None = None) -> list[dict]:
+def load_rows_from_db(
+    session=None,
+    limit: int | None = None,
+    league_filter: str | None = None,
+    include_excluded: bool = False,
+) -> list[dict]:
     """
     Lee `analysis_history` y devuelve dicts planos.
 
-    Solo trae filas con marcador final y que cuenten para rentabilidad, para no
-    calibrar con partidos marcados como excluidos.
+    Solo trae filas con marcador final. Por defecto omite las marcadas con
+    `count_in_profitability=False` a menos que `include_excluded=True`.
+
+    `league_filter`: si se especifica, solo devuelve filas cuyo nombre de liga
+    o competición coincida (insensible a mayúsculas y espacios).
     """
     from src.core.domain import AnalysisHistory
 
@@ -390,6 +398,8 @@ def load_rows_from_db(session=None, limit: int | None = None) -> list[dict]:
         from src.core.database import SessionLocal
         session = SessionLocal()
         close_after = True
+
+    normalized_filter = " ".join((league_filter or "").lower().strip().split())
 
     try:
         q = (
@@ -403,7 +413,7 @@ def load_rows_from_db(session=None, limit: int | None = None) -> list[dict]:
 
         out: list[dict] = []
         for r in q.all():
-            if getattr(r, "count_in_profitability", True) is False:
+            if not include_excluded and getattr(r, "count_in_profitability", True) is False:
                 continue
             row = {c: getattr(r, c, None) for c in RESULT_COLUMNS}
             row["picks_calculados"] = r.picks_calculados
@@ -418,10 +428,22 @@ def load_rows_from_db(session=None, limit: int | None = None) -> list[dict]:
                     payload = {}
             if isinstance(payload, dict):
                 row["league"] = (
-                    payload.get("league")
+                    getattr(r, "competition", None)
+                    or payload.get("league")
                     or payload.get("competition")
                     or payload.get("league_name")
                 )
+            else:
+                row["league"] = getattr(r, "competition", None)
+
+            # Aplicar filtro por liga si se especificó
+            if normalized_filter:
+                row_league = " ".join(
+                    str(row.get("league") or "").lower().strip().split()
+                )
+                if normalized_filter not in row_league:
+                    continue
+
             out.append(row)
         return out
     finally:
@@ -568,6 +590,32 @@ def train_calibrator(
     return report
 
 
+def _league_already_calibrated(
+    artifact_path: Path | str,
+    league_name: str,
+) -> list[str]:
+    """
+    Devuelve la lista de segmentos del artefacto activo que pertenecen a la liga.
+
+    Un segmento pertenece a una liga cuando la representación normalizada del
+    nombre de la liga aparece en la clave del segmento (que sigue el patrón
+    `<familia>|<lado>|<línea>|<liga>`).
+    """
+    path = Path(artifact_path)
+    if not path.exists():
+        return []
+    try:
+        artifact = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return []
+    curves: dict = artifact.get("curves", {})
+    normalized = " ".join(league_name.lower().strip().split())
+    return [
+        key for key in curves
+        if normalized in key.lower()
+    ]
+
+
 def run_training(
     artifact_path: Path | str = DEFAULT_ARTIFACT_PATH,
     prior_strength: float = DEFAULT_PRIOR_STRENGTH,
@@ -578,9 +626,46 @@ def run_training(
     force: bool = False,
     dry_run: bool = False,
     session=None,
+    league_filter: str | None = None,
+    include_excluded: bool = False,
 ) -> TrainingReport:
-    """Pipeline completo: BD -> muestras -> validación -> artefacto."""
-    rows = load_rows_from_db(session=session, limit=limit)
+    """
+    Pipeline completo: BD -> muestras -> validación -> artefacto.
+
+    `league_filter`: si se especifica, solo se entrenan picks de esa liga.
+    Si la liga YA tiene curvas en el artefacto activo, el entrenamiento se
+    bloquea para evitar sobreajuste — a menos que se pase `force=True`.
+    """
+    # Guardia de sobreajuste: avisar si la liga ya tiene parámetros.
+    if league_filter and not force:
+        existing = _league_already_calibrated(artifact_path, league_filter)
+        if existing:
+            logger.warning(
+                "La liga '%s' ya tiene %d segmento(s) calibrado(s) en el "
+                "artefacto activo: %s. Re-entrenarla puede provocar "
+                "sobreajuste. Usa --force para forzar.",
+                league_filter, len(existing), existing[:5],
+            )
+            report = TrainingReport(
+                promoted=False,
+                reason=(
+                    f"Liga '{league_filter}' ya calibrada ({len(existing)} "
+                    f"segmentos). Entrena solo ligas nuevas o usa --force."
+                ),
+                n_samples=0,
+            )
+            return report
+
+    rows = load_rows_from_db(
+        session=session,
+        limit=limit,
+        league_filter=league_filter,
+        include_excluded=include_excluded,
+    )
+
+    if league_filter:
+        logger.info("Filtrando por liga: '%s' → %d filas.", league_filter, len(rows))
+
     samples, stats = extract_samples(rows, require_timestamp=require_timestamp)
     logger.info("Extracción: %s", stats.summary())
     return train_calibrator(
@@ -605,10 +690,26 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--min-samples", type=float, default=DEFAULT_MIN_SAMPLES)
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument(
+        "--league",
+        default=None,
+        metavar="NOMBRE",
+        help=(
+            "Entrena solo con picks de esta liga. Si la liga ya tiene curvas "
+            "en el artefacto activo el entrenamiento se bloquea (usa --force "
+            "para saltarte la guardia). Útil para incorporar ligas nuevas sin "
+            "re-ajustar las ya calibradas."
+        ),
+    )
     ap.add_argument("--allow-missing-timestamp", action="store_true",
                     help="Incluye picks sin fecha (riesgo de fuga temporal).")
+    ap.add_argument(
+        "--include-excluded",
+        action="store_true",
+        help="Incluye partidos marcados con count_in_profitability=False.",
+    )
     ap.add_argument("--force", action="store_true",
-                    help="Promueve aunque no mejore. Solo depuración.")
+                    help="Promueve aunque no mejore / omite guardia de liga ya calibrada.")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--json", action="store_true", help="Salida en JSON.")
     args = ap.parse_args(argv)
@@ -624,6 +725,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         require_timestamp=not args.allow_missing_timestamp,
         force=args.force,
         dry_run=args.dry_run,
+        league_filter=args.league,
+        include_excluded=args.include_excluded,
     )
 
     print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False)

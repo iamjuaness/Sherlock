@@ -1,7 +1,7 @@
 """FastAPI application – Sherlock REST API."""
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 import asyncio
 import copy
@@ -741,6 +741,263 @@ async def consume_prefill_odds() -> dict:
     prefill_odds_store = {}
     prefill_odds_match = None
     return {"pending": True, "odds": {"sources": sources}}
+
+
+# ---------------------------------------------------------------------------
+# Closing Odds endpoints — used by Watson extension & Sherlock to track CLV
+# ---------------------------------------------------------------------------
+
+def match_closing_odds_to_pick(pick: dict, normalized_odds: dict) -> float | None:
+    """
+    Dada una cuota normalizada (de _normalize_betano_odds o _merge_best_odds)
+    y un pick (con selection, market, line), encuentra la cuota de cierre correspondiente.
+    """
+    if not isinstance(pick, dict) or not isinstance(normalized_odds, dict):
+        return None
+
+    selection = str(pick.get("selection") or pick.get("pick") or "").strip().lower()
+    market = str(pick.get("market") or "").strip().lower()
+    line = pick.get("line")
+
+    if line is None:
+        import re
+        m = re.search(r"(\d+(?:\.\d+)?)", selection)
+        if m:
+            try:
+                line = float(m.group(1))
+            except Exception:
+                line = None
+
+    line_str = str(line) if line is not None else ""
+    if line_str.endswith(".0"):
+        line_str = line_str[:-2]
+
+    # 1. 1X2 / Match Winner
+    if "1x2" in market or "resultado final" in market or "ganador" in market:
+        if "local" in selection or "home" in selection or selection == "1":
+            return float(normalized_odds.get("home")) if normalized_odds.get("home") else None
+        elif "empate" in selection or "draw" in selection or selection == "x":
+            return float(normalized_odds.get("draw")) if normalized_odds.get("draw") else None
+        elif "visitante" in selection or "away" in selection or selection == "2":
+            return float(normalized_odds.get("away")) if normalized_odds.get("away") else None
+
+    # 2. Total Goles
+    if "gol" in market:
+        is_over = "más" in selection or "over" in selection or ">" in selection
+        is_under = "menos" in selection or "under" in selection or "<" in selection
+        if is_over:
+            go = normalized_odds.get("goalsOverOdds", {})
+            val = go.get(line_str) or go.get(str(line))
+            return float(val) if val else None
+        elif is_under:
+            gu = normalized_odds.get("goalsUnderOdds", {})
+            val = gu.get(line_str) or gu.get(str(line))
+            return float(val) if val else None
+
+    # 3. Córners
+    if "córner" in market or "corner" in market:
+        is_over = "más" in selection or "over" in selection or ">" in selection
+        is_under = "menos" in selection or "under" in selection or "<" in selection
+        if is_over:
+            co = normalized_odds.get("cornersOverOdds", {})
+            val = co.get(line_str) or co.get(str(line))
+            return float(val) if val else None
+        elif is_under:
+            cu = normalized_odds.get("cornersUnderOdds", {})
+            val = cu.get(line_str) or cu.get(str(line))
+            return float(val) if val else None
+
+    # 4. Tarjetas
+    if "tarjeta" in market or "card" in market:
+        is_over = "más" in selection or "over" in selection or ">" in selection
+        is_under = "menos" in selection or "under" in selection or "<" in selection
+        if is_over:
+            cdo = normalized_odds.get("cardsOverOdds", {})
+            val = cdo.get(line_str) or cdo.get(str(line))
+            return float(val) if val else None
+        elif is_under:
+            cdu = normalized_odds.get("cardsUnderOdds", {})
+            val = cdu.get(line_str) or cdu.get(str(line))
+            return float(val) if val else None
+
+    # 5. Remates
+    if "remate" in market or "shot" in market:
+        is_target = "puerta" in market or "target" in market
+        is_over = "más" in selection or "over" in selection or ">" in selection
+        is_under = "menos" in selection or "under" in selection or "<" in selection
+        dict_over = normalized_odds.get("shotsTargetOverOdds", {}) if is_target else normalized_odds.get("shotsOverOdds", {})
+        dict_under = normalized_odds.get("shotsTargetUnderOdds", {}) if is_target else normalized_odds.get("shotsUnderOdds", {})
+        if is_over:
+            val = dict_over.get(line_str) or dict_over.get(str(line))
+            return float(val) if val else None
+        elif is_under:
+            val = dict_under.get(line_str) or dict_under.get(str(line))
+            return float(val) if val else None
+
+    # 6. BTTS / Ambos anotan
+    if "ambos" in market or "btts" in market:
+        if "sí" in selection or "yes" in selection or "si" in selection:
+            return float(normalized_odds.get("btts_yes")) if normalized_odds.get("btts_yes") else None
+        elif "no" in selection:
+            return float(normalized_odds.get("btts_no")) if normalized_odds.get("btts_no") else None
+
+    # 7. Doble Oportunidad
+    if "doble" in market or "double" in market or "dc" in market:
+        if "1x" in selection:
+            return float(normalized_odds.get("dc_1x")) if normalized_odds.get("dc_1x") else None
+        elif "x2" in selection:
+            return float(normalized_odds.get("dc_x2")) if normalized_odds.get("dc_x2") else None
+        elif "12" in selection:
+            return float(normalized_odds.get("dc_12")) if normalized_odds.get("dc_12") else None
+
+    return None
+
+
+@app.get("/api/v1/closing-odds/pending-matches", tags=["Closing Odds"])
+@app.get("/api/v1/prefill/pending-closing-matches", tags=["Closing Odds"])
+def get_pending_closing_odds_matches(db: Session = Depends(get_db)) -> dict:
+    """
+    Retorna los partidos sin resultado (final_score_home IS NULL) y próximos a empezar
+    que tienen picks calculados pero requieren cuotas de cierre.
+    """
+    now = datetime.utcnow()
+    min_date = now - timedelta(hours=2)
+    max_date = now + timedelta(hours=48)
+
+    query = db.query(AnalysisHistory).filter(
+        AnalysisHistory.final_score_home.is_(None),
+        AnalysisHistory.picks_calculados.isnot(None),
+        or_(
+            and_(AnalysisHistory.match_date >= min_date, AnalysisHistory.match_date <= max_date),
+            and_(AnalysisHistory.match_date.is_(None), AnalysisHistory.date >= min_date)
+        )
+    )
+    matches = query.all()
+
+    results = []
+    for ah in matches:
+        try:
+            raw_picks = json.loads(ah.picks_calculados) if isinstance(ah.picks_calculados, str) else ah.picks_calculados
+        except Exception:
+            raw_picks = []
+
+        if not isinstance(raw_picks, list) or len(raw_picks) == 0:
+            continue
+
+        has_all_closing = all(p.get("closing_odds") is not None for p in raw_picks if isinstance(p, dict))
+
+        m_dt = ah.match_date or ah.date
+        match_date_str = m_dt.isoformat() if m_dt else None
+
+        home_team = ""
+        away_team = ""
+        if " vs " in ah.match_title:
+            parts = ah.match_title.split(" vs ")
+            home_team = parts[0].strip()
+            away_team = parts[1].strip()
+        elif " - " in ah.match_title:
+            parts = ah.match_title.split(" - ")
+            home_team = parts[0].strip()
+            away_team = parts[1].strip()
+        else:
+            home_team = ah.match_title
+            away_team = ""
+
+        results.append({
+            "id": ah.id,
+            "match_title": ah.match_title,
+            "home_team": home_team,
+            "away_team": away_team,
+            "competition": ah.competition or "",
+            "match_date": match_date_str,
+            "has_all_closing_odds": has_all_closing,
+            "picks": [
+                {
+                    "selection": p.get("selection") or p.get("pick") or "",
+                    "market": p.get("market") or "",
+                    "line": p.get("line"),
+                    "odds": p.get("odds"),
+                    "closing_odds": p.get("closing_odds")
+                }
+                for p in raw_picks if isinstance(p, dict)
+            ]
+        })
+
+    return {"status": "ok", "pending_matches": results}
+
+
+@app.post("/api/v1/closing-odds/submit", tags=["Closing Odds"])
+@app.post("/api/v1/prefill/closing-odds", tags=["Closing Odds"])
+async def submit_closing_odds(payload: dict, db: Session = Depends(get_db)) -> dict:
+    """
+    Guarda las cuotas de cierre para los picks de un partido en AnalysisHistory.picks_calculados.
+    Asegura mantener la cuota original (opening odds) intacta en pick["odds"].
+    """
+    analysis_id = payload.get("analysis_id") or payload.get("id")
+    match_title = payload.get("match_title")
+
+    ah = None
+    if analysis_id:
+        ah = db.query(AnalysisHistory).filter(AnalysisHistory.id == analysis_id).first()
+    elif match_title:
+        ah = db.query(AnalysisHistory).filter(
+            AnalysisHistory.match_title.ilike(f"%{match_title}%"),
+            AnalysisHistory.final_score_home.is_(None)
+        ).first()
+
+    if not ah:
+        raise HTTPException(status_code=404, detail="Partido o análisis no encontrado en Sherlock.")
+
+    if not ah.picks_calculados:
+        raise HTTPException(status_code=400, detail="El partido no tiene picks calculados.")
+
+    try:
+        raw_picks = json.loads(ah.picks_calculados) if isinstance(ah.picks_calculados, str) else ah.picks_calculados
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error parseando picks_calculados: {e}")
+
+    if not isinstance(raw_picks, list):
+        raise HTTPException(status_code=400, detail="Estructura de picks_calculados inválida.")
+
+    raw_odds = payload.get("odds") or payload.get("odds_data") or payload
+    if isinstance(raw_odds, dict) and ("goals_over" in raw_odds or "home" in raw_odds or "goalsOverOdds" in raw_odds):
+        if "goalsOverOdds" in raw_odds:
+            normalized = raw_odds
+        else:
+            normalized = _normalize_betano_odds(raw_odds)
+    else:
+        normalized = {}
+
+    explicit_closing_map = payload.get("closing_odds_map") or {}
+
+    updated_count = 0
+    for idx, pick in enumerate(raw_picks):
+        if not isinstance(pick, dict):
+            continue
+
+        exp_odd = explicit_closing_map.get(str(idx)) or explicit_closing_map.get(pick.get("selection"))
+        if exp_odd is not None:
+            pick["closing_odds"] = float(exp_odd)
+            updated_count += 1
+            continue
+
+        if normalized:
+            matched_odd = match_closing_odds_to_pick(pick, normalized)
+            if matched_odd is not None and matched_odd > 1.0:
+                pick["closing_odds"] = float(matched_odd)
+                updated_count += 1
+
+    ah.picks_calculados = json.dumps(raw_picks)
+    ah.last_recalculated_at = datetime.utcnow()
+    db.commit()
+
+    return {
+        "status": "ok",
+        "message": f"Cuotas de cierre guardadas exitosamente para {updated_count} pick(s).",
+        "analysis_id": ah.id,
+        "updated_picks_count": updated_count
+    }
+
 
 
 # ---------------------------------------------------------------------------
@@ -5540,13 +5797,18 @@ def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
 
 
     # Doble Oportunidad
-    if "doble oportunidad 1x" in sel or "dc 1x" in sel or "1x" in sel:
+    # IMPORTANT: usar lookahead/lookbehind negativo para evitar que "12" dentro de
+    # un número como "12.5" (ej. "Over 12.5 Corners") dispare el check de Doble Oportunidad.
+    # \b12\b FALLA porque el punto '.' es word boundary; la solución correcta es:
+    # (?<!\d)12(?!\d|\.)  ->  "12" no precedido ni seguido de dígito o punto.
+    import re as _re
+    if "doble oportunidad 1x" in sel or "dc 1x" in sel or bool(_re.search(r'(?<!\w)1x(?!\w)', sel)):
         if h_score is not None and a_score is not None:
             return h_score >= a_score
-    if "doble oportunidad x2" in sel or "dc x2" in sel or "x2" in sel:
+    if "doble oportunidad x2" in sel or "dc x2" in sel or bool(_re.search(r'(?<!\w)x2(?!\w)', sel)):
         if h_score is not None and a_score is not None:
             return a_score >= h_score
-    if "doble oportunidad 12" in sel or "dc 12" in sel or "12" in sel:
+    if "doble oportunidad 12" in sel or "dc 12" in sel or bool(_re.search(r'(?<!\d)12(?!\d|\.)', sel)):
         if h_score is not None and a_score is not None:
             return h_score != a_score
         
@@ -5905,15 +6167,15 @@ if __name__ == "__main__":
 
     
     ##---------Cambiar nombre de liga---------------
-    # old_name = "1. Liga, Qualification Playoffs"
-    # new_name = "Czech First League"
+    old_name = "Primera B Nacional"
+    new_name = "Primera Nacional"
     
-    # db = next(get_db())
-    # try:
-    #     resultado = rename_competition_matches(old_name, new_name, db)
-    #     print(resultado)
-    # finally:
-    #     db.close()
+    db = next(get_db())
+    try:
+        resultado = rename_competition_matches(old_name, new_name, db)
+        print(resultado)
+    finally:
+        db.close()
 
     ##---------Eliminar liga--------------------------------
 
@@ -5928,12 +6190,12 @@ if __name__ == "__main__":
 
     #------------------Eliminar duplicados-------------------
 
-    db = next(get_db())
-    try:
-        resultado = deduplicate_competition_matches(liga, db)
-        print(resultado)
-    finally:
-        db.close()
+    # db = next(get_db())
+    # try:
+    #     resultado = deduplicate_competition_matches(liga, db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
 
     # -----------------Eliminar partidos--------------------
     # db = next(get_db())

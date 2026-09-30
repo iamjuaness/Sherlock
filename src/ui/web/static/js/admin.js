@@ -147,6 +147,11 @@ async function renderDashboardView() {
           <div class="kpi-subtext">Kelly Promedio: ${(data.kpis.avg_kelly * 100).toFixed(1)}%</div>
         </div>
         <div class="kpi-card">
+          <div class="kpi-title">Rendimiento Ajustado (Stake 1)</div>
+          <div class="kpi-value ${data.kpis.yield_rate_adjusted >= 0 ? 'positive' : 'negative'}">${data.kpis.yield_rate_adjusted}%</div>
+          <div class="kpi-subtext">Beneficio Adj: ${data.kpis.net_profit_adjusted > 0 ? '+' : ''}${data.kpis.net_profit_adjusted} u | CLV: ${data.kpis.avg_clv !== null && data.kpis.avg_clv !== undefined ? (data.kpis.avg_clv > 0 ? '+' : '') + data.kpis.avg_clv + '%' : 'N/A'}</div>
+        </div>
+        <div class="kpi-card">
           <div class="kpi-title">Total Análisis</div>
           <div class="kpi-value">${data.kpis.total_analyses}</div>
           <div class="kpi-subtext">Total picks: ${data.kpis.total_picks}</div>

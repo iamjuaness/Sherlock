@@ -1,154 +1,97 @@
 [
   {
-    "league": "Brasileirão Série B",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "corners",
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "cards",
     "market_side": "under"
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "shots_target",
-    "market_side": "over",
-    "stake_modifier": 0.5,
-    "blacklist": false
   },
   {
     "league": "Liga Profesional de Fútbol",
-    "market_family": "shots",
-    "market_side": "under"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "goals",
-    "market_side": "over"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "shots_target",
-    "market_side": "under"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "cards",
-    "market_side": "over"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "shots",
-    "market_side": "under"
-  },
-  {
-    "league": "Brasileirão Betano",
-    "market_family": "shots_target",
-    "market_side": "over"
-  },
-  {
-    "league": "MLS",
-    "market_family": "result",
-    "market_side": "away"
-  },
-  {
-    "league": "MLS",
     "market_family": "result",
     "market_side": "home"
   },
   {
-    "league": "Primera A",
-    "market_family": "goals",
-    "market_side": "under"
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "corners",
-    "market_side": "under"
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "goals",
-    "market_side": "over"
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "result",
-    "market_side": "draw"
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "cards",
-    "market_side": "over"
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "goals",
-    "market_side": "over"
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "result",
-    "market_side": "draw"
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "corners",
-    "market_side": "over"
-  },
-  {
-    "league": "VriendenLoterij Eredivisie",
-    "market_family": "double_chance",
-    "market_side": "home_draw"
-  },
-  {
-    "league": "VriendenLoterij Eredivisie",
-    "market_family": "corners",
-    "market_side": "under"
-  },
-  {
-    "league": "Liga de Primera",
-    "market_family": "double_chance",
-    "market_side": "draw_away"
-  },
-  {
-    "league": "Liga de Primera",
-    "market_family": "corners",
-    "market_side": "over"
-  },
-  {
-    "league": "Czech First League",
-    "market_family": "goals",
-    "market_side": "over"
-  },
-  {
-    "league": "Czech First League",
-    "market_family": "shots_target",
-    "market_side": "under"
-  },
-  {
-    "league": "Czech First League",
-    "market_family": "shots",
-    "market_side": "under"
-  },
-  {
-    "league": "División Profesional",
-    "market_family": "goals",
-    "market_side": "under"
-  },
-  {
-    "league": "División Profesional",
+    "league": "Brasileirão Série B",
     "market_family": "result",
     "market_side": "away"
   },
   {
-    "league": "División Profesional",
+    "league": "MLS",
     "market_family": "result",
-    "market_side": "draw"
+    "market_side": "away"
+  },
+  {
+    "league": "Primera A",
+    "market_family": "result",
+    "market_side": "away"
+  },
+  {
+    "league": "Primera A",
+    "market_family": "cards",
+    "market_side": "over"
+  },
+  {
+    "league": "Premier League",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "Liga MX, Apertura",
+    "market_family": "double_chance",
+    "market_side": "home_draw"
+  },
+  {
+    "league": "Liga MX, Apertura",
+    "market_family": "cards",
+    "market_side": "under"
+  },
+  {
+    "league": "Liga MX, Apertura",
+    "market_family": "goals",
+    "market_side": "over"
+  },
+  {
+    "league": "Liga 1 Te Apuesto",
+    "market_family": "double_chance",
+    "market_side": "draw_away"
+  },
+  {
+    "league": "Liga 1 Te Apuesto",
+    "market_family": "result",
+    "market_side": "home"
+  },
+  {
+    "league": "Liga 1 Te Apuesto",
+    "market_family": "goals",
+    "market_side": "under"
+  },
+  {
+    "league": "LigaPro Serie A",
+    "market_family": "corners",
+    "market_side": "under"
+  },
+  {
+    "league": "Bundesliga",
+    "market_family": "shots",
+    "market_side": "under"
+  },
+  {
+    "league": "Bundesliga",
+    "market_family": "shots_target",
+    "market_side": "under"
+  },
+  {
+    "league": "Bundesliga",
+    "market_family": "result",
+    "market_side": "home"
+  },
+  {
+    "league": "Bundesliga",
+    "market_family": "goals",
+    "market_side": "over"
+  },
+  {
+    "league": "Bundesliga",
+    "market_family": "double_chance",
+    "market_side": "draw_away"
   }
 ]

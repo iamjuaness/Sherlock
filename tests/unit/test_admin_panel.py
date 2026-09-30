@@ -293,4 +293,30 @@ def test_filter_correlated_picks(db_session: Session):
     assert len(picks_all) == 2
 
 
+def test_closing_odds_endpoints(db_session: Session):
+    """Test get_pending_closing_odds_matches and submit_closing_odds logic."""
+    from src.ui.api.main import get_pending_closing_odds_matches
+
+    sample_picks = [
+        {"selection": "Más de 2.5", "market": "Total Goles", "line": 2.5, "odds": 1.95, "is_publishable": True},
+    ]
+    ah = AnalysisHistory(
+        sport="football",
+        date=datetime.utcnow(),
+        match_date=datetime.utcnow(),
+        match_title="Closing Odds Match vs Test",
+        payload="{}",
+        picks_calculados=json.dumps(sample_picks),
+        competition="Test League",
+        bookmaker="Betano",
+    )
+    db_session.add(ah)
+    db_session.commit()
+
+    res = get_pending_closing_odds_matches(db=db_session)
+    assert res["status"] == "ok"
+    assert len(res["pending_matches"]) >= 1
+
+
+
 

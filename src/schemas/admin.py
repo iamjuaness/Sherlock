@@ -77,6 +77,11 @@ class DashboardKPIs(BaseModel):
     yield_rate: float        # Equal to ROI
     avg_kelly: float         # Average Kelly fraction
     clv: Optional[float] = None
+    net_profit_adjusted: float = 0.0     # Sum profit/loss assuming flat stake = 1.0
+    yield_rate_adjusted: float = 0.0     # Yield assuming flat stake = 1.0
+    units_staked_adjusted: float = 0.0   # Count of resolved picks with flat stake = 1.0
+    avg_clv: Optional[float] = None       # Average CLV percentage across picks with closing odds
+
 
 
 class CalibrationBand(BaseModel):
@@ -152,6 +157,8 @@ class PickItemOut(BaseModel):
     bookmaker: Optional[str] = None
     created_at: datetime
     updated_at: Optional[datetime] = None
+    closing_odds: Optional[float] = None
+    clv_pct: Optional[float] = None
     count_in_profitability: bool = True
     needs_recalc: bool = False
     is_blacklisted: bool = False

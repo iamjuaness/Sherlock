@@ -84,10 +84,10 @@ def market_family(text: str) -> str:
         return "shots"
     if any(k in s for k in ["goal", "goals", "goles"]):
         return "goals"
-    if any(k in s for k in ["double chance", "doble oportunidad", "1x", "x2", "12"]):
-        return "double_chance"
     if any(k in s for k in ["moneyline", "ml", "1x2", "ganador", "local", "visitante", "empate"]):
         return "result"
+    if any(k in s for k in ["double chance", "doble oportunidad"]) or re.search(r"\b(1x|x2|12)\b", s):
+        return "double_chance"
     return "generic"
 
 

@@ -184,6 +184,36 @@ def calculate_dashboard_summary(
     roi = (total_profit / units_staked * 100.0) if units_staked > 0 else 0.0
     yield_rate = roi
 
+    # ── Ajustado: Stake Flat = 1.0 ──
+    def _calc_adj_profit(p):
+        st = p["status"]
+        odds = float(p["odds"])
+        if st == "won":
+            return odds - 1.0
+        elif st == "lost":
+            return -1.0
+        return 0.0
+
+    total_profit_adj = sum(_calc_adj_profit(p) for p in resolved_valid)
+    units_staked_adj = float(len(resolved_valid))
+    yield_rate_adj = (total_profit_adj / units_staked_adj * 100.0) if units_staked_adj > 0 else 0.0
+
+    # ── Cálculo CLV Promedio ──
+    clv_values = []
+    for p in picks:
+        raw_p = p.get("raw_pick") or {}
+        cl_odds = raw_p.get("closing_odds") or p.get("closing_odds")
+        odds = p.get("odds", 0.0)
+        if cl_odds and odds > 1.0:
+            try:
+                own_implied = 1.0 / float(odds)
+                closing_implied = 1.0 / float(cl_odds)
+                clv_pct = (closing_implied - own_implied) / closing_implied * 100.0
+                clv_values.append(clv_pct)
+            except Exception:
+                pass
+    avg_clv = round(sum(clv_values) / len(clv_values), 2) if clv_values else None
+
     avg_odds = (sum(p["odds"] for p in picks) / total_picks) if total_picks > 0 else 0.0
     avg_winning_odds = (sum(p["odds"] for p in picks_won) / won_count) if won_count > 0 else 0.0
     break_even_rate = (1.0 / avg_odds * 100.0) if avg_odds > 1.0 else 0.0
@@ -210,7 +240,11 @@ def calculate_dashboard_summary(
         avg_edge=round(avg_edge, 4),
         yield_rate=round(yield_rate, 2),
         avg_kelly=round(avg_kelly, 4),
-        clv=None,
+        clv=avg_clv,
+        net_profit_adjusted=round(total_profit_adj, 2),
+        yield_rate_adjusted=round(yield_rate_adj, 2),
+        units_staked_adjusted=round(units_staked_adj, 2),
+        avg_clv=avg_clv,
     )
 
     # ── Model Quality & Calibration Bands ──

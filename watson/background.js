@@ -1138,9 +1138,7 @@ function buildHistoricalPayload(
   // Normalizar nombre: tomar sólo la parte antes de la primera coma
   // p.ej. "LigaPro Serie A, Playoffs" → "LigaPro Serie A"
   const rawName = tournamentName || event.tournament?.name || null;
-  const normalizedName = rawName
-    ? rawName.split(",")[0].trim()
-    : null;
+  const normalizedName = rawName ? rawName.split(",")[0].trim() : null;
 
   const payload = {
     sport: "football",
@@ -1463,7 +1461,7 @@ async function handleBulkExtractStats(data) {
         recalcResult = await recalcRes.json();
         sendBulkProgress({
           phase: "recalculate_done",
-          message: `✅ Recalculo listo: ${recalcResult?.message || (recalcResult?.updated + " actualizados")}`,
+          message: `✅ Recalculo listo: ${recalcResult?.message || recalcResult?.updated + " actualizados"}`,
           totalProcessed,
           totalSaved,
           totalErrors,
@@ -1497,7 +1495,13 @@ async function handleBulkExtractStats(data) {
     totalErrors,
   });
 
-  return { success: true, totalProcessed, totalSaved, totalErrors, recalcResult };
+  return {
+    success: true,
+    totalProcessed,
+    totalSaved,
+    totalErrors,
+    recalcResult,
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1721,4 +1725,86 @@ async function handleBulkExtractResults(data) {
   });
 
   return { success: true, totalProcessed, totalSaved, totalErrors };
+}
+
+// ═══════════════════════════════════════════════════════════════
+// ALARMA Y RECOLECCIÓN DE CUOTAS DE CIERRE (CLV)
+// ═══════════════════════════════════════════════════════════════
+chrome.alarms.create("closingOddsAlarm", { periodInMinutes: 2 });
+
+chrome.alarms.onAlarm.addListener((alarm) => {
+  if (alarm.name === "closingOddsAlarm") {
+    handlePollClosingOdds().catch((err) => {
+      console.warn(
+        "[Watson CLV] Error en recolección de cuotas de cierre:",
+        err.message,
+      );
+    });
+  }
+});
+
+async function handlePollClosingOdds() {
+  const stored = await chrome.storage.sync.get(["endpointUrl"]);
+  let baseApi = stored.endpointUrl || "http://localhost:8000/api/v1/prefill";
+  if (baseApi.endsWith("/prefill")) {
+    baseApi = baseApi.substring(0, baseApi.length - 8);
+  } else if (baseApi.endsWith("/")) {
+    baseApi = baseApi.substring(0, baseApi.length - 1);
+  }
+
+  const pendingUrl = `${baseApi}/closing-odds/pending-matches`;
+  const resp = await fetch(pendingUrl);
+  if (!resp.ok) return { success: false, error: `HTTP ${resp.status}` };
+
+  const data = await resp.json();
+  const pendingMatches = data.pending_matches || [];
+  const now = new Date();
+  let processedCount = 0;
+
+  for (const match of pendingMatches) {
+    if (match.has_all_closing_odds) continue;
+    if (!match.home_team || !match.away_team) continue;
+
+    const matchTime = match.match_date ? new Date(match.match_date) : null;
+    if (matchTime) {
+      const diffMinutes = (matchTime - now) / 60000;
+      // Recolectar si el partido empieza en los próximos 15 minutos (rango 10-5 min antes) o si recién empezó (hasta -10 mins)
+      if (diffMinutes > 15 || diffMinutes < -10) {
+        continue;
+      }
+    }
+
+    console.log(
+      `[Watson CLV] Buscando cuotas de cierre para: ${match.match_title}`,
+    );
+    const betanoResult = await fetchBetanoOddsForTeams(
+      match.home_team,
+      match.away_team,
+      match.competition,
+    );
+
+    if (betanoResult && betanoResult.success && betanoResult.odds) {
+      const submitUrl = `${baseApi}/closing-odds/submit`;
+      const submitResp = await fetch(submitUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          analysis_id: match.id,
+          match_title: match.match_title,
+          odds_data: betanoResult.odds,
+        }),
+      });
+
+      if (submitResp.ok) {
+        const resJson = await submitResp.json();
+        console.log(
+          `[Watson CLV] ✅ Cuotas de cierre guardadas para ${match.match_title}:`,
+          resJson.message,
+        );
+        processedCount++;
+      }
+    }
+  }
+
+  return { success: true, processedMatches: processedCount };
 }

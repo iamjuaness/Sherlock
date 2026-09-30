@@ -62,8 +62,10 @@ def _dedup_correlated_picks(picks: List[Dict]) -> List[Dict]:
     from collections import defaultdict, OrderedDict
     by_match: Dict[str, List[Dict]] = OrderedDict()
     for p in picks:
-        raw_id = str(p.get("analysis_id") or p.get("id") or "")
-        mid = raw_id.rsplit("_", 1)[0] if "_" in raw_id else raw_id
+        mid = str(p.get("analysis_id") or "")
+        if not mid:
+            raw_id = str(p.get("id") or "")
+            mid = raw_id.rsplit("_", 1)[0] if "_" in raw_id else raw_id
         by_match.setdefault(mid, []).append(p)
 
     result: List[Dict] = []
@@ -255,6 +257,16 @@ def _extract_picks_from_analysis(
         is_und = bool(p.get("is_underdog") or p.get("underdog") or p.get("category") == "Underdog" or odds >= 3.0)
         category = p.get("category") or p.get("tag") or ("Underdog" if is_und else "Profesional")
 
+        closing_odds = p.get("closing_odds")
+        clv_pct = None
+        if closing_odds and odds > 1.0:
+            try:
+                own_implied = 1.0 / odds
+                closing_implied = 1.0 / float(closing_odds)
+                clv_pct = round((closing_implied - own_implied) / closing_implied * 100.0, 2)
+            except Exception:
+                clv_pct = None
+
         synthetic_id = f"{ah.id}_{idx}"
         extracted.append({
             "id": synthetic_id,
@@ -266,6 +278,8 @@ def _extract_picks_from_analysis(
             "selection": selection,
             "status": status_norm,
             "odds": round(odds, 3),
+            "closing_odds": float(closing_odds) if closing_odds else None,
+            "clv_pct": clv_pct,
             "model_prob": round(model_prob, 4),
             "calibrated_prob": round(calibrated_prob, 4),
             "implied_prob": round(implied_prob, 4),

@@ -280,13 +280,18 @@ def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
     if sel == "visitante":
         if h_score is not None and a_score is not None: return a_score > h_score
 
-    if "doble oportunidad 1x" in sel or "dc 1x" in sel or "1x" in sel:
+    # IMPORTANT: usar lookahead/lookbehind negativo para evitar que "12" dentro de
+    # un número como "12.5" (ej. "Over 12.5 Corners") dispare el check de Doble Oportunidad.
+    # \b12\b FALLA porque el punto '.' es word boundary; la solución correcta es:
+    # (?<!\d)12(?!\d|\.)  ->  "12" no precedido ni seguido de dígito o punto.
+    import re as _re
+    if "doble oportunidad 1x" in sel or "dc 1x" in sel or bool(_re.search(r'(?<!\w)1x(?!\w)', sel)):
         if h_score is not None and a_score is not None:
             return h_score >= a_score
-    if "doble oportunidad x2" in sel or "dc x2" in sel or "x2" in sel:
+    if "doble oportunidad x2" in sel or "dc x2" in sel or bool(_re.search(r'(?<!\w)x2(?!\w)', sel)):
         if h_score is not None and a_score is not None:
             return a_score >= h_score
-    if "doble oportunidad 12" in sel or "dc 12" in sel or "12" in sel:
+    if "doble oportunidad 12" in sel or "dc 12" in sel or bool(_re.search(r'(?<!\d)12(?!\d|\.)', sel)):
         if h_score is not None and a_score is not None:
             return h_score != a_score
 
