@@ -556,7 +556,13 @@ class ValueIndicator(BaseModel):
     is_blacklisted:        bool = False
     stake_units:           Optional[float] = None
 
-    # ── NUEVO: line shopping — casa que ofrece la mejor cuota para este pick ──
+    # ── Snapshot e inmutabilidad temporal ──
+    pick_id:               Optional[str] = None
+    predicted_at_utc:      Optional[str] = None
+    model_prob_raw:        Optional[float] = None
+    calibration_version:   Optional[str] = None
+
+    # ── NUEVO: line shopping — casa que ofrece la mejor cuotas para este pick ──
     bookmaker: Optional[str] = None
 
     # ── Frecuencia real / Hit Rate empírico (% de partidos donde se dio el pick) ──
@@ -950,10 +956,128 @@ def get_calibrator():
     return cal
 
 
+def _coerce_datetime(value: Any) -> datetime | None:
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        try:
+            dt = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+_version_cache: "dict[str, Any]" = {"mtime": None, "versions": []}
+
+# Caché para get_calibrator_for_timestamp: evita cargar todos los archivos
+# de history en cada llamada (crítico en recalculate-all paralelo).
+# La clave es un frozenset de (path, mtime) de los archivos cargados.
+_history_cal_cache: "dict[str, Any]" = {"key": None, "cals": None}
+
+
+def _build_history_cache_key(artifacts: list) -> frozenset:
+    """Clave de caché basada en los paths y mtimes de los artefactos."""
+    items = []
+    for p in artifacts:
+        try:
+            items.append((str(p), p.stat().st_mtime))
+        except OSError:
+            items.append((str(p), None))
+    return frozenset(items)
+
+
+def get_calibrator_for_timestamp(predicted_at: "datetime | str | None"):
+    """
+    Devuelve el calibrador activo en el momento predicted_at según el historial
+    de activaciones.
+
+    IMPORTANTE: la lista de calibradores se cachea a nivel de proceso y solo
+    se recarga si cambian los archivos en disco (mtime). Esto es crítico para
+    el rendimiento en recalculate-all paralelo, donde se llama miles de veces.
+    """
+    from src.models.calibration import HierarchicalCalibrator
+    if predicted_at is None:
+        return HierarchicalCalibrator.identity()
+
+    dt = _coerce_datetime(predicted_at)
+    if dt is None:
+        return HierarchicalCalibrator.identity()
+
+    # Resolver los artefactos disponibles
+    active_path_str = os.getenv("SHERLOCK_CALIBRATION_PATH", "data/calibration/active.json")
+    base_dir = Path(active_path_str).parent
+    history_dir = base_dir / "history"
+    artifacts: list = []
+
+    if history_dir.exists():
+        for f in history_dir.glob("*.json"):
+            # Ignorar archivos legacy con sufijo _until_ (no son versiones independientes)
+            if "_until_" in f.name:
+                continue
+            artifacts.append(f)
+    active_p = Path(active_path_str)
+    if active_p.exists() and active_p not in artifacts:
+        artifacts.append(active_p)
+
+    # Verificar si el caché sigue vigente
+    cache_key = _build_history_cache_key(artifacts)
+    if _history_cal_cache["key"] == cache_key and _history_cal_cache["cals"] is not None:
+        loaded_cals = _history_cal_cache["cals"]
+    else:
+        # Recargar desde disco
+        loaded_cals = []
+        for p in artifacts:
+            try:
+                cal = HierarchicalCalibrator.load(p)
+                act_str = cal.activated_at_utc or cal.fitted_at or cal.metadata.get("fitted_at")
+                act_dt = _coerce_datetime(act_str)
+                if act_dt:
+                    loaded_cals.append((act_dt, cal))
+            except Exception:
+                continue
+        loaded_cals.sort(key=lambda x: x[0])
+        _history_cal_cache["key"] = cache_key
+        _history_cal_cache["cals"] = loaded_cals
+        logger.debug(
+            "Cache de calibradores reconstruida: %d versiones cargadas.",
+            len(loaded_cals),
+        )
+
+    if not loaded_cals:
+        return get_calibrator()
+
+    # Si dt es anterior a la primera activación válida, no había calibración activa
+    if dt < loaded_cals[0][0]:
+        return HierarchicalCalibrator.identity()
+
+    # Seleccionar la última versión cuya fecha de activación <= dt
+    selected = None
+    for act_dt, cal in loaded_cals:
+        if act_dt <= dt:
+            selected = cal
+        else:
+            break
+
+    return selected or HierarchicalCalibrator.identity()
+
+
+def get_calibration_version_for_timestamp(predicted_at: datetime | str | None) -> str:
+    """Retorna la versión de la calibración para un timestamp dado o 'unverified'."""
+    cal = get_calibrator_for_timestamp(predicted_at)
+    if not cal.is_trained:
+        return "unverified"
+    return cal.version or "unverified"
+
+
 def reset_calibrator_cache() -> None:
     """Fuerza la recarga del artefacto en la siguiente llamada (usado en tests)."""
     _calibrator_cache["mtime"] = None
     _calibrator_cache["obj"] = None
+    _version_cache["mtime"] = None
+    _history_cal_cache["key"] = None
+    _history_cal_cache["cals"] = None
+    _version_cache["versions"] = []
 
 
 def apply_calibration(
@@ -963,9 +1087,10 @@ def apply_calibration(
     selection: str | None = None,
     league: "LeagueStats | None" = None,
     league_name: str | None = None,
+    predicted_at_utc: datetime | str | None = None,
 ) -> float:
     """
-    Aplica la curva jerárquica de calibración al pick.
+    Aplica la curva jerárquica de calibración al pick según la versión activa en predicted_at_utc.
 
     La cuota se mantiene en la firma por compatibilidad con llamadas
     existentes, pero no altera la probabilidad del evento. La calibración
@@ -994,7 +1119,8 @@ def apply_calibration(
     resolved_line = _calibration_line_bucket(resolved_selection)
 
     try:
-        return get_calibrator().apply(
+        calibrator = get_calibrator_for_timestamp(predicted_at_utc) if predicted_at_utc is not None else get_calibrator()
+        return calibrator.apply(
             prob=raw_prob,
             market_family=resolved_family,
             side=resolved_side,
@@ -1337,11 +1463,14 @@ def _calculate_kelly_fraction(
         return 0.0
 
 
-def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None, odds_obj: Any = None):
+def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None, odds_obj: Any = None, match_date: datetime | str | None = None):
     if odds is None or odds <= 1.0:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
 
     family = _market_family(sel)
+
+    pred_ts = match_date if match_date is not None else datetime.now(timezone.utc).isoformat()
+    pred_ts_str = pred_ts.isoformat() if isinstance(pred_ts, datetime) else str(pred_ts)
 
     calibrated_p = apply_calibration(
         raw_prob=modelp,
@@ -1350,6 +1479,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         selection=sel,
         league=league,
         league_name=league_name,
+        predicted_at_utc=pred_ts,
     )
 
     # Recorte heurístico de respaldo: SOLO cuando no hay curva entrenada.
@@ -1461,11 +1591,17 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             stake = max(MIN_STAKE, round(stake * stake_mod))
 
 
+    target_cal = get_calibrator_for_timestamp(pred_ts) if pred_ts is not None else get_calibrator()
+    cal_ver = target_cal.version if target_cal.is_trained else "unverified"
+
     v = ValueIndicator(
         selection=sel,
         odds=odds,
         model_prob=round(modelp, 1),
+        model_prob_raw=float(modelp),
         calibrated_prob=round(calibrated_p, 1),
+        calibration_version=cal_ver,
+        predicted_at_utc=pred_ts_str,
         implied_prob=round(raw_implied, 1),
         implied_prob_no_vig=round(implied_no_vig, 1),
         fair_odds=round(ret_dist.fair_odds, 2) if ret_dist.fair_odds else None,
@@ -3891,8 +4027,14 @@ async def compare_football(
         raw = [1.0 / o for o in odds_list if o and o > 1.0]
         return sum(raw) * 100.0 if raw else 100.0
 
+    m_date_eval = current_match_date or getattr(req, "match_date", None) or getattr(req, "date", None)
+
     def _vi(sel: str, odds: float | None, modelp: float, overround: float = 100.0, push_p: float = 0.0) -> ValueIndicator:
-        return _value_indicator(sel, odds, modelp, h=h, a=a, overround=overround, push_p=push_p, league=req.league_stats, league_name=req.competition, odds_obj=req.odds)
+        return _value_indicator(
+            sel, odds, modelp, h=h, a=a, overround=overround, push_p=push_p,
+            league=req.league_stats, league_name=req.competition, odds_obj=req.odds,
+            match_date=m_date_eval,
+        )
 
     _or_1x2  = _overround(req.odds.home, req.odds.draw, req.odds.away)
     _or_btts = _overround(req.odds.btts_yes, req.odds.btts_no)

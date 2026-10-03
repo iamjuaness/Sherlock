@@ -154,6 +154,43 @@ def _coerce_datetime(value: Any) -> datetime | None:
             return None
     return None
 
+
+def _coerce_cutoff_datetime(value: Any) -> datetime | None:
+    """
+    Como `_coerce_datetime` pero si el valor es solo una fecha (YYYY-MM-DD)
+    la lleva al final del día (23:59:59.999999 UTC) para incluir todos los
+    partidos de ese día completo.
+    """
+    if isinstance(value, datetime):
+        return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+    if isinstance(value, str):
+        stripped = value.strip()
+        # Fecha pura sin componente horaria
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", stripped):
+            try:
+                d = datetime.strptime(stripped, "%Y-%m-%d")
+                return d.replace(
+                    hour=23, minute=59, second=59,
+                    microsecond=999999, tzinfo=timezone.utc,
+                )
+            except ValueError:
+                return None
+        try:
+            dt = datetime.fromisoformat(stripped.replace("Z", "+00:00"))
+            return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+        except ValueError:
+            return None
+    return None
+
+
+def _until_date_label(until_date: "datetime | str | None") -> str:
+    """Devuelve 'YYYY-MM-DD' a partir de un until_date para usar en nombres de archivo."""
+    if isinstance(until_date, str):
+        return until_date.strip()[:10]
+    if isinstance(until_date, datetime):
+        return until_date.strftime("%Y-%m-%d")
+    return "unknown"
+
 def _normalize_market_text(value: str | None) -> str:
     return " ".join(str(value or "").lower().strip().split())
 
@@ -294,8 +331,14 @@ def extract_samples(
         }
 
         timestamp = _coerce_datetime(
-            row.get("match_date")
+            row.get("predicted_at_utc")
             or row.get("date")
+            or row.get("match_date")
+        )
+
+        result_available_at = _coerce_datetime(
+            row.get("result_available_at_utc")
+            or row.get("match_date")
         )
 
         league = (
@@ -319,6 +362,9 @@ def extract_samples(
             if require_timestamp and timestamp is None:
                 stats.picks_no_timestamp += 1
                 continue
+
+            # Preservar timestamp de predicción y fecha de resultado
+            sample_ts = _coerce_datetime(pick.get("predicted_at_utc")) or timestamp
 
             try:
                 legacy_outcome = resolver(pick, results)
@@ -368,7 +414,7 @@ def extract_samples(
                     side=side,
                     line_bucket=line_bucket,
                     league=str(league).strip() if league else None,
-                    timestamp=timestamp,
+                    timestamp=sample_ts,
                 )
             )
 
@@ -381,6 +427,7 @@ def load_rows_from_db(
     limit: int | None = None,
     league_filter: str | None = None,
     include_excluded: bool = False,
+    until_date: datetime | str | None = None,
 ) -> list[dict]:
     """
     Lee `analysis_history` y devuelve dicts planos.
@@ -390,6 +437,9 @@ def load_rows_from_db(
 
     `league_filter`: si se especifica, solo devuelve filas cuyo nombre de liga
     o competición coincida (insensible a mayúsculas y espacios).
+
+    `until_date`: si se especifica (datetime o string ISO/YYYY-MM-DD), solo incluye
+    partidos cuya fecha (match_date o date) sea menor o igual a esa fecha limite.
     """
     from src.core.domain import AnalysisHistory
 
@@ -401,13 +451,27 @@ def load_rows_from_db(
 
     normalized_filter = " ".join((league_filter or "").lower().strip().split())
 
+    cutoff_dt = None
+    if until_date is not None:
+        # Usar end-of-day para que una fecha pura incluya todo el día
+        cutoff_dt = _coerce_cutoff_datetime(until_date)
+
     try:
         q = (
             session.query(AnalysisHistory)
             .filter(AnalysisHistory.final_score_home.isnot(None))
             .filter(AnalysisHistory.final_score_away.isnot(None))
-            .order_by(AnalysisHistory.match_date.asc())
         )
+
+        if cutoff_dt is not None:
+            # Filtrar por fecha de partido <= fecha de corte
+            q = q.filter(
+                (AnalysisHistory.match_date <= cutoff_dt) |
+                ((AnalysisHistory.match_date.is_(None)) & (AnalysisHistory.date <= cutoff_dt))
+            )
+
+        q = q.order_by(AnalysisHistory.match_date.asc())
+
         if limit:
             q = q.limit(limit)
 
@@ -513,12 +577,17 @@ def train_calibrator(
     force: bool = False,
     dry_run: bool = False,
     extraction_stats: dict | None = None,
+    cutoff_label: str | None = None,
 ) -> TrainingReport:
     """
     Ajusta, valida y (si mejora) promueve el calibrador.
 
     `force` publica el artefacto aunque no mejore — solo para depuración.
     `dry_run` calcula todo y no escribe nada.
+    `cutoff_label`: si se especifica (formato 'YYYY-MM-DD'), la copia en history
+    llevará el sufijo `_until_{cutoff_label}` para distinguir calibraciones por
+    corte temporal. El archivo `active.json` siempre se sobreescribe con la
+    versión más reciente.
     """
     n = len(samples)
     report = TrainingReport(
@@ -570,6 +639,18 @@ def train_calibrator(
     calibrator.metadata["extraction"] = report.extraction
     calibrator.metadata["forced"] = bool(force and not improves)
 
+    # Si hay corte temporal, el nombre del artefacto usa la fecha de corte
+    # (fin del día) en lugar de la hora actual, para que sea autoexplicativo.
+    if cutoff_label:
+        calibrator.metadata["cutoff_date"] = cutoff_label
+        try:
+            cutoff_dt = datetime.strptime(cutoff_label, "%Y-%m-%d").replace(
+                hour=23, minute=59, second=59, tzinfo=timezone.utc
+            )
+            calibrator.version = cutoff_dt.strftime("cal-v2-%Y%m%dT%H%M%SZ")
+        except ValueError:
+            pass  # Si el label no es parseable, mantener la versión original
+
     report.calibrator_version = calibrator.version
     report.segments = sorted(calibrator.curves.keys())
 
@@ -579,8 +660,12 @@ def train_calibrator(
 
     path = Path(artifact_path)
     calibrator.save(path)
-    # Copia versionada junto al artefacto, para poder auditar y revertir.
+    # Copia versionada en history con el nombre estándar de versión.
+    # El corte temporal se almacena en calibrator.metadata["cutoff_date"] si aplica.
+    if cutoff_label:
+        calibrator.metadata["cutoff_date"] = cutoff_label
     calibrator.save(history_dir_for(path) / f"{calibrator.version}.json")
+    logger.info("Artefacto history guardado: 'history/%s.json'", calibrator.version)
 
     report.promoted = True
     report.reason = (
@@ -628,6 +713,7 @@ def run_training(
     session=None,
     league_filter: str | None = None,
     include_excluded: bool = False,
+    until_date: datetime | str | None = None,
 ) -> TrainingReport:
     """
     Pipeline completo: BD -> muestras -> validación -> artefacto.
@@ -635,6 +721,8 @@ def run_training(
     `league_filter`: si se especifica, solo se entrenan picks de esa liga.
     Si la liga YA tiene curvas en el artefacto activo, el entrenamiento se
     bloquea para evitar sobreajuste — a menos que se pase `force=True`.
+
+    `until_date`: si se especifica, solo se incluyen picks anteriores o iguales a esa fecha.
     """
     # Guardia de sobreajuste: avisar si la liga ya tiene parámetros.
     if league_filter and not force:
@@ -656,15 +744,29 @@ def run_training(
             )
             return report
 
+    # Etiqueta de corte temporal (solo para el nombre en history).
+    cutoff_label: str | None = _until_date_label(until_date) if until_date is not None else None
+    if cutoff_label:
+        logger.info(
+            "Calibración con corte temporal: hasta '%s' (23:59:59 UTC).",
+            cutoff_label,
+        )
+
     rows = load_rows_from_db(
         session=session,
         limit=limit,
         league_filter=league_filter,
         include_excluded=include_excluded,
+        until_date=until_date,
     )
 
     if league_filter:
         logger.info("Filtrando por liga: '%s' → %d filas.", league_filter, len(rows))
+    if until_date:
+        logger.info(
+            "Filtrando por fecha máxima (corte): '%s' → %d filas.",
+            until_date, len(rows),
+        )
 
     samples, stats = extract_samples(rows, require_timestamp=require_timestamp)
     logger.info("Extracción: %s", stats.summary())
@@ -677,6 +779,7 @@ def run_training(
         force=force,
         dry_run=dry_run,
         extraction_stats=stats.as_dict(),
+        cutoff_label=cutoff_label,
     )
 
 
@@ -690,6 +793,13 @@ def main(argv: Sequence[str] | None = None) -> int:
     ap.add_argument("--min-samples", type=float, default=DEFAULT_MIN_SAMPLES)
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--limit", type=int, default=None)
+    ap.add_argument(
+        "--until-date",
+        "--cutoff-date",
+        default=None,
+        metavar="YYYY-MM-DD",
+        help="Entrena solo con partidos jugados/analizados hasta esta fecha (inclusive).",
+    )
     ap.add_argument(
         "--league",
         default=None,
@@ -727,6 +837,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         dry_run=args.dry_run,
         league_filter=args.league,
         include_excluded=args.include_excluded,
+        until_date=args.until_date,
     )
 
     print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False)

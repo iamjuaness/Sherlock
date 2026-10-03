@@ -544,6 +544,8 @@ class HierarchicalCalibrator:
     min_league_samples: float = 80.0
     version: str = "unversioned"
     fitted_at: str | None = None
+    activated_at_utc: str | None = None
+    deactivated_at_utc: str | None = None
     metadata: dict = field(default_factory=dict)
 
     def resolve_curve(
@@ -766,6 +768,8 @@ class HierarchicalCalibrator:
             "format_version": CALIBRATION_FORMAT_VERSION,
             "version": self.version,
             "fitted_at": self.fitted_at,
+            "activated_at_utc": self.activated_at_utc,
+            "deactivated_at_utc": self.deactivated_at_utc,
             "prior_strength": self.prior_strength,
             "min_samples": self.min_samples,
             "min_line_samples": self.min_line_samples,
@@ -798,6 +802,8 @@ class HierarchicalCalibrator:
             min_league_samples=float(data.get("min_league_samples", 80.0)),
             version=str(data.get("version", "unversioned")),
             fitted_at=data.get("fitted_at"),
+            activated_at_utc=data.get("activated_at_utc"),
+            deactivated_at_utc=data.get("deactivated_at_utc"),
             metadata=data.get("metadata", {}),
         )
 

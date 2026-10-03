@@ -267,7 +267,11 @@ def _extract_picks_from_analysis(
             except Exception:
                 clv_pct = None
 
-        synthetic_id = f"{ah.id}_{idx}"
+        synthetic_id = p.get("pick_id") or f"{ah.id}_{idx}"
+        predicted_at_utc = p.get("predicted_at_utc") or (ah.date.isoformat() if ah.date else None)
+        model_prob_raw = float(p.get("model_prob_raw") or model_prob)
+        cal_version = str(p.get("calibration_version") or "unverified")
+
         extracted.append({
             "id": synthetic_id,
             "analysis_id": ah.id,
@@ -281,7 +285,10 @@ def _extract_picks_from_analysis(
             "closing_odds": float(closing_odds) if closing_odds else None,
             "clv_pct": clv_pct,
             "model_prob": round(model_prob, 4),
+            "model_prob_raw": round(model_prob_raw, 4),
             "calibrated_prob": round(calibrated_prob, 4),
+            "calibration_version": cal_version,
+            "predicted_at_utc": predicted_at_utc,
             "implied_prob": round(implied_prob, 4),
             "edge": round(edge, 4),
             "kelly": round(kelly, 4),
@@ -896,3 +903,83 @@ def mark_for_recalculation(db: Session, analysis_id: str, admin_user: str = "adm
         admin_user=admin_user,
     )
     return True
+
+
+def run_counterfactual_analysis(
+    db: Session,
+    simulated_calibrator: Any,
+    filters: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """
+    Simula una versión de calibración alternativa sobre la probabilidad cruda
+    original (model_prob_raw) de los picks sin modificar la base de datos.
+
+    Separa explícitamente el ROI realizado del ROI contrafactual/hipotético.
+    """
+    from src.ui.api.compare import _market_family, _calibration_side, _calibration_line_bucket
+
+    all_picks, meta = get_all_picks(db, page=1, page_size=10000, filters=filters or {})
+    simulated_picks = []
+
+    real_total_stake = 0.0
+    real_total_profit = 0.0
+    sim_total_stake = 0.0
+    sim_total_profit = 0.0
+
+    for item in all_picks:
+        raw_prob = item.get("model_prob_raw") or item.get("model_prob") or 0.0
+        odds = item.get("odds") or 1.0
+        sel = item.get("selection") or ""
+        family = _market_family(sel)
+        side = _calibration_side(sel, family)
+        line = _calibration_line_bucket(sel)
+        league = item.get("competition")
+
+        sim_prob = simulated_calibrator.apply(
+            prob=raw_prob if raw_prob <= 1.0 else raw_prob / 100.0,
+            market_family=family,
+            side=side,
+            line_bucket=line,
+            league=league,
+        )
+        if sim_prob is not None and sim_prob <= 1.0:
+            sim_prob = sim_prob * 100.0
+
+        status = item.get("status")
+        real_stake = item.get("stake") or 0.0
+        real_profit = item.get("profit") or 0.0
+
+        if status in ("won", "lost", "push"):
+            real_total_stake += real_stake
+            real_total_profit += real_profit
+            sim_total_stake += real_stake
+            if status == "won":
+                sim_total_profit += real_stake * (odds - 1.0)
+            elif status == "lost":
+                sim_total_profit -= real_stake
+
+        sim_item = dict(item)
+        sim_item["original_calibrated_prob"] = item.get("calibrated_prob")
+        sim_item["simulated_calibrated_prob"] = round(sim_prob, 4) if sim_prob is not None else None
+        sim_item["simulated_calibration_version"] = getattr(simulated_calibrator, "version", "simulated")
+        simulated_picks.append(sim_item)
+
+    real_roi = round((real_total_profit / real_total_stake) * 100.0, 2) if real_total_stake > 0 else 0.0
+    sim_roi = round((sim_total_profit / sim_total_stake) * 100.0, 2) if sim_total_stake > 0 else 0.0
+
+    return {
+        "original_version": "realized_history",
+        "simulated_version": getattr(simulated_calibrator, "version", "simulated"),
+        "total_picks": len(simulated_picks),
+        "realized_metrics": {
+            "total_stake": round(real_total_stake, 2),
+            "total_profit": round(real_total_profit, 2),
+            "roi_pct": real_roi,
+        },
+        "simulated_metrics": {
+            "total_stake": round(sim_total_stake, 2),
+            "total_profit": round(sim_total_profit, 2),
+            "roi_pct": sim_roi,
+        },
+        "simulated_picks": simulated_picks[:100],
+    }

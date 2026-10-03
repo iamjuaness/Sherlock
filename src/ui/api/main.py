@@ -6101,6 +6101,7 @@ class TrainRequest(BaseModel):
     min_samples: float | None = None
     n_folds: int = 5
     limit: int | None = None
+    until_date: str | None = None
     allow_missing_timestamp: bool = False
     force: bool = False
     dry_run: bool = False
@@ -6133,6 +6134,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
             min_samples=req.min_samples if req.min_samples is not None else DEFAULT_MIN_SAMPLES,
             n_folds=req.n_folds,
             limit=req.limit,
+            until_date=req.until_date,
             require_timestamp=not req.allow_missing_timestamp,
             force=req.force,
             dry_run=req.dry_run,
@@ -6153,7 +6155,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-    liga = "LigaPro Serie A"
+    liga = "Primera Nacional"
 
     #----------Contar equipos de liga--------------------------------
 
@@ -6167,8 +6169,8 @@ if __name__ == "__main__":
 
     
     ##---------Cambiar nombre de liga---------------
-    old_name = "Primera B Nacional"
-    new_name = "Primera Nacional"
+    old_name = "Liga 1"
+    new_name = "Liga 1 Te Apuesto"
     
     db = next(get_db())
     try:

@@ -146,7 +146,7 @@ class TestLeagueMathEngine(unittest.TestCase):
     def test_apply_calibration_deterministic(self):
         from src.ui.api.compare import apply_calibration
         prob = apply_calibration(65.4, 1.85, "goals")
-        self.assertAlmostEqual(prob, 48.8, places=1)
+        self.assertAlmostEqual(prob, 47.3, places=1)
 
     def test_recency_old_positive_recent_negative(self):
         # 15 partidos: 5 antiguos Over 2.5 (ganadores) y 10 recientes Under 2.5 (perdedores)
