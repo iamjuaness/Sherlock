@@ -505,43 +505,41 @@ def line_key(
 
 def league_key(
     league: str | None,
-    market_family: str | None,
+    market_family: str | None = None,
     side: str | None = None,
 ) -> str | None:
     if not league:
         return None
 
-    return (
-        f"league:{str(league).strip()}"
-        f"|family:{_clean_segment_value(market_family)}"
-        f"|side:{_clean_segment_value(side)}"
-    )
+    key = f"league:{str(league).strip()}"
+    if market_family:
+        key += f"|family:{_clean_segment_value(market_family)}"
+    if side:
+        key += f"|side:{_clean_segment_value(side)}"
+    return key
 
 
 @dataclass
 class HierarchicalCalibrator:
     """
-    Calibrador jerárquico y conservador.
+    Calibrador jerárquico que prioriza evidencia de liga manteniendo control conservador.
 
     Orden de resolución:
-
-      league × family × side
-        -> family × side × line
-        -> family × side
-        -> family
-        -> global
-        -> identidad
-
-    La línea solo obtiene curva propia cuando hay evidencia amplia.
-    En la mayoría de casos, con el volumen actual, heredará la curva de
-    familia + dirección, evitando sobreajuste por líneas individuales.
+      1. league × family × side
+      2. league × family
+      3. league (overall)
+      4. family × side × line
+      5. family × side
+      6. family
+      7. global
+      8. identidad
     """
 
     curves: dict[str, CalibrationCurve] = field(default_factory=dict)
     prior_strength: float = 35.0
     min_samples: float = 60.0
     min_line_samples: float = 120.0
-    min_league_samples: float = 80.0
+    min_league_samples: float = 40.0
     version: str = "unversioned"
     fitted_at: str | None = None
     activated_at_utc: str | None = None
@@ -558,8 +556,7 @@ class HierarchicalCalibrator:
         """
         Devuelve la curva más específica disponible.
 
-        Nunca crea una curva implícita. Si un segmento no tiene muestra,
-        hereda de un padre entrenado.
+        Prioriza los datos de la liga sobre curvas globales conservadoras.
         """
         if league is None and side is not None and (side[0].isupper() or " " in side or side.lower() in ("premier", "laliga", "serie a", "bundesliga", "big", "tiny", "l1")):
             league = side
@@ -567,12 +564,13 @@ class HierarchicalCalibrator:
 
         candidates = (
             league_key(league, market_family, side),
+            league_key(league, market_family, None) if market_family else None,
+            league_key(league, None, None),
             line_key(market_family, side, line_bucket),
             directional_key(market_family, side),
             family_key(market_family),
             ROOT_KEY,
         )
-
 
         for key in candidates:
             if key and key in self.curves:
@@ -608,6 +606,8 @@ class HierarchicalCalibrator:
 
     @property
     def is_trained(self) -> bool:
+        if not self.curves:
+            return self.version not in ("identity", "unversioned")
         return any(
             not curve.is_identity
             for curve in self.curves.values()
@@ -620,17 +620,19 @@ class HierarchicalCalibrator:
         prior_strength: float = 35.0,
         min_samples: float = 60.0,
         min_line_samples: float = 120.0,
-        min_league_samples: float = 80.0,
+        min_league_samples: float | None = None,
         max_bins: int = DEFAULT_MAX_BINS,
         version: str | None = None,
     ) -> "HierarchicalCalibrator":
         """
         Ajusta la jerarquía completa con partial pooling.
-
-        Los mínimos más altos evitan que una racha corta modifique el EV
-        y el Kelly. Con tus 778 picks resueltos, es preferible mantener
-        pocas curvas estables que producir una por liga/línea con ruido.
         """
+        if min_league_samples is None:
+            min_league_samples = min(min_samples, 40.0)
+
+        # Prior strength más flexible para segmentos de liga, dando protagonismo a la evidencia real de la competición
+        league_prior_strength = max(8.0, prior_strength * 0.4)
+
         curves: dict[str, CalibrationCurve] = {}
         total_weight = sum(sample.weight for sample in samples)
 
@@ -651,7 +653,9 @@ class HierarchicalCalibrator:
         by_family: dict[str, list[CalibrationSample]] = {}
         by_direction: dict[tuple[str, str], list[CalibrationSample]] = {}
         by_line: dict[tuple[str, str, str], list[CalibrationSample]] = {}
-        by_league: dict[tuple[str, str, str], list[CalibrationSample]] = {}
+        by_league_full: dict[tuple[str, str, str], list[CalibrationSample]] = {}
+        by_league_family: dict[tuple[str, str], list[CalibrationSample]] = {}
+        by_league_overall: dict[str, list[CalibrationSample]] = {}
 
         for sample in samples:
             family = _clean_segment_value(sample.market_family)
@@ -665,8 +669,10 @@ class HierarchicalCalibrator:
                 by_line.setdefault((family, side, line), []).append(sample)
 
             if sample.league:
-                league = str(sample.league).strip()
-                by_league.setdefault((league, family, side), []).append(sample)
+                lg = str(sample.league).strip()
+                by_league_full.setdefault((lg, family, side), []).append(sample)
+                by_league_family.setdefault((lg, family), []).append(sample)
+                by_league_overall.setdefault(lg, []).append(sample)
 
         for family, subset in sorted(by_family.items()):
             if sum(item.weight for item in subset) < min_samples:
@@ -715,26 +721,61 @@ class HierarchicalCalibrator:
                 segment=key,
             )
 
-        for (league, family, side), subset in sorted(
-            by_league.items(),
-            key=lambda item: item[0],
-        ):
+        # Fit League Overall
+        for lg, subset in sorted(by_league_overall.items()):
             if sum(item.weight for item in subset) < min_league_samples:
                 continue
 
-            key = league_key(league, family, side)
-            parent = curves.get(
-                directional_key(family, side),
-                curves.get(family_key(family), global_curve),
-            )
+            key = league_key(lg)
+            if key:
+                curves[key] = fit_curve(
+                    samples=subset,
+                    prior_curve=global_curve,
+                    prior_strength=league_prior_strength,
+                    max_bins=max_bins,
+                    segment=key,
+                )
 
-            curves[key] = fit_curve(
-                samples=subset,
-                prior_curve=parent,
-                prior_strength=prior_strength,
-                max_bins=max_bins,
-                segment=key,
-            )
+        # Fit League x Family
+        for (lg, family), subset in sorted(by_league_family.items()):
+            if sum(item.weight for item in subset) < min_league_samples:
+                continue
+
+            key = league_key(lg, family)
+            if key:
+                parent = curves.get(
+                    league_key(lg),
+                    curves.get(family_key(family), global_curve),
+                )
+                curves[key] = fit_curve(
+                    samples=subset,
+                    prior_curve=parent,
+                    prior_strength=league_prior_strength,
+                    max_bins=max_bins,
+                    segment=key,
+                )
+
+        # Fit League x Family x Side
+        for (lg, family, side), subset in sorted(by_league_full.items()):
+            if sum(item.weight for item in subset) < min_league_samples:
+                continue
+
+            key = league_key(lg, family, side)
+            if key:
+                parent = curves.get(
+                    league_key(lg, family),
+                    curves.get(
+                        league_key(lg),
+                        curves.get(directional_key(family, side), global_curve),
+                    ),
+                )
+                curves[key] = fit_curve(
+                    samples=subset,
+                    prior_curve=parent,
+                    prior_strength=league_prior_strength,
+                    max_bins=max_bins,
+                    segment=key,
+                )
 
         fitted_at = datetime.now(timezone.utc).isoformat()
 

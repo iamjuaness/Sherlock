@@ -1745,7 +1745,7 @@ def save_analysis(
 
     # ── Calcular parámetros previos, ventanas de forma reciente (5, 10, 15) y hit rates empíricos ──
     from datetime import datetime, timezone
-    from src.core.math_engine import LeagueMathEngine
+    from src.core.math_engine import LeagueMathEngine, get_league_profile
     from src.domain.temporal import TemporalCutoff
 
     # Antes: `req.match_date or datetime.now(timezone.utc)`. Sin fecha de
@@ -1824,8 +1824,20 @@ def save_analysis(
                 })
 
         if prior_records:
+            profile = get_league_profile(comp_name)
+            l_hl = profile.get("league_prior_half_life_days", 420.0)
+            t_hl = profile.get("team_half_life_matches", 10.0)
+            min_ess = profile.get("min_effective_sample_size", 1.0)
+            prior_str = profile.get("league_prior_strength", 12.0)
+
             if not pre_match_data:
-                avg_engine = LeagueMathEngine.compute_league_averages(prior_records)
+                avg_engine = LeagueMathEngine.compute_league_averages(
+                    prior_records,
+                    reference_date=record_date,
+                    half_life_days=l_hl,
+                    min_effective_sample_size=min_ess,
+                    competition_id=comp_name,
+                )
                 pre_match_data = {"league_averages": avg_engine, "sample_size": len(prior_records)}
 
             if not recent_form_data:
@@ -1843,11 +1855,13 @@ def save_analysis(
                         prior_records, h_name, "goals", 2.5, is_over=True,
                         role_filter="home", current_match_date=record_date,
                         prior_rate=league_prior_over25,
+                        half_life=t_hl, prior_strength=prior_str,
                     ),
                     "away_over25_away": LeagueMathEngine.compute_pick_hit_rate_recency(
                         prior_records, a_name, "goals", 2.5, is_over=True,
                         role_filter="away", current_match_date=record_date,
                         prior_rate=league_prior_over25,
+                        half_life=t_hl, prior_strength=prior_str,
                     ),
                 }
     except _SkipPriorParams as skip:

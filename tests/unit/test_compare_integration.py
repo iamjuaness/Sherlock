@@ -114,8 +114,9 @@ def test_value_indicator_fair_odds_consistent():
 
 
 def test_value_indicator_is_deterministic():
-    a = compare._value_indicator("Over 2.0 Goles", 2.5, 45.0, push_p=10.0)
-    b = compare._value_indicator("Over 2.0 Goles", 2.5, 45.0, push_p=10.0)
+    fixed_date = "2024-06-01T12:00:00Z"
+    a = compare._value_indicator("Over 2.0 Goles", 2.5, 45.0, push_p=10.0, match_date=fixed_date)
+    b = compare._value_indicator("Over 2.0 Goles", 2.5, 45.0, push_p=10.0, match_date=fixed_date)
     assert a.model_dump() == b.model_dump()
 
 

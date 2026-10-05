@@ -602,13 +602,15 @@ def train_calibrator(
         )
         return report
 
+    min_league_samples = min(min_samples, 40.0)
+
     wf: WalkForwardResult = walk_forward_calibrate(
         samples=samples,
         n_folds=n_folds,
         prior_strength=prior_strength,
         min_samples=min_samples,
         min_line_samples=120.0,
-        min_league_samples=80.0,
+        min_league_samples=min_league_samples,
         min_train=max(120.0, min_samples * 2.0),
     )
     report.walk_forward = wf.metrics()
@@ -633,7 +635,7 @@ def train_calibrator(
         prior_strength=prior_strength,
         min_samples=min_samples,
         min_line_samples=120.0,
-        min_league_samples=80.0,
+        min_league_samples=min_league_samples,
     )
     calibrator.metadata["walk_forward"] = report.walk_forward
     calibrator.metadata["extraction"] = report.extraction

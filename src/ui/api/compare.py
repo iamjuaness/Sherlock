@@ -1004,8 +1004,10 @@ def get_calibrator_for_timestamp(predicted_at: "datetime | str | None"):
     if dt is None:
         return HierarchicalCalibrator.identity()
 
-    # Resolver los artefactos disponibles
-    active_path_str = os.getenv("SHERLOCK_CALIBRATION_PATH", "data/calibration/active.json")
+    # Resolver los artefactos disponibles.
+    # IMPORTANTE: se usa CALIBRATION_ARTIFACT_PATH (variable de módulo) en vez de
+    # os.getenv(...) directamente para que el monkeypatch de tests funcione correctamente.
+    active_path_str = os.getenv("SHERLOCK_CALIBRATION_PATH", CALIBRATION_ARTIFACT_PATH)
     base_dir = Path(active_path_str).parent
     history_dir = base_dir / "history"
     artifacts: list = []
@@ -4285,9 +4287,13 @@ async def compare_football(
 
             historical_records.append(r_dict)
 
-    from src.core.math_engine import LeagueMathEngine
+    from src.core.math_engine import LeagueMathEngine, get_league_profile
     from src.domain.temporal import TemporalCutoff
     _shared_cutoff = TemporalCutoff.create(current_match_time)
+
+    target_profile = get_league_profile(target_competition)
+    prof_half_life = float(target_profile.get("team_half_life_matches", 10.0))
+    prof_prior_strength = float(target_profile.get("league_prior_strength", 12.0))
 
     # ── Check 6 (planning.txt): Omitir partidos si un equipo solo tiene Rating y Posesión ──
     def _team_has_only_rating_and_possession(team: Any) -> bool:
@@ -4398,8 +4404,8 @@ async def compare_football(
                     team_hr_records, fam, line=line, is_over=is_ov,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
-                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, h.name, fam, line=line, is_over=is_ov, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, a.name, fam, line=line, is_over=is_ov, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength)
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, fam, line=line, is_over=is_ov, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_team = h.name
@@ -4438,8 +4444,8 @@ async def compare_football(
                     team_hr_records, btts_fam,
                     exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff
                 )
-                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
-                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior)
+                hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, h.name, btts_fam, role_filter="home", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength)
+                hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(team_hr_records, a.name, btts_fam, role_filter="away", exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength)
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(relevant_records, h.name, a.name, btts_fam, exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff)
 
                 v.home_team = h.name
@@ -4484,11 +4490,11 @@ async def compare_football(
                 )
                 hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(
                     team_hr_records, h.name, "1x2", role_filter="home", target_side=tside,
-                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength
                 )
                 hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(
                     team_hr_records, a.name, "1x2", role_filter="away", target_side=tside,
-                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength
                 )
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(
                     relevant_records, h.name, a.name, "1x2", target_side=tside,
@@ -4540,11 +4546,11 @@ async def compare_football(
                 )
                 hr_h = LeagueMathEngine.compute_pick_hit_rate_recency(
                     team_hr_records, h.name, "double_chance", role_filter="home", target_side=tside,
-                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength
                 )
                 hr_a = LeagueMathEngine.compute_pick_hit_rate_recency(
                     team_hr_records, a.name, "double_chance", role_filter="away", target_side=tside,
-                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior
+                    exclude_match_id=exclude_analysis_id, current_match_date=current_match_time, cutoff=_shared_cutoff, prior_rate=league_prior, half_life=prof_half_life, prior_strength=prof_prior_strength
                 )
                 hr_h2h = LeagueMathEngine.compute_h2h_hit_rate(
                     relevant_records, h.name, a.name, "double_chance", target_side=tside,

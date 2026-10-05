@@ -2438,10 +2438,1138 @@
       ],
       "n_samples": 1328.0,
       "segment": "global"
+    },
+    "league:Bundesliga": {
+      "bins": [
+        {
+          "calibrated": 0.348442,
+          "hi": 0.098,
+          "hits": 17.0,
+          "lo": 0.0,
+          "mean_pred": 0.048306,
+          "n": 36.0,
+          "prior": 0.282806,
+          "raw_rate": 0.472222
+        },
+        {
+          "calibrated": 0.348442,
+          "hi": 0.221,
+          "hits": 11.0,
+          "lo": 0.098,
+          "mean_pred": 0.160059,
+          "n": 34.0,
+          "prior": 0.282806,
+          "raw_rate": 0.323529
+        },
+        {
+          "calibrated": 0.348442,
+          "hi": 0.357,
+          "hits": 11.0,
+          "lo": 0.221,
+          "mean_pred": 0.281972,
+          "n": 36.0,
+          "prior": 0.332205,
+          "raw_rate": 0.305556
+        },
+        {
+          "calibrated": 0.423079,
+          "hi": 0.544,
+          "hits": 15.0,
+          "lo": 0.357,
+          "mean_pred": 0.430111,
+          "n": 36.0,
+          "prior": 0.439569,
+          "raw_rate": 0.416667
+        },
+        {
+          "calibrated": 0.572774,
+          "hi": 0.62,
+          "hits": 21.0,
+          "lo": 0.544,
+          "mean_pred": 0.58375,
+          "n": 36.0,
+          "prior": 0.545622,
+          "raw_rate": 0.583333
+        },
+        {
+          "calibrated": 0.574955,
+          "hi": 0.718,
+          "hits": 20.0,
+          "lo": 0.62,
+          "mean_pred": 0.666314,
+          "n": 35.0,
+          "prior": 0.621272,
+          "raw_rate": 0.571429
+        },
+        {
+          "calibrated": 0.574955,
+          "hi": 0.853,
+          "hits": 21.0,
+          "lo": 0.718,
+          "mean_pred": 0.7848,
+          "n": 35.0,
+          "prior": 0.621272,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.574955,
+          "hi": 1.0,
+          "hits": 18.0,
+          "lo": 0.853,
+          "mean_pred": 0.898639,
+          "n": 36.0,
+          "prior": 0.621272,
+          "raw_rate": 0.5
+        }
+      ],
+      "knots_x": [
+        0.048306,
+        0.160059,
+        0.281972,
+        0.430111,
+        0.58375,
+        0.666314,
+        0.7848,
+        0.898639
+      ],
+      "knots_y": [
+        0.348442,
+        0.348442,
+        0.348442,
+        0.423079,
+        0.572774,
+        0.574955,
+        0.574955,
+        0.574955
+      ],
+      "n_samples": 284.0,
+      "segment": "league:Bundesliga"
+    },
+    "league:Bundesliga|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.408653,
+          "hi": 0.535,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.297875,
+          "n": 8.0,
+          "prior": 0.356455,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.58231,
+          "hi": 0.625,
+          "hits": 5.0,
+          "lo": 0.535,
+          "mean_pred": 0.5685,
+          "n": 8.0,
+          "prior": 0.557916,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.593153,
+          "hi": 0.716,
+          "hits": 5.0,
+          "lo": 0.625,
+          "mean_pred": 0.672875,
+          "n": 8.0,
+          "prior": 0.574955,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.615881,
+          "hi": 0.761,
+          "hits": 7.0,
+          "lo": 0.716,
+          "mean_pred": 0.74675,
+          "n": 8.0,
+          "prior": 0.574955,
+          "raw_rate": 0.875
+        },
+        {
+          "calibrated": 0.615881,
+          "hi": 0.857,
+          "hits": 4.0,
+          "lo": 0.761,
+          "mean_pred": 0.804625,
+          "n": 8.0,
+          "prior": 0.574955,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.684063,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.857,
+          "mean_pred": 0.909625,
+          "n": 8.0,
+          "prior": 0.574955,
+          "raw_rate": 0.875
+        }
+      ],
+      "knots_x": [
+        0.297875,
+        0.5685,
+        0.672875,
+        0.74675,
+        0.804625,
+        0.909625
+      ],
+      "knots_y": [
+        0.408653,
+        0.58231,
+        0.593153,
+        0.615881,
+        0.615881,
+        0.684063
+      ],
+      "n_samples": 48.0,
+      "segment": "league:Bundesliga|family:double_chance"
+    },
+    "league:Bundesliga|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.312645,
+          "hi": 0.19,
+          "hits": 2.0,
+          "lo": 0.0,
+          "mean_pred": 0.132125,
+          "n": 8.0,
+          "prior": 0.348442,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.312645,
+          "hi": 0.243,
+          "hits": 3.0,
+          "lo": 0.19,
+          "mean_pred": 0.21375,
+          "n": 8.0,
+          "prior": 0.348442,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.312645,
+          "hi": 0.297,
+          "hits": 1.0,
+          "lo": 0.243,
+          "mean_pred": 0.259375,
+          "n": 8.0,
+          "prior": 0.348442,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.388968,
+          "hi": 0.389,
+          "hits": 4.0,
+          "lo": 0.297,
+          "mean_pred": 0.33175,
+          "n": 8.0,
+          "prior": 0.373522,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.388968,
+          "hi": 0.468,
+          "hits": 2.0,
+          "lo": 0.389,
+          "mean_pred": 0.42475,
+          "n": 8.0,
+          "prior": 0.420378,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.547225,
+          "hi": 1.0,
+          "hits": 4.0,
+          "lo": 0.468,
+          "mean_pred": 0.638125,
+          "n": 8.0,
+          "prior": 0.574211,
+          "raw_rate": 0.5
+        }
+      ],
+      "knots_x": [
+        0.132125,
+        0.21375,
+        0.259375,
+        0.33175,
+        0.42475,
+        0.638125
+      ],
+      "knots_y": [
+        0.312645,
+        0.312645,
+        0.312645,
+        0.388968,
+        0.388968,
+        0.547225
+      ],
+      "n_samples": 48.0,
+      "segment": "league:Bundesliga|family:result"
+    },
+    "league:LaLiga": {
+      "bins": [
+        {
+          "calibrated": 0.239976,
+          "hi": 0.139,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.056933,
+          "n": 15.0,
+          "prior": 0.282806,
+          "raw_rate": 0.2
+        },
+        {
+          "calibrated": 0.343424,
+          "hi": 0.272,
+          "hits": 6.0,
+          "lo": 0.139,
+          "mean_pred": 0.195333,
+          "n": 15.0,
+          "prior": 0.282806,
+          "raw_rate": 0.4
+        },
+        {
+          "calibrated": 0.41291,
+          "hi": 0.381,
+          "hits": 8.0,
+          "lo": 0.272,
+          "mean_pred": 0.314,
+          "n": 16.0,
+          "prior": 0.356998,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.41291,
+          "hi": 0.498,
+          "hits": 5.0,
+          "lo": 0.381,
+          "mean_pred": 0.451467,
+          "n": 15.0,
+          "prior": 0.45455,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.523578,
+          "hi": 0.599,
+          "hits": 8.0,
+          "lo": 0.498,
+          "mean_pred": 0.545867,
+          "n": 15.0,
+          "prior": 0.513125,
+          "raw_rate": 0.533333
+        },
+        {
+          "calibrated": 0.580607,
+          "hi": 0.72,
+          "hits": 10.0,
+          "lo": 0.599,
+          "mean_pred": 0.651687,
+          "n": 16.0,
+          "prior": 0.621272,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.580607,
+          "hi": 0.823,
+          "hits": 7.0,
+          "lo": 0.72,
+          "mean_pred": 0.754667,
+          "n": 15.0,
+          "prior": 0.621272,
+          "raw_rate": 0.466667
+        },
+        {
+          "calibrated": 0.580607,
+          "hi": 1.0,
+          "hits": 8.0,
+          "lo": 0.823,
+          "mean_pred": 0.8754,
+          "n": 15.0,
+          "prior": 0.621272,
+          "raw_rate": 0.533333
+        }
+      ],
+      "knots_x": [
+        0.056933,
+        0.195333,
+        0.314,
+        0.451467,
+        0.545867,
+        0.651687,
+        0.754667,
+        0.8754
+      ],
+      "knots_y": [
+        0.239976,
+        0.343424,
+        0.41291,
+        0.41291,
+        0.523578,
+        0.580607,
+        0.580607,
+        0.580607
+      ],
+      "n_samples": 122.0,
+      "segment": "league:LaLiga"
+    },
+    "league:Ligue 1": {
+      "bins": [
+        {
+          "calibrated": 0.316331,
+          "hi": 0.176,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.094875,
+          "n": 8.0,
+          "prior": 0.282806,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.404905,
+          "hi": 0.359,
+          "hits": 5.0,
+          "lo": 0.176,
+          "mean_pred": 0.250778,
+          "n": 9.0,
+          "prior": 0.308058,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.452957,
+          "hi": 0.502,
+          "hits": 4.0,
+          "lo": 0.359,
+          "mean_pred": 0.410875,
+          "n": 8.0,
+          "prior": 0.426076,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.516314,
+          "hi": 0.618,
+          "hits": 4.0,
+          "lo": 0.502,
+          "mean_pred": 0.566125,
+          "n": 8.0,
+          "prior": 0.525636,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.564347,
+          "hi": 0.749,
+          "hits": 6.0,
+          "lo": 0.618,
+          "mean_pred": 0.670889,
+          "n": 9.0,
+          "prior": 0.621272,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.564347,
+          "hi": 1.0,
+          "hits": 2.0,
+          "lo": 0.749,
+          "mean_pred": 0.8515,
+          "n": 8.0,
+          "prior": 0.621272,
+          "raw_rate": 0.25
+        }
+      ],
+      "knots_x": [
+        0.094875,
+        0.250778,
+        0.410875,
+        0.566125,
+        0.670889,
+        0.8515
+      ],
+      "knots_y": [
+        0.316331,
+        0.404905,
+        0.452957,
+        0.516314,
+        0.564347,
+        0.564347
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Ligue 1"
+    },
+    "league:Premier League": {
+      "bins": [
+        {
+          "calibrated": 0.300255,
+          "hi": 0.118,
+          "hits": 8.0,
+          "lo": 0.0,
+          "mean_pred": 0.058091,
+          "n": 22.0,
+          "prior": 0.282806,
+          "raw_rate": 0.363636
+        },
+        {
+          "calibrated": 0.300255,
+          "hi": 0.239,
+          "hits": 6.0,
+          "lo": 0.118,
+          "mean_pred": 0.180348,
+          "n": 23.0,
+          "prior": 0.282806,
+          "raw_rate": 0.26087
+        },
+        {
+          "calibrated": 0.321391,
+          "hi": 0.4,
+          "hits": 7.0,
+          "lo": 0.239,
+          "mean_pred": 0.304174,
+          "n": 23.0,
+          "prior": 0.349391,
+          "raw_rate": 0.304348
+        },
+        {
+          "calibrated": 0.511138,
+          "hi": 0.508,
+          "hits": 14.0,
+          "lo": 0.4,
+          "mean_pred": 0.462,
+          "n": 22.0,
+          "prior": 0.461332,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.511138,
+          "hi": 0.613,
+          "hits": 9.0,
+          "lo": 0.508,
+          "mean_pred": 0.564318,
+          "n": 22.0,
+          "prior": 0.52452,
+          "raw_rate": 0.409091
+        },
+        {
+          "calibrated": 0.582667,
+          "hi": 0.69,
+          "hits": 17.0,
+          "lo": 0.613,
+          "mean_pred": 0.652087,
+          "n": 23.0,
+          "prior": 0.621272,
+          "raw_rate": 0.73913
+        },
+        {
+          "calibrated": 0.582667,
+          "hi": 0.811,
+          "hits": 11.0,
+          "lo": 0.69,
+          "mean_pred": 0.750783,
+          "n": 23.0,
+          "prior": 0.621272,
+          "raw_rate": 0.478261
+        },
+        {
+          "calibrated": 0.582667,
+          "hi": 1.0,
+          "hits": 10.0,
+          "lo": 0.811,
+          "mean_pred": 0.871364,
+          "n": 22.0,
+          "prior": 0.621272,
+          "raw_rate": 0.454545
+        }
+      ],
+      "knots_x": [
+        0.058091,
+        0.180348,
+        0.304174,
+        0.462,
+        0.564318,
+        0.652087,
+        0.750783,
+        0.871364
+      ],
+      "knots_y": [
+        0.300255,
+        0.300255,
+        0.321391,
+        0.511138,
+        0.511138,
+        0.582667,
+        0.582667,
+        0.582667
+      ],
+      "n_samples": 180.0,
+      "segment": "league:Premier League"
+    },
+    "league:Primera A": {
+      "bins": [
+        {
+          "calibrated": 0.227408,
+          "hi": 0.247,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.181667,
+          "n": 21.0,
+          "prior": 0.282806,
+          "raw_rate": 0.190476
+        },
+        {
+          "calibrated": 0.361064,
+          "hi": 0.322,
+          "hits": 8.0,
+          "lo": 0.247,
+          "mean_pred": 0.280714,
+          "n": 21.0,
+          "prior": 0.331231,
+          "raw_rate": 0.380952
+        },
+        {
+          "calibrated": 0.379471,
+          "hi": 0.447,
+          "hits": 8.0,
+          "lo": 0.322,
+          "mean_pred": 0.379909,
+          "n": 22.0,
+          "prior": 0.404354,
+          "raw_rate": 0.363636
+        },
+        {
+          "calibrated": 0.501665,
+          "hi": 0.513,
+          "hits": 11.0,
+          "lo": 0.447,
+          "mean_pred": 0.473524,
+          "n": 21.0,
+          "prior": 0.468449,
+          "raw_rate": 0.52381
+        },
+        {
+          "calibrated": 0.518769,
+          "hi": 0.581,
+          "hits": 11.0,
+          "lo": 0.513,
+          "mean_pred": 0.542762,
+          "n": 21.0,
+          "prior": 0.511208,
+          "raw_rate": 0.52381
+        },
+        {
+          "calibrated": 0.621612,
+          "hi": 0.681,
+          "hits": 17.0,
+          "lo": 0.581,
+          "mean_pred": 0.632364,
+          "n": 22.0,
+          "prior": 0.602615,
+          "raw_rate": 0.772727
+        },
+        {
+          "calibrated": 0.621612,
+          "hi": 0.756,
+          "hits": 10.0,
+          "lo": 0.681,
+          "mean_pred": 0.711286,
+          "n": 21.0,
+          "prior": 0.621272,
+          "raw_rate": 0.47619
+        },
+        {
+          "calibrated": 0.705652,
+          "hi": 1.0,
+          "hits": 16.0,
+          "lo": 0.756,
+          "mean_pred": 0.820619,
+          "n": 21.0,
+          "prior": 0.621272,
+          "raw_rate": 0.761905
+        }
+      ],
+      "knots_x": [
+        0.181667,
+        0.280714,
+        0.379909,
+        0.473524,
+        0.542762,
+        0.632364,
+        0.711286,
+        0.820619
+      ],
+      "knots_y": [
+        0.227408,
+        0.361064,
+        0.379471,
+        0.501665,
+        0.518769,
+        0.621612,
+        0.621612,
+        0.705652
+      ],
+      "n_samples": 170.0,
+      "segment": "league:Primera A"
+    },
+    "league:Primera A|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.501547,
+          "hi": 0.574,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.476625,
+          "n": 8.0,
+          "prior": 0.502431,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.635803,
+          "hi": 0.669,
+          "hits": 6.0,
+          "lo": 0.574,
+          "mean_pred": 0.629,
+          "n": 9.0,
+          "prior": 0.617751,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.635803,
+          "hi": 0.711,
+          "hits": 6.0,
+          "lo": 0.669,
+          "mean_pred": 0.684857,
+          "n": 7.0,
+          "prior": 0.621612,
+          "raw_rate": 0.857143
+        },
+        {
+          "calibrated": 0.635803,
+          "hi": 0.768,
+          "hits": 5.0,
+          "lo": 0.711,
+          "mean_pred": 0.7281,
+          "n": 10.0,
+          "prior": 0.634536,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.760388,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.768,
+          "mean_pred": 0.806625,
+          "n": 8.0,
+          "prior": 0.694895,
+          "raw_rate": 0.875
+        }
+      ],
+      "knots_x": [
+        0.476625,
+        0.629,
+        0.684857,
+        0.7281,
+        0.806625
+      ],
+      "knots_y": [
+        0.501547,
+        0.635803,
+        0.635803,
+        0.635803,
+        0.760388
+      ],
+      "n_samples": 42.0,
+      "segment": "league:Primera A|family:double_chance"
+    },
+    "league:Primera A|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.219115,
+          "hi": 0.247,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.215375,
+          "n": 8.0,
+          "prior": 0.272895,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.338989,
+          "hi": 0.281,
+          "hits": 4.0,
+          "lo": 0.247,
+          "mean_pred": 0.266778,
+          "n": 9.0,
+          "prior": 0.342258,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.338989,
+          "hi": 0.325,
+          "hits": 1.0,
+          "lo": 0.281,
+          "mean_pred": 0.307286,
+          "n": 7.0,
+          "prior": 0.365995,
+          "raw_rate": 0.142857
+        },
+        {
+          "calibrated": 0.359093,
+          "hi": 0.432,
+          "hits": 3.0,
+          "lo": 0.325,
+          "mean_pred": 0.359333,
+          "n": 9.0,
+          "prior": 0.375653,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.526533,
+          "hi": 1.0,
+          "hits": 5.0,
+          "lo": 0.432,
+          "mean_pred": 0.498667,
+          "n": 9.0,
+          "prior": 0.507876,
+          "raw_rate": 0.555556
+        }
+      ],
+      "knots_x": [
+        0.215375,
+        0.266778,
+        0.307286,
+        0.359333,
+        0.498667
+      ],
+      "knots_y": [
+        0.219115,
+        0.338989,
+        0.338989,
+        0.359093,
+        0.526533
+      ],
+      "n_samples": 42.0,
+      "segment": "league:Primera A|family:result"
+    },
+    "league:Saudi Pro League": {
+      "bins": [
+        {
+          "calibrated": 0.177117,
+          "hi": 0.186,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.108429,
+          "n": 14.0,
+          "prior": 0.282806,
+          "raw_rate": 0.071429
+        },
+        {
+          "calibrated": 0.291553,
+          "hi": 0.292,
+          "hits": 4.0,
+          "lo": 0.186,
+          "mean_pred": 0.237,
+          "n": 14.0,
+          "prior": 0.297392,
+          "raw_rate": 0.285714
+        },
+        {
+          "calibrated": 0.382712,
+          "hi": 0.391,
+          "hits": 5.0,
+          "lo": 0.292,
+          "mean_pred": 0.346538,
+          "n": 13.0,
+          "prior": 0.380945,
+          "raw_rate": 0.384615
+        },
+        {
+          "calibrated": 0.47194,
+          "hi": 0.48,
+          "hits": 7.0,
+          "lo": 0.391,
+          "mean_pred": 0.437929,
+          "n": 14.0,
+          "prior": 0.445053,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.47194,
+          "hi": 0.603,
+          "hits": 6.0,
+          "lo": 0.48,
+          "mean_pred": 0.5475,
+          "n": 14.0,
+          "prior": 0.514134,
+          "raw_rate": 0.428571
+        },
+        {
+          "calibrated": 0.585095,
+          "hi": 0.704,
+          "hits": 8.0,
+          "lo": 0.603,
+          "mean_pred": 0.635154,
+          "n": 13.0,
+          "prior": 0.605886,
+          "raw_rate": 0.615385
+        },
+        {
+          "calibrated": 0.585095,
+          "hi": 0.8,
+          "hits": 7.0,
+          "lo": 0.704,
+          "mean_pred": 0.746357,
+          "n": 14.0,
+          "prior": 0.621272,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.774922,
+          "hi": 1.0,
+          "hits": 13.0,
+          "lo": 0.8,
+          "mean_pred": 0.863143,
+          "n": 14.0,
+          "prior": 0.621272,
+          "raw_rate": 0.928571
+        }
+      ],
+      "knots_x": [
+        0.108429,
+        0.237,
+        0.346538,
+        0.437929,
+        0.5475,
+        0.635154,
+        0.746357,
+        0.863143
+      ],
+      "knots_y": [
+        0.177117,
+        0.291553,
+        0.382712,
+        0.47194,
+        0.47194,
+        0.585095,
+        0.585095,
+        0.774922
+      ],
+      "n_samples": 110.0,
+      "segment": "league:Saudi Pro League"
+    },
+    "league:Serie A": {
+      "bins": [
+        {
+          "calibrated": 0.335162,
+          "hi": 0.144,
+          "hits": 9.0,
+          "lo": 0.0,
+          "mean_pred": 0.091458,
+          "n": 24.0,
+          "prior": 0.282806,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.335162,
+          "hi": 0.29,
+          "hits": 11.0,
+          "lo": 0.144,
+          "mean_pred": 0.231923,
+          "n": 26.0,
+          "prior": 0.293462,
+          "raw_rate": 0.423077
+        },
+        {
+          "calibrated": 0.335162,
+          "hi": 0.371,
+          "hits": 6.0,
+          "lo": 0.29,
+          "mean_pred": 0.32768,
+          "n": 25.0,
+          "prior": 0.367587,
+          "raw_rate": 0.24
+        },
+        {
+          "calibrated": 0.388263,
+          "hi": 0.488,
+          "hits": 9.0,
+          "lo": 0.371,
+          "mean_pred": 0.42892,
+          "n": 25.0,
+          "prior": 0.438734,
+          "raw_rate": 0.36
+        },
+        {
+          "calibrated": 0.505378,
+          "hi": 0.597,
+          "hits": 12.0,
+          "lo": 0.488,
+          "mean_pred": 0.54825,
+          "n": 24.0,
+          "prior": 0.514597,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.590384,
+          "hi": 0.655,
+          "hits": 19.0,
+          "lo": 0.597,
+          "mean_pred": 0.622192,
+          "n": 26.0,
+          "prior": 0.590691,
+          "raw_rate": 0.730769
+        },
+        {
+          "calibrated": 0.590384,
+          "hi": 0.725,
+          "hits": 12.0,
+          "lo": 0.655,
+          "mean_pred": 0.6878,
+          "n": 25.0,
+          "prior": 0.621272,
+          "raw_rate": 0.48
+        },
+        {
+          "calibrated": 0.590384,
+          "hi": 1.0,
+          "hits": 13.0,
+          "lo": 0.725,
+          "mean_pred": 0.80388,
+          "n": 25.0,
+          "prior": 0.621272,
+          "raw_rate": 0.52
+        }
+      ],
+      "knots_x": [
+        0.091458,
+        0.231923,
+        0.32768,
+        0.42892,
+        0.54825,
+        0.622192,
+        0.6878,
+        0.80388
+      ],
+      "knots_y": [
+        0.335162,
+        0.335162,
+        0.335162,
+        0.388263,
+        0.505378,
+        0.590384,
+        0.590384,
+        0.590384
+      ],
+      "n_samples": 200.0,
+      "segment": "league:Serie A"
+    },
+    "league:UEFA Champions League": {
+      "bins": [
+        {
+          "calibrated": 0.220714,
+          "hi": 0.187,
+          "hits": 2.0,
+          "lo": 0.0,
+          "mean_pred": 0.079846,
+          "n": 13.0,
+          "prior": 0.282806,
+          "raw_rate": 0.153846
+        },
+        {
+          "calibrated": 0.294789,
+          "hi": 0.257,
+          "hits": 4.0,
+          "lo": 0.187,
+          "mean_pred": 0.209154,
+          "n": 13.0,
+          "prior": 0.282806,
+          "raw_rate": 0.307692
+        },
+        {
+          "calibrated": 0.337797,
+          "hi": 0.388,
+          "hits": 4.0,
+          "lo": 0.257,
+          "mean_pred": 0.325308,
+          "n": 13.0,
+          "prior": 0.365751,
+          "raw_rate": 0.307692
+        },
+        {
+          "calibrated": 0.507287,
+          "hi": 0.592,
+          "hits": 7.0,
+          "lo": 0.388,
+          "mean_pred": 0.489538,
+          "n": 13.0,
+          "prior": 0.478339,
+          "raw_rate": 0.538462
+        },
+        {
+          "calibrated": 0.572946,
+          "hi": 0.661,
+          "hits": 8.0,
+          "lo": 0.592,
+          "mean_pred": 0.620462,
+          "n": 13.0,
+          "prior": 0.588662,
+          "raw_rate": 0.615385
+        },
+        {
+          "calibrated": 0.572946,
+          "hi": 0.703,
+          "hits": 6.0,
+          "lo": 0.661,
+          "mean_pred": 0.676385,
+          "n": 13.0,
+          "prior": 0.621272,
+          "raw_rate": 0.461538
+        },
+        {
+          "calibrated": 0.636956,
+          "hi": 0.79,
+          "hits": 9.0,
+          "lo": 0.703,
+          "mean_pred": 0.731769,
+          "n": 13.0,
+          "prior": 0.621272,
+          "raw_rate": 0.692308
+        },
+        {
+          "calibrated": 0.636956,
+          "hi": 1.0,
+          "hits": 8.0,
+          "lo": 0.79,
+          "mean_pred": 0.860154,
+          "n": 13.0,
+          "prior": 0.621272,
+          "raw_rate": 0.615385
+        }
+      ],
+      "knots_x": [
+        0.079846,
+        0.209154,
+        0.325308,
+        0.489538,
+        0.620462,
+        0.676385,
+        0.731769,
+        0.860154
+      ],
+      "knots_y": [
+        0.220714,
+        0.294789,
+        0.337797,
+        0.507287,
+        0.572946,
+        0.572946,
+        0.636956,
+        0.636956
+      ],
+      "n_samples": 104.0,
+      "segment": "league:UEFA Champions League"
     }
   },
   "deactivated_at_utc": null,
-  "fitted_at": "2026-10-03T13:02:00.066588+00:00",
+  "fitted_at": "2026-10-05T14:36:04.826322+00:00",
   "format_version": 1,
   "metadata": {
     "cutoff_date": "2026-06-30",
@@ -2454,8 +3582,8 @@
       "picks_unsettled": 0,
       "rows_bad_json": 0,
       "rows_empty_picks": 0,
-      "rows_no_picks": 44487,
-      "rows_seen": 44569,
+      "rows_no_picks": 44863,
+      "rows_seen": 44945,
       "rows_without_results": 0
     },
     "forced": false,
@@ -2468,15 +3596,15 @@
       "league_family_side"
     ],
     "n_samples": 1328.0,
-    "n_segments": 23,
+    "n_segments": 35,
     "tail_policy": "flat_observed_tail",
     "walk_forward": {
       "calibrated": {
-        "brier": 0.2402367996545941,
-        "ece": 0.04640124329431731,
-        "log_loss": 0.6746586314799522,
+        "brier": 0.241012487304248,
+        "ece": 0.0488635579028603,
+        "log_loss": 0.6765431107757909,
         "mean_outcome": 0.46660808435852374,
-        "mean_prob": 0.4763637267846122,
+        "mean_prob": 0.474246715626672,
         "n": 1138
       },
       "n_folds": 5,
@@ -2491,7 +3619,7 @@
       "skipped_no_train": 0
     }
   },
-  "min_league_samples": 80.0,
+  "min_league_samples": 40.0,
   "min_line_samples": 120.0,
   "min_samples": 60.0,
   "prior_strength": 35.0,

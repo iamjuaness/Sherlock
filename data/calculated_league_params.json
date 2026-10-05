@@ -1,0 +1,1546 @@
+{
+  "2. Bundesliga": {
+    "league": "2. Bundesliga",
+    "sample_size": 1281,
+    "profile_used": {
+      "description": "Segundas divisiones, ligas con alta rotación de plantillas o cambios frecuentes de nivel.",
+      "league_prior_half_life_days": 270.0,
+      "team_half_life_matches": 12.5,
+      "team_max_matches": 30,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 24.0,
+      "league_prior_strength": 24.0
+    },
+    "averages": {
+      "home_goals": 1.6677135815023105,
+      "away_goals": 1.354342497613355,
+      "home_corners": 5.471023079502719,
+      "away_corners": 4.799022668342165,
+      "home_cards": 2.16564872334811,
+      "away_cards": 2.4767121200056152,
+      "home_shots": 14.68526328208729,
+      "away_shots": 12.87911284743023,
+      "home_shots_target": 5.043842917587173,
+      "away_shots_target": 4.367719308982976,
+      "home_fouls": 11.616016760620841,
+      "away_fouls": 12.22699149143545,
+      "sample_size": 1281,
+      "effective_sample_size": 624.88,
+      "total_weight": 298.6333,
+      "reference_date": null,
+      "half_life_days": 270.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-15",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0098,
+      "cards": 0.001,
+      "shots": 0.0079
+    }
+  },
+  "3. Liga": {
+    "league": "3. Liga",
+    "sample_size": 1585,
+    "profile_used": {
+      "description": "Segundas divisiones, ligas con alta rotación de plantillas o cambios frecuentes de nivel.",
+      "league_prior_half_life_days": 270.0,
+      "team_half_life_matches": 12.5,
+      "team_max_matches": 30,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 24.0,
+      "league_prior_strength": 24.0
+    },
+    "averages": {
+      "home_goals": 1.7020080426408668,
+      "away_goals": 1.4286993267111758,
+      "home_corners": 5.35657028572966,
+      "away_corners": 4.8880069263647075,
+      "home_cards": 2.2271577096723907,
+      "away_cards": 2.472156357229276,
+      "home_shots": 13.381043026498455,
+      "away_shots": 11.775498910987713,
+      "home_shots_target": 5.0675711976169335,
+      "away_shots_target": 4.318800800096074,
+      "home_fouls": 12.410862262638332,
+      "away_fouls": 12.883291454651998,
+      "sample_size": 1585,
+      "effective_sample_size": 770.8,
+      "total_weight": 369.6377,
+      "reference_date": null,
+      "half_life_days": 270.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-22",
+      "coverage_end_date": "2026-09-25"
+    },
+    "dispersions": {
+      "corners": 0.0423,
+      "cards": 0.001,
+      "shots": 0.019
+    }
+  },
+  "Brasileirão Série B": {
+    "league": "Brasileirão Série B",
+    "sample_size": 1832,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.3301608726049818,
+      "away_goals": 0.9334640425699334,
+      "home_corners": 5.8891470853131755,
+      "away_corners": 4.468288504104921,
+      "home_cards": 2.3871937152501443,
+      "away_cards": 2.610399348747441,
+      "home_shots": 15.476632650723163,
+      "away_shots": 11.64415962029579,
+      "home_shots_target": 4.810541094007436,
+      "away_shots_target": 3.5505744838918893,
+      "home_fouls": 14.809294372225876,
+      "away_fouls": 13.863307513957205,
+      "sample_size": 1832,
+      "effective_sample_size": 1142.93,
+      "total_weight": 648.4566,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-04-08",
+      "coverage_end_date": "2026-10-02"
+    },
+    "dispersions": {
+      "corners": 0.0146,
+      "cards": 0.0053,
+      "shots": 0.0095
+    }
+  },
+  "Bundesliga": {
+    "league": "Bundesliga",
+    "sample_size": 1271,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.8036857765802268,
+      "away_goals": 1.446119291288633,
+      "home_corners": 5.53986380017916,
+      "away_corners": 4.294687424068453,
+      "home_cards": 1.884202432407181,
+      "away_cards": 2.08775955944959,
+      "home_shots": 14.886744847418285,
+      "away_shots": 11.961648489134378,
+      "home_shots_target": 5.394534148942069,
+      "away_shots_target": 4.171960861295865,
+      "home_fouls": 10.132804735934448,
+      "away_fouls": 10.497487330764187,
+      "sample_size": 1271,
+      "effective_sample_size": 867.47,
+      "total_weight": 439.3624,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-05",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0146,
+      "cards": 0.0098,
+      "shots": 0.015
+    }
+  },
+  "CONMEBOL Libertadores": {
+    "league": "CONMEBOL Libertadores",
+    "sample_size": 766,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.4156706914387596,
+      "away_goals": 0.8950997512683836,
+      "home_corners": 5.532404983290856,
+      "away_corners": 3.5266481697007377,
+      "home_cards": 2.3167711913787215,
+      "away_cards": 2.6808538959971138,
+      "home_shots": 15.706593537106558,
+      "away_shots": 10.060588522143442,
+      "home_shots_target": 5.145673037874098,
+      "away_shots_target": 3.260471514066344,
+      "home_fouls": 11.4644002212719,
+      "away_fouls": 11.20464664204441,
+      "sample_size": 766,
+      "effective_sample_size": 576.06,
+      "total_weight": 329.3921,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-02-09",
+      "coverage_end_date": "2026-09-17"
+    },
+    "dispersions": {
+      "corners": 0.019,
+      "cards": 0.001,
+      "shots": 0.0178
+    }
+  },
+  "CONMEBOL Sudamericana": {
+    "league": "CONMEBOL Sudamericana",
+    "sample_size": 779,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.4244867303226845,
+      "away_goals": 1.0071002169760273,
+      "home_corners": 5.514276897080699,
+      "away_corners": 3.586961307477713,
+      "home_cards": 2.2012905060842987,
+      "away_cards": 2.526111910538741,
+      "home_shots": 15.281788724549813,
+      "away_shots": 10.729899913335641,
+      "home_shots_target": 4.9451505484938485,
+      "away_shots_target": 3.445135351613617,
+      "home_fouls": 11.49192835906282,
+      "away_fouls": 10.895691094578567,
+      "sample_size": 779,
+      "effective_sample_size": 583.94,
+      "total_weight": 342.0258,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-03-08",
+      "coverage_end_date": "2026-09-17"
+    },
+    "dispersions": {
+      "corners": 0.0179,
+      "cards": 0.001,
+      "shots": 0.0193
+    }
+  },
+  "Campeonato Brasileiro Série A": {
+    "league": "Campeonato Brasileiro Série A",
+    "sample_size": 1797,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.489862032211604,
+      "away_goals": 1.0691347761058412,
+      "home_corners": 5.819398911324548,
+      "away_corners": 4.402821340654342,
+      "home_cards": 2.3781674519185763,
+      "away_cards": 2.6445926744017614,
+      "home_shots": 15.380002798224437,
+      "away_shots": 11.571116439232107,
+      "home_shots_target": 5.131237849948702,
+      "away_shots_target": 3.8484314012667147,
+      "home_fouls": 13.331496533906789,
+      "away_fouls": 13.323024860544,
+      "sample_size": 1797,
+      "effective_sample_size": 1149.97,
+      "total_weight": 611.4315,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-04-09",
+      "coverage_end_date": "2026-10-02"
+    },
+    "dispersions": {
+      "corners": 0.0132,
+      "cards": 0.0093,
+      "shots": 0.0102
+    }
+  },
+  "Canadian Premier League": {
+    "league": "Canadian Premier League",
+    "sample_size": 570,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.6073342684537972,
+      "away_goals": 1.3082211033099571,
+      "home_corners": 4.840980247380283,
+      "away_corners": 4.26927367621012,
+      "home_cards": 2.2784728630357005,
+      "away_cards": 2.402347709967733,
+      "home_shots": 12.759786500204298,
+      "away_shots": 11.671002626013264,
+      "home_shots_target": 4.528940647664891,
+      "away_shots_target": 3.9706141251476494,
+      "home_fouls": 12.166206187018263,
+      "away_fouls": 12.18663054886589,
+      "sample_size": 570,
+      "effective_sample_size": 351.15,
+      "total_weight": 203.0696,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-04-07",
+      "coverage_end_date": "2026-09-30"
+    },
+    "dispersions": {
+      "corners": 0.0022,
+      "cards": 0.001,
+      "shots": 0.0075
+    }
+  },
+  "Copa Argentina": {
+    "league": "Copa Argentina",
+    "sample_size": 310,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.476386460333545,
+      "away_goals": 0.9072871877221618,
+      "home_corners": 4.461232272664354,
+      "away_corners": 4.297282214219293,
+      "home_cards": 2.192083696669879,
+      "away_cards": 2.5949222077440726,
+      "home_shots": 10.50202550942813,
+      "away_shots": 10.687103054319891,
+      "home_shots_target": 3.6633249888234465,
+      "away_shots_target": 3.6277761645857503,
+      "home_fouls": 9.24579364055917,
+      "away_fouls": 9.178937344033152,
+      "sample_size": 310,
+      "effective_sample_size": 235.58,
+      "total_weight": 134.1635,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-02-23",
+      "coverage_end_date": "2026-09-27"
+    },
+    "dispersions": {
+      "corners": 0.0281,
+      "cards": 0.001,
+      "shots": 0.1266
+    }
+  },
+  "Coppa Italia": {
+    "league": "Coppa Italia",
+    "sample_size": 208,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.9174907296109958,
+      "away_goals": 0.9148291696026123,
+      "home_corners": 5.183160313309783,
+      "away_corners": 3.8643843980330517,
+      "home_cards": 1.3770271695686112,
+      "away_cards": 1.870512373841013,
+      "home_shots": 14.661733209496198,
+      "away_shots": 9.81023615045396,
+      "home_shots_target": 5.207248898716502,
+      "away_shots_target": 3.320494237413907,
+      "home_fouls": 11.98413657681199,
+      "away_fouls": 11.605189339748422,
+      "sample_size": 208,
+      "effective_sample_size": 133.28,
+      "total_weight": 78.0374,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-30",
+      "coverage_end_date": "2026-09-15"
+    },
+    "dispersions": {
+      "corners": 0.0181,
+      "cards": 0.001,
+      "shots": 0.0268
+    }
+  },
+  "Czech First League": {
+    "league": "Czech First League",
+    "sample_size": 1190,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.4872711038011759,
+      "away_goals": 1.23098760702843,
+      "home_corners": 5.551893942925769,
+      "away_corners": 4.559076358270758,
+      "home_cards": 1.8677045708143243,
+      "away_cards": 2.1799823233129336,
+      "home_shots": 14.183501230165353,
+      "away_shots": 11.704452425633352,
+      "home_shots_target": 4.726641356904319,
+      "away_shots_target": 3.8841212371895515,
+      "home_fouls": 12.600975149170537,
+      "away_fouls": 13.621940974931778,
+      "sample_size": 1190,
+      "effective_sample_size": 796.55,
+      "total_weight": 424.2828,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-30",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0137,
+      "cards": 0.0284,
+      "shots": 0.0081
+    }
+  },
+  "DFB Pokal": {
+    "league": "DFB Pokal",
+    "sample_size": 284,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.0806784388766424,
+      "away_goals": 2.450020392736013,
+      "home_corners": 3.9310984693129036,
+      "away_corners": 6.180444242460946,
+      "home_cards": 1.961757472488877,
+      "away_cards": 1.8886506788705446,
+      "home_shots": 11.184902520932312,
+      "away_shots": 16.727791923195536,
+      "home_shots_target": 3.7277246530762116,
+      "away_shots_target": 6.529447245619343,
+      "home_fouls": 10.357207572493662,
+      "away_fouls": 10.420469802739243,
+      "sample_size": 284,
+      "effective_sample_size": 219.58,
+      "total_weight": 129.7391,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-29",
+      "coverage_end_date": "2026-09-02"
+    },
+    "dispersions": {
+      "corners": 0.0221,
+      "cards": 0.0461,
+      "shots": 0.0202
+    }
+  },
+  "Danish Superliga": {
+    "league": "Danish Superliga",
+    "sample_size": 825,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.6055843671768915,
+      "away_goals": 1.4165917845030387,
+      "home_corners": 5.375037075018501,
+      "away_corners": 4.6030350980173,
+      "home_cards": 1.6500933653567407,
+      "away_cards": 1.9595145976413535,
+      "home_shots": 14.215004166855719,
+      "away_shots": 12.250118723896062,
+      "home_shots_target": 4.985605285617415,
+      "away_shots_target": 4.324266557364114,
+      "home_fouls": 11.626441572146204,
+      "away_fouls": 12.03631226494513,
+      "sample_size": 825,
+      "effective_sample_size": 550.23,
+      "total_weight": 296.169,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-15",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0143,
+      "cards": 0.001,
+      "shots": 0.0114
+    }
+  },
+  "División Profesional": {
+    "league": "División Profesional",
+    "sample_size": 996,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.9597032213551286,
+      "away_goals": 1.23262410310762,
+      "home_corners": 5.500620068827519,
+      "away_corners": 4.0168059978120185,
+      "home_cards": 2.726411479454882,
+      "away_cards": 3.0319571233999545,
+      "home_shots": 16.661242430835582,
+      "away_shots": 12.383615165650612,
+      "home_shots_target": 6.078246057793691,
+      "away_shots_target": 4.319632313022069,
+      "home_fouls": 12.62774267513133,
+      "away_fouls": 11.433207982021585,
+      "sample_size": 996,
+      "effective_sample_size": 824.71,
+      "total_weight": 493.0027,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2023-02-04",
+      "coverage_end_date": "2026-09-18"
+    },
+    "dispersions": {
+      "corners": 0.013,
+      "cards": 0.0105,
+      "shots": 0.0158
+    }
+  },
+  "Egyptian Premier League": {
+    "league": "Egyptian Premier League",
+    "sample_size": 1209,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.0947812410246234,
+      "away_goals": 1.0290253404158942,
+      "home_corners": 4.698279929166585,
+      "away_corners": 4.401230871445401,
+      "home_cards": 2.1152558789615417,
+      "away_cards": 2.0474542591104123,
+      "home_shots": 11.536269067508753,
+      "away_shots": 10.5211722781065,
+      "home_shots_target": 3.772779441832076,
+      "away_shots_target": 3.4051167323500597,
+      "home_fouls": 12.190896363567864,
+      "away_fouls": 12.448030918175169,
+      "sample_size": 1209,
+      "effective_sample_size": 835.58,
+      "total_weight": 446.1763,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-10-18",
+      "coverage_end_date": "2026-09-17"
+    },
+    "dispersions": {
+      "corners": 0.0241,
+      "cards": 0.001,
+      "shots": 0.0167
+    }
+  },
+  "HNL": {
+    "league": "HNL",
+    "sample_size": 759,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.503534126799364,
+      "away_goals": 1.1323785075061503,
+      "home_corners": 4.868783606774091,
+      "away_corners": 4.306108984324745,
+      "home_cards": 2.041512298994268,
+      "away_cards": 2.3174156848169227,
+      "home_shots": 13.224532411676657,
+      "away_shots": 11.36344601109193,
+      "home_shots_target": 4.554484123682799,
+      "away_shots_target": 3.6542818331782274,
+      "home_fouls": 12.743194158522533,
+      "away_fouls": 13.11392940080192,
+      "sample_size": 759,
+      "effective_sample_size": 509.17,
+      "total_weight": 269.4761,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-15",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0245,
+      "cards": 0.0071,
+      "shots": 0.0164
+    }
+  },
+  "LaLiga": {
+    "league": "LaLiga",
+    "sample_size": 1587,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.5394236187319799,
+      "away_goals": 1.1584001203379135,
+      "home_corners": 5.397228766879745,
+      "away_corners": 4.177910344368203,
+      "home_cards": 2.189940044883779,
+      "away_cards": 2.4153411036460053,
+      "home_shots": 13.856047651122076,
+      "away_shots": 10.887243509914205,
+      "home_shots_target": 4.876235515579466,
+      "away_shots_target": 3.7180615037945333,
+      "home_fouls": 12.4345577694379,
+      "away_fouls": 12.652279200435174,
+      "sample_size": 1587,
+      "effective_sample_size": 1072.94,
+      "total_weight": 562.0192,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-12",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0178,
+      "cards": 0.0299,
+      "shots": 0.0164
+    }
+  },
+  "LaLiga 2": {
+    "league": "LaLiga 2",
+    "sample_size": 1948,
+    "profile_used": {
+      "description": "Segundas divisiones, ligas con alta rotación de plantillas o cambios frecuentes de nivel.",
+      "league_prior_half_life_days": 270.0,
+      "team_half_life_matches": 12.5,
+      "team_max_matches": 30,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 24.0,
+      "league_prior_strength": 24.0
+    },
+    "averages": {
+      "home_goals": 1.4369107640520777,
+      "away_goals": 1.1234225662755841,
+      "home_corners": 5.164389354341332,
+      "away_corners": 4.121280419565391,
+      "home_cards": 2.4164600749260003,
+      "away_cards": 2.7086395886706596,
+      "home_shots": 13.937349751498108,
+      "away_shots": 10.981194228891805,
+      "home_shots_target": 4.692835037620159,
+      "away_shots_target": 3.7228060768108944,
+      "home_fouls": 13.272185942207015,
+      "away_fouls": 13.298872235755633,
+      "sample_size": 1948,
+      "effective_sample_size": 950.63,
+      "total_weight": 461.6612,
+      "reference_date": null,
+      "half_life_days": 270.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-12",
+      "coverage_end_date": "2026-10-02"
+    },
+    "dispersions": {
+      "corners": 0.0136,
+      "cards": 0.001,
+      "shots": 0.017
+    }
+  },
+  "Liga 1 Te Apuesto": {
+    "league": "Liga 1 Te Apuesto",
+    "sample_size": 1561,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.6287162199585343,
+      "away_goals": 1.040955238412998,
+      "home_corners": 5.325816834983966,
+      "away_corners": 3.8294670108008972,
+      "home_cards": 2.2599912156121023,
+      "away_cards": 2.6152126767803936,
+      "home_shots": 15.191843068291401,
+      "away_shots": 10.93386577421246,
+      "home_shots_target": 5.1120291986161295,
+      "away_shots_target": 3.6703206942667275,
+      "home_fouls": 12.010322544098848,
+      "away_fouls": 11.524481203582688,
+      "sample_size": 1561,
+      "effective_sample_size": 1175.66,
+      "total_weight": 664.8465,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-02-04",
+      "coverage_end_date": "2026-09-30"
+    },
+    "dispersions": {
+      "corners": 0.0407,
+      "cards": 0.0047,
+      "shots": 0.0154
+    }
+  },
+  "Liga 2 No Rentable": {
+    "league": "Liga 2 No Rentable",
+    "sample_size": 0,
+    "averages": {
+      "home_goals": 1.45,
+      "away_goals": 1.15,
+      "home_corners": 5.2,
+      "away_corners": 4.1,
+      "home_cards": 2.1,
+      "away_cards": 2.3,
+      "home_shots": 12.5,
+      "away_shots": 9.8,
+      "home_shots_target": 4.5,
+      "away_shots_target": 3.6,
+      "home_fouls": 11.5,
+      "away_fouls": 12.0
+    },
+    "dispersions": {
+      "corners": 0.05,
+      "cards": 0.05,
+      "shots": 0.05
+    },
+    "profile_used": "default"
+  },
+  "Liga MX, Apertura": {
+    "league": "Liga MX, Apertura",
+    "sample_size": 1435,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.61689771449419,
+      "away_goals": 1.2276116541614066,
+      "home_corners": 5.368142277151503,
+      "away_corners": 4.481984263267604,
+      "home_cards": 2.2080504804569663,
+      "away_cards": 2.368527374449956,
+      "home_shots": 14.852164388757386,
+      "away_shots": 12.230495577020717,
+      "home_shots_target": 5.020792091833438,
+      "away_shots_target": 4.1138039723998885,
+      "home_fouls": 12.580171218941091,
+      "away_fouls": 11.960817714952814,
+      "sample_size": 1435,
+      "effective_sample_size": 1137.09,
+      "total_weight": 654.7841,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-02",
+      "coverage_end_date": "2026-09-27"
+    },
+    "dispersions": {
+      "corners": 0.0098,
+      "cards": 0.0041,
+      "shots": 0.0118
+    }
+  },
+  "Liga Portugal Betclic": {
+    "league": "Liga Portugal Betclic",
+    "sample_size": 1294,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.4620137566554483,
+      "away_goals": 1.213353333529949,
+      "home_corners": 5.144532902517525,
+      "away_corners": 4.423608972568367,
+      "home_cards": 2.4447611315415463,
+      "away_cards": 2.6062189391067396,
+      "home_shots": 13.218355424020803,
+      "away_shots": 11.183419345012714,
+      "home_shots_target": 4.432812658749593,
+      "away_shots_target": 3.865530601380421,
+      "home_fouls": 13.295752188080654,
+      "away_fouls": 13.182544909515435,
+      "sample_size": 1294,
+      "effective_sample_size": 874.47,
+      "total_weight": 459.2754,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-05",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0252,
+      "cards": 0.0261,
+      "shots": 0.0125
+    }
+  },
+  "Liga Profesional de Fútbol": {
+    "league": "Liga Profesional de Fútbol",
+    "sample_size": 1676,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.1652994655224465,
+      "away_goals": 0.8802941258645316,
+      "home_corners": 5.072115394582057,
+      "away_corners": 3.8204808236679972,
+      "home_cards": 2.3271925353612732,
+      "away_cards": 2.819103187451509,
+      "home_shots": 13.706186375693257,
+      "away_shots": 10.545618938873536,
+      "home_shots_target": 4.47999674918542,
+      "away_shots_target": 3.370751574097691,
+      "home_fouls": 11.673642090564117,
+      "away_fouls": 12.70636332987824,
+      "sample_size": 1676,
+      "effective_sample_size": 1418.06,
+      "total_weight": 894.5807,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2023-01-27",
+      "coverage_end_date": "2026-10-02"
+    },
+    "dispersions": {
+      "corners": 0.0149,
+      "cards": 0.001,
+      "shots": 0.0166
+    }
+  },
+  "Liga de Primera": {
+    "league": "Liga de Primera",
+    "sample_size": 1140,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.545893672804201,
+      "away_goals": 1.1678121011070524,
+      "home_corners": 5.473678627542719,
+      "away_corners": 4.327354354488463,
+      "home_cards": 2.498530576825589,
+      "away_cards": 2.8378372853221436,
+      "home_shots": 14.814368400964169,
+      "away_shots": 11.888964689502528,
+      "home_shots_target": 5.038836165130473,
+      "away_shots_target": 3.9874370195974884,
+      "home_fouls": 11.004031299924272,
+      "away_fouls": 10.531765067971762,
+      "sample_size": 1140,
+      "effective_sample_size": 705.96,
+      "total_weight": 375.8324,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-02-04",
+      "coverage_end_date": "2026-10-02"
+    },
+    "dispersions": {
+      "corners": 0.0138,
+      "cards": 0.001,
+      "shots": 0.0125
+    }
+  },
+  "LigaPro Serie A": {
+    "league": "LigaPro Serie A",
+    "sample_size": 1041,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.3973916526249994,
+      "away_goals": 1.045630996908137,
+      "home_corners": 5.418280646514502,
+      "away_corners": 4.025666176288301,
+      "home_cards": 2.2238890731016867,
+      "away_cards": 2.4421031657046885,
+      "home_shots": 14.758225896638226,
+      "away_shots": 11.157775320354807,
+      "home_shots_target": 4.816869533041805,
+      "away_shots_target": 3.6480450818349777,
+      "home_fouls": 12.101872751361487,
+      "away_fouls": 11.436980117211675,
+      "sample_size": 1041,
+      "effective_sample_size": 767.4,
+      "total_weight": 454.6286,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2023-02-25",
+      "coverage_end_date": "2026-09-21"
+    },
+    "dispersions": {
+      "corners": 0.0074,
+      "cards": 0.0115,
+      "shots": 0.0137
+    }
+  },
+  "Ligue 1": {
+    "league": "Ligue 1",
+    "sample_size": 1354,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.5544292284971442,
+      "away_goals": 1.2885507797146165,
+      "home_corners": 5.152195317274604,
+      "away_corners": 4.358014459589724,
+      "home_cards": 1.8144291299460267,
+      "away_cards": 2.0191597996601067,
+      "home_shots": 13.752626498005487,
+      "away_shots": 11.490097033573322,
+      "home_shots_target": 4.887393354026336,
+      "away_shots_target": 4.123973982717456,
+      "home_fouls": 11.979117742379023,
+      "away_fouls": 11.961345577112922,
+      "sample_size": 1354,
+      "effective_sample_size": 898.34,
+      "total_weight": 452.7106,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-05",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0176,
+      "cards": 0.001,
+      "shots": 0.0143
+    }
+  },
+  "MLS": {
+    "league": "MLS",
+    "sample_size": 1986,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.746226678591148,
+      "away_goals": 1.3572732652612556,
+      "home_corners": 5.517624219104508,
+      "away_corners": 4.348918980757153,
+      "home_cards": 2.0559452139597516,
+      "away_cards": 2.238211288033807,
+      "home_shots": 14.286474794685557,
+      "away_shots": 11.676325530534037,
+      "home_shots_target": 5.248512315759255,
+      "away_shots_target": 4.214268708330416,
+      "home_fouls": 11.929390292843598,
+      "away_fouls": 11.953347173873572,
+      "sample_size": 1986,
+      "effective_sample_size": 1407.77,
+      "total_weight": 797.6856,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2023-02-25",
+      "coverage_end_date": "2026-10-01"
+    },
+    "dispersions": {
+      "corners": 0.0131,
+      "cards": 0.001,
+      "shots": 0.0145
+    }
+  },
+  "Premier League": {
+    "league": "Premier League",
+    "sample_size": 1568,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.5783647693517397,
+      "away_goals": 1.3095964789858971,
+      "home_corners": 5.468091921252114,
+      "away_corners": 4.634061233377111,
+      "home_cards": 1.8754846259776565,
+      "away_cards": 2.245043598961237,
+      "home_shots": 14.18794092859275,
+      "away_shots": 11.722091609745846,
+      "home_shots_target": 4.769111072713862,
+      "away_shots_target": 4.090288647766841,
+      "home_fouls": 10.772347895540113,
+      "away_fouls": 11.003940938052398,
+      "sample_size": 1568,
+      "effective_sample_size": 1069.93,
+      "total_weight": 541.1106,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-05",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0113,
+      "cards": 0.001,
+      "shots": 0.0145
+    }
+  },
+  "Primera A": {
+    "league": "Primera A",
+    "sample_size": 2093,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.4041480245374427,
+      "away_goals": 0.9878639103226005,
+      "home_corners": 5.15917505641966,
+      "away_corners": 3.9269567872249365,
+      "home_cards": 2.831671457493649,
+      "away_cards": 2.939347449569953,
+      "home_shots": 14.191612637858114,
+      "away_shots": 10.96714024003498,
+      "home_shots_target": 4.790666425468413,
+      "away_shots_target": 3.603515995660329,
+      "home_fouls": 12.046275854875066,
+      "away_fouls": 11.214935940453524,
+      "sample_size": 2093,
+      "effective_sample_size": 1294.65,
+      "total_weight": 669.6189,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-01-20",
+      "coverage_end_date": "2026-10-02"
+    },
+    "dispersions": {
+      "corners": 0.0192,
+      "cards": 0.001,
+      "shots": 0.01
+    }
+  },
+  "Primera División": {
+    "league": "Primera División",
+    "sample_size": 597,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.2917114570441182,
+      "away_goals": 1.1316206449964386,
+      "home_corners": 4.96644620902983,
+      "away_corners": 4.447275850511752,
+      "home_cards": 2.2087736908178,
+      "away_cards": 2.420882287676244,
+      "home_shots": 12.94655322568371,
+      "away_shots": 11.514858543295624,
+      "home_shots_target": 4.3623420180416685,
+      "away_shots_target": 3.8197567484786807,
+      "home_fouls": 10.71955603269149,
+      "away_fouls": 11.062521680908839,
+      "sample_size": 597,
+      "effective_sample_size": 373.24,
+      "total_weight": 205.3205,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-14",
+      "coverage_end_date": "2026-09-28"
+    },
+    "dispersions": {
+      "corners": 0.012,
+      "cards": 0.001,
+      "shots": 0.0433
+    }
+  },
+  "Primera Nacional": {
+    "league": "Primera Nacional",
+    "sample_size": 3277,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.140421175958116,
+      "away_goals": 0.7146140244154797,
+      "home_corners": 5.061680041716439,
+      "away_corners": 3.6468501427684528,
+      "home_cards": 2.170077292999063,
+      "away_cards": 2.6125343829779664,
+      "home_shots": 12.134176194648042,
+      "away_shots": 9.270296302174133,
+      "home_shots_target": 4.10102938641624,
+      "away_shots_target": 3.097127235675289,
+      "home_fouls": 12.464220637991044,
+      "away_fouls": 13.38922872154807,
+      "sample_size": 3277,
+      "effective_sample_size": 1992.9,
+      "total_weight": 1084.3857,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-02-11",
+      "coverage_end_date": "2026-10-02"
+    },
+    "dispersions": {
+      "corners": 0.0188,
+      "cards": 0.0025,
+      "shots": 0.0123
+    }
+  },
+  "Pro League": {
+    "league": "Pro League",
+    "sample_size": 1350,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.5396446960029435,
+      "away_goals": 1.2472330809664967,
+      "home_corners": 5.464761400879682,
+      "away_corners": 4.568801068505115,
+      "home_cards": 1.7762127175392288,
+      "away_cards": 2.164230861685706,
+      "home_shots": 14.506995439253595,
+      "away_shots": 11.919547217777794,
+      "home_shots_target": 4.95035998993724,
+      "away_shots_target": 4.107518043795109,
+      "home_fouls": 10.760843602346718,
+      "away_fouls": 11.67597562070593,
+      "sample_size": 1350,
+      "effective_sample_size": 902.75,
+      "total_weight": 473.8674,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-22",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0144,
+      "cards": 0.001,
+      "shots": 0.0159
+    }
+  },
+  "Saudi Pro League": {
+    "league": "Saudi Pro League",
+    "sample_size": 1224,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.5496601720399614,
+      "away_goals": 1.3908629838100215,
+      "home_corners": 5.101212105851825,
+      "away_corners": 4.7228452910854655,
+      "home_cards": 1.9687942483776226,
+      "away_cards": 2.1435875513253824,
+      "home_shots": 12.828074972292036,
+      "away_shots": 11.808378896673073,
+      "home_shots_target": 4.653394467855508,
+      "away_shots_target": 4.287565711632138,
+      "home_fouls": 11.592185905382538,
+      "away_fouls": 11.596061281912634,
+      "sample_size": 1224,
+      "effective_sample_size": 849.15,
+      "total_weight": 460.4747,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-25",
+      "coverage_end_date": "2026-09-13"
+    },
+    "dispersions": {
+      "corners": 0.0112,
+      "cards": 0.001,
+      "shots": 0.0166
+    }
+  },
+  "Scottish Premiership": {
+    "league": "Scottish Premiership",
+    "sample_size": 977,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.5652327234438737,
+      "away_goals": 1.2437882952704444,
+      "home_corners": 5.724723055776355,
+      "away_corners": 4.87544839900955,
+      "home_cards": 1.8273990343770576,
+      "away_cards": 2.1832284158044817,
+      "home_shots": 14.00046267009742,
+      "away_shots": 11.745589685114838,
+      "home_shots_target": 4.798282265983563,
+      "away_shots_target": 3.893358865538048,
+      "home_fouls": 11.838304438315523,
+      "away_fouls": 12.381603808421824,
+      "sample_size": 977,
+      "effective_sample_size": 661.14,
+      "total_weight": 342.7304,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-07-30",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0169,
+      "cards": 0.001,
+      "shots": 0.0165
+    }
+  },
+  "Serie A": {
+    "league": "Serie A",
+    "sample_size": 1568,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.3390403543436873,
+      "away_goals": 1.2007226744819546,
+      "home_corners": 5.118444797377984,
+      "away_corners": 4.042250100709041,
+      "home_cards": 1.836234155950753,
+      "away_cards": 2.1184145820591915,
+      "home_shots": 13.781530867540418,
+      "away_shots": 11.314276993374673,
+      "home_shots_target": 4.446701540730385,
+      "away_shots_target": 3.794415861112882,
+      "home_fouls": 12.121280769305335,
+      "away_fouls": 12.415850589960257,
+      "sample_size": 1568,
+      "effective_sample_size": 1068.88,
+      "total_weight": 544.1185,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-13",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0254,
+      "cards": 0.001,
+      "shots": 0.0132
+    }
+  },
+  "UEFA Champions League": {
+    "league": "UEFA Champions League",
+    "sample_size": 1096,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.7906645650963822,
+      "away_goals": 1.284200848246238,
+      "home_corners": 5.415714859844921,
+      "away_corners": 4.106022137294074,
+      "home_cards": 1.8296588895937016,
+      "away_cards": 2.0922034145856054,
+      "home_shots": 15.288394658459698,
+      "away_shots": 11.472869741014238,
+      "home_shots_target": 5.612910195825367,
+      "away_shots_target": 4.212576334631954,
+      "home_fouls": 11.500627745890084,
+      "away_fouls": 11.061712027311833,
+      "sample_size": 1096,
+      "effective_sample_size": 872.49,
+      "total_weight": 518.1983,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-06-21",
+      "coverage_end_date": "2026-09-10"
+    },
+    "dispersions": {
+      "corners": 0.0381,
+      "cards": 0.0344,
+      "shots": 0.0206
+    }
+  },
+  "UEFA Europa League": {
+    "league": "UEFA Europa League",
+    "sample_size": 988,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.596488705192363,
+      "away_goals": 1.1433251874821069,
+      "home_corners": 5.316938207180486,
+      "away_corners": 4.000222384506824,
+      "home_cards": 1.9601213260508101,
+      "away_cards": 2.327906905676061,
+      "home_shots": 14.237413662530509,
+      "away_shots": 11.118707504391294,
+      "home_shots_target": 5.208350333514362,
+      "away_shots_target": 4.009008999548587,
+      "home_fouls": 12.104110425953136,
+      "away_fouls": 12.700201577937934,
+      "sample_size": 988,
+      "effective_sample_size": 804.25,
+      "total_weight": 486.7596,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-04",
+      "coverage_end_date": "2026-09-17"
+    },
+    "dispersions": {
+      "corners": 0.021,
+      "cards": 0.0239,
+      "shots": 0.018
+    }
+  },
+  "UEFA Nations League": {
+    "league": "UEFA Nations League",
+    "sample_size": 662,
+    "profile_used": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "averages": {
+      "home_goals": 1.4235645090235525,
+      "away_goals": 1.133410573221499,
+      "home_corners": 4.957635866061588,
+      "away_corners": 3.88593666449706,
+      "home_cards": 2.0721157292084804,
+      "away_cards": 2.4611462546554477,
+      "home_shots": 13.540936544832515,
+      "away_shots": 10.597514201967892,
+      "home_shots_target": 4.595597009179465,
+      "away_shots_target": 3.791355444329703,
+      "home_fouls": 12.85309679905661,
+      "away_fouls": 12.41771558975218,
+      "sample_size": 662,
+      "effective_sample_size": 352.53,
+      "total_weight": 147.6324,
+      "reference_date": null,
+      "half_life_days": 600.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2018-09-06",
+      "coverage_end_date": "2026-09-25"
+    },
+    "dispersions": {
+      "corners": 0.0195,
+      "cards": 0.0048,
+      "shots": 0.0251
+    }
+  },
+  "VriendenLoterij Eredivisie": {
+    "league": "VriendenLoterij Eredivisie",
+    "sample_size": 1349,
+    "profile_used": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "averages": {
+      "home_goals": 1.7489941145675487,
+      "away_goals": 1.441635326321403,
+      "home_corners": 5.689482433962936,
+      "away_corners": 4.624972612263313,
+      "home_cards": 1.4354407273440777,
+      "away_cards": 1.8891860090813415,
+      "home_shots": 15.366189235758977,
+      "away_shots": 12.490194737984654,
+      "home_shots_target": 5.409714730685767,
+      "away_shots_target": 4.590363075125395,
+      "home_fouls": 10.171062103973608,
+      "away_fouls": 11.11583812037973,
+      "sample_size": 1349,
+      "effective_sample_size": 912.62,
+      "total_weight": 477.8658,
+      "reference_date": null,
+      "half_life_days": 420.0,
+      "source": "weighted_league_history",
+      "coverage_start_date": "2022-08-05",
+      "coverage_end_date": "2026-09-20"
+    },
+    "dispersions": {
+      "corners": 0.0136,
+      "cards": 0.001,
+      "shots": 0.0129
+    }
+  }
+}

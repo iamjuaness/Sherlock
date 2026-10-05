@@ -1,0 +1,190 @@
+{
+  "_description": "Configuración jerárquica de perfiles históricos por competición para Sherlock",
+  "profiles": {
+    "stable_high_volume": {
+      "description": "Grandes ligas y competiciones estables con alto volumen de partidos por temporada.",
+      "league_prior_half_life_days": 420.0,
+      "team_half_life_matches": 17.5,
+      "team_max_matches": 40,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 30.0,
+      "league_prior_strength": 18.0
+    },
+    "small_or_short_format": {
+      "description": "Ligas de formato corto (Apertura/Clausura), copas internacionales o muestras reducidas.",
+      "league_prior_half_life_days": 600.0,
+      "team_half_life_matches": 20.0,
+      "team_max_matches": 45,
+      "league_history_seasons": 5,
+      "min_effective_sample_size": 18.0,
+      "league_prior_strength": 28.0
+    },
+    "high_turnover_or_structural_change": {
+      "description": "Segundas divisiones, ligas con alta rotación de plantillas o cambios frecuentes de nivel.",
+      "league_prior_half_life_days": 270.0,
+      "team_half_life_matches": 12.5,
+      "team_max_matches": 30,
+      "league_history_seasons": 4,
+      "min_effective_sample_size": 24.0,
+      "league_prior_strength": 24.0
+    }
+  },
+  "leagues": {
+    "2. Bundesliga": {
+      "profile": "high_turnover_or_structural_change",
+      "sample_count": 1281
+    },
+    "3. Liga": {
+      "profile": "high_turnover_or_structural_change",
+      "sample_count": 1585
+    },
+    "Brasileirão Série B": {
+      "profile": "stable_high_volume",
+      "sample_count": 1836
+    },
+    "Bundesliga": {
+      "profile": "stable_high_volume",
+      "sample_count": 1271
+    },
+    "CONMEBOL Libertadores": {
+      "profile": "small_or_short_format",
+      "sample_count": 766
+    },
+    "CONMEBOL Sudamericana": {
+      "profile": "small_or_short_format",
+      "sample_count": 779
+    },
+    "Campeonato Brasileiro Série A": {
+      "profile": "stable_high_volume",
+      "sample_count": 1798
+    },
+    "Canadian Premier League": {
+      "profile": "stable_high_volume",
+      "sample_count": 572
+    },
+    "Copa Argentina": {
+      "profile": "small_or_short_format",
+      "sample_count": 311
+    },
+    "Coppa Italia": {
+      "profile": "stable_high_volume",
+      "sample_count": 208
+    },
+    "Czech First League": {
+      "profile": "stable_high_volume",
+      "sample_count": 1190
+    },
+    "DFB Pokal": {
+      "profile": "small_or_short_format",
+      "sample_count": 284
+    },
+    "Danish Superliga": {
+      "profile": "stable_high_volume",
+      "sample_count": 825
+    },
+    "División Profesional": {
+      "profile": "small_or_short_format",
+      "sample_count": 996
+    },
+    "Egyptian Premier League": {
+      "profile": "stable_high_volume",
+      "sample_count": 1210
+    },
+    "HNL": {
+      "profile": "stable_high_volume",
+      "sample_count": 759
+    },
+    "LaLiga": {
+      "profile": "stable_high_volume",
+      "sample_count": 1587
+    },
+    "LaLiga 2": {
+      "profile": "high_turnover_or_structural_change",
+      "sample_count": 1952
+    },
+    "Liga 1 Te Apuesto": {
+      "profile": "small_or_short_format",
+      "sample_count": 1561
+    },
+    "Liga 2 No Rentable": {
+      "profile": "high_turnover_or_structural_change",
+      "sample_count": 1
+    },
+    "Liga MX, Apertura": {
+      "profile": "small_or_short_format",
+      "sample_count": 1435
+    },
+    "Liga Portugal Betclic": {
+      "profile": "stable_high_volume",
+      "sample_count": 1294
+    },
+    "Liga Profesional de Fútbol": {
+      "profile": "small_or_short_format",
+      "sample_count": 1679
+    },
+    "Liga de Primera": {
+      "profile": "stable_high_volume",
+      "sample_count": 1140
+    },
+    "LigaPro Serie A": {
+      "profile": "stable_high_volume",
+      "sample_count": 1041
+    },
+    "Ligue 1": {
+      "profile": "stable_high_volume",
+      "sample_count": 1354
+    },
+    "MLS": {
+      "profile": "stable_high_volume",
+      "sample_count": 1986
+    },
+    "Premier League": {
+      "profile": "stable_high_volume",
+      "sample_count": 1569
+    },
+    "Primera A": {
+      "profile": "stable_high_volume",
+      "sample_count": 2095
+    },
+    "Primera División": {
+      "profile": "stable_high_volume",
+      "sample_count": 599
+    },
+    "Primera Nacional": {
+      "profile": "stable_high_volume",
+      "sample_count": 3283
+    },
+    "Pro League": {
+      "profile": "stable_high_volume",
+      "sample_count": 1350
+    },
+    "Saudi Pro League": {
+      "profile": "stable_high_volume",
+      "sample_count": 1224
+    },
+    "Scottish Premiership": {
+      "profile": "stable_high_volume",
+      "sample_count": 977
+    },
+    "Serie A": {
+      "profile": "stable_high_volume",
+      "sample_count": 1568
+    },
+    "UEFA Champions League": {
+      "profile": "small_or_short_format",
+      "sample_count": 1096
+    },
+    "UEFA Europa League": {
+      "profile": "small_or_short_format",
+      "sample_count": 988
+    },
+    "UEFA Nations League": {
+      "profile": "small_or_short_format",
+      "sample_count": 662
+    },
+    "VriendenLoterij Eredivisie": {
+      "profile": "stable_high_volume",
+      "sample_count": 1349
+    }
+  }
+}

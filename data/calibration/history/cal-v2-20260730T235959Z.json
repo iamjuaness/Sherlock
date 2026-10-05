@@ -2862,10 +2862,4500 @@
       ],
       "n_samples": 3604.0,
       "segment": "global"
+    },
+    "league:Brasileirão Série B": {
+      "bins": [
+        {
+          "calibrated": 0.199028,
+          "hi": 0.231,
+          "hits": 11.0,
+          "lo": 0.0,
+          "mean_pred": 0.127368,
+          "n": 57.0,
+          "prior": 0.22364,
+          "raw_rate": 0.192982
+        },
+        {
+          "calibrated": 0.360038,
+          "hi": 0.319,
+          "hits": 21.0,
+          "lo": 0.231,
+          "mean_pred": 0.278105,
+          "n": 57.0,
+          "prior": 0.325908,
+          "raw_rate": 0.368421
+        },
+        {
+          "calibrated": 0.395862,
+          "hi": 0.386,
+          "hits": 24.0,
+          "lo": 0.319,
+          "mean_pred": 0.351586,
+          "n": 58.0,
+          "prior": 0.382218,
+          "raw_rate": 0.413793
+        },
+        {
+          "calibrated": 0.395862,
+          "hi": 0.489,
+          "hits": 21.0,
+          "lo": 0.386,
+          "mean_pred": 0.442123,
+          "n": 57.0,
+          "prior": 0.44694,
+          "raw_rate": 0.368421
+        },
+        {
+          "calibrated": 0.522107,
+          "hi": 0.576,
+          "hits": 30.0,
+          "lo": 0.489,
+          "mean_pred": 0.532842,
+          "n": 57.0,
+          "prior": 0.504972,
+          "raw_rate": 0.526316
+        },
+        {
+          "calibrated": 0.589929,
+          "hi": 0.668,
+          "hits": 35.0,
+          "lo": 0.576,
+          "mean_pred": 0.6245,
+          "n": 58.0,
+          "prior": 0.601528,
+          "raw_rate": 0.603448
+        },
+        {
+          "calibrated": 0.589929,
+          "hi": 0.758,
+          "hits": 32.0,
+          "lo": 0.668,
+          "mean_pred": 0.705825,
+          "n": 57.0,
+          "prior": 0.638457,
+          "raw_rate": 0.561404
+        },
+        {
+          "calibrated": 0.745338,
+          "hi": 1.0,
+          "hits": 43.0,
+          "lo": 0.758,
+          "mean_pred": 0.840561,
+          "n": 57.0,
+          "prior": 0.708501,
+          "raw_rate": 0.754386
+        }
+      ],
+      "knots_x": [
+        0.127368,
+        0.278105,
+        0.351586,
+        0.442123,
+        0.532842,
+        0.6245,
+        0.705825,
+        0.840561
+      ],
+      "knots_y": [
+        0.199028,
+        0.360038,
+        0.395862,
+        0.395862,
+        0.522107,
+        0.589929,
+        0.589929,
+        0.745338
+      ],
+      "n_samples": 458.0,
+      "segment": "league:Brasileirão Série B"
+    },
+    "league:Brasileirão Série B|family:btts": {
+      "bins": [
+        {
+          "calibrated": 0.464824,
+          "hi": 0.379,
+          "hits": 7.0,
+          "lo": 0.0,
+          "mean_pred": 0.327111,
+          "n": 9.0,
+          "prior": 0.38393,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.464824,
+          "hi": 0.454,
+          "hits": 3.0,
+          "lo": 0.379,
+          "mean_pred": 0.416625,
+          "n": 8.0,
+          "prior": 0.395862,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.485637,
+          "hi": 0.506,
+          "hits": 5.0,
+          "lo": 0.454,
+          "mean_pred": 0.475778,
+          "n": 9.0,
+          "prior": 0.442696,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.485637,
+          "hi": 0.555,
+          "hits": 4.0,
+          "lo": 0.506,
+          "mean_pred": 0.524222,
+          "n": 9.0,
+          "prior": 0.510112,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.513155,
+          "hi": 0.637,
+          "hits": 5.0,
+          "lo": 0.555,
+          "mean_pred": 0.583375,
+          "n": 8.0,
+          "prior": 0.559499,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.513155,
+          "hi": 1.0,
+          "hits": 2.0,
+          "lo": 0.637,
+          "mean_pred": 0.672889,
+          "n": 9.0,
+          "prior": 0.589929,
+          "raw_rate": 0.222222
+        }
+      ],
+      "knots_x": [
+        0.327111,
+        0.416625,
+        0.475778,
+        0.524222,
+        0.583375,
+        0.672889
+      ],
+      "knots_y": [
+        0.464824,
+        0.464824,
+        0.485637,
+        0.485637,
+        0.513155,
+        0.513155
+      ],
+      "n_samples": 52.0,
+      "segment": "league:Brasileirão Série B|family:btts"
+    },
+    "league:Brasileirão Série B|family:cards": {
+      "bins": [
+        {
+          "calibrated": 0.228868,
+          "hi": 0.168,
+          "hits": 2.0,
+          "lo": 0.0,
+          "mean_pred": 0.144,
+          "n": 8.0,
+          "prior": 0.216793,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.322038,
+          "hi": 0.449,
+          "hits": 2.0,
+          "lo": 0.168,
+          "mean_pred": 0.331778,
+          "n": 9.0,
+          "prior": 0.386205,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.484984,
+          "hi": 0.506,
+          "hits": 7.0,
+          "lo": 0.449,
+          "mean_pred": 0.467875,
+          "n": 8.0,
+          "prior": 0.431699,
+          "raw_rate": 0.875
+        },
+        {
+          "calibrated": 0.484984,
+          "hi": 0.563,
+          "hits": 1.0,
+          "lo": 0.506,
+          "mean_pred": 0.532125,
+          "n": 8.0,
+          "prior": 0.521109,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.663435,
+          "hi": 0.833,
+          "hits": 7.0,
+          "lo": 0.563,
+          "mean_pred": 0.668222,
+          "n": 9.0,
+          "prior": 0.589929,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.747033,
+          "hi": 1.0,
+          "hits": 6.0,
+          "lo": 0.833,
+          "mean_pred": 0.856,
+          "n": 8.0,
+          "prior": 0.745338,
+          "raw_rate": 0.75
+        }
+      ],
+      "knots_x": [
+        0.144,
+        0.331778,
+        0.467875,
+        0.532125,
+        0.668222,
+        0.856
+      ],
+      "knots_y": [
+        0.228868,
+        0.322038,
+        0.484984,
+        0.484984,
+        0.663435,
+        0.747033
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Brasileirão Série B|family:cards"
+    },
+    "league:Brasileirão Série B|family:corners": {
+      "bins": [
+        {
+          "calibrated": 0.173642,
+          "hi": 0.179,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.129625,
+          "n": 8.0,
+          "prior": 0.201438,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.298661,
+          "hi": 0.231,
+          "hits": 3.0,
+          "lo": 0.179,
+          "mean_pred": 0.199778,
+          "n": 9.0,
+          "prior": 0.276372,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.358015,
+          "hi": 0.382,
+          "hits": 3.0,
+          "lo": 0.231,
+          "mean_pred": 0.267125,
+          "n": 8.0,
+          "prior": 0.34831,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.388276,
+          "hi": 0.477,
+          "hits": 3.0,
+          "lo": 0.382,
+          "mean_pred": 0.435125,
+          "n": 8.0,
+          "prior": 0.395862,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.469733,
+          "hi": 0.556,
+          "hits": 4.0,
+          "lo": 0.477,
+          "mean_pred": 0.506889,
+          "n": 9.0,
+          "prior": 0.48599,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.505475,
+          "hi": 1.0,
+          "hits": 3.0,
+          "lo": 0.556,
+          "mean_pred": 0.611125,
+          "n": 8.0,
+          "prior": 0.580032,
+          "raw_rate": 0.375
+        }
+      ],
+      "knots_x": [
+        0.129625,
+        0.199778,
+        0.267125,
+        0.435125,
+        0.506889,
+        0.611125
+      ],
+      "knots_y": [
+        0.173642,
+        0.298661,
+        0.358015,
+        0.388276,
+        0.469733,
+        0.505475
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Brasileirão Série B|family:corners"
+    },
+    "league:Brasileirão Série B|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.522545,
+          "hi": 0.592,
+          "hits": 6.0,
+          "lo": 0.0,
+          "mean_pred": 0.4934,
+          "n": 10.0,
+          "prior": 0.467219,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.619275,
+          "hi": 0.633,
+          "hits": 7.0,
+          "lo": 0.592,
+          "mean_pred": 0.6084,
+          "n": 10.0,
+          "prior": 0.578016,
+          "raw_rate": 0.7
+        },
+        {
+          "calibrated": 0.619275,
+          "hi": 0.653,
+          "hits": 8.0,
+          "lo": 0.633,
+          "mean_pred": 0.641778,
+          "n": 9.0,
+          "prior": 0.589929,
+          "raw_rate": 0.888889
+        },
+        {
+          "calibrated": 0.619275,
+          "hi": 0.673,
+          "hits": 5.0,
+          "lo": 0.653,
+          "mean_pred": 0.6627,
+          "n": 10.0,
+          "prior": 0.589929,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.619275,
+          "hi": 0.704,
+          "hits": 7.0,
+          "lo": 0.673,
+          "mean_pred": 0.685111,
+          "n": 9.0,
+          "prior": 0.589929,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.619275,
+          "hi": 0.72,
+          "hits": 6.0,
+          "lo": 0.704,
+          "mean_pred": 0.7104,
+          "n": 10.0,
+          "prior": 0.595206,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.619275,
+          "hi": 0.754,
+          "hits": 5.0,
+          "lo": 0.72,
+          "mean_pred": 0.7353,
+          "n": 10.0,
+          "prior": 0.623927,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.737795,
+          "hi": 1.0,
+          "hits": 8.0,
+          "lo": 0.754,
+          "mean_pred": 0.7955,
+          "n": 10.0,
+          "prior": 0.693363,
+          "raw_rate": 0.8
+        }
+      ],
+      "knots_x": [
+        0.4934,
+        0.6084,
+        0.641778,
+        0.6627,
+        0.685111,
+        0.7104,
+        0.7353,
+        0.7955
+      ],
+      "knots_y": [
+        0.522545,
+        0.619275,
+        0.619275,
+        0.619275,
+        0.619275,
+        0.619275,
+        0.619275,
+        0.737795
+      ],
+      "n_samples": 78.0,
+      "segment": "league:Brasileirão Série B|family:double_chance"
+    },
+    "league:Brasileirão Série B|family:goals": {
+      "bins": [
+        {
+          "calibrated": 0.3879,
+          "hi": 0.531,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.350375,
+          "n": 8.0,
+          "prior": 0.395271,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.477886,
+          "hi": 0.659,
+          "hits": 3.0,
+          "lo": 0.531,
+          "mean_pred": 0.598667,
+          "n": 9.0,
+          "prior": 0.570813,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.602682,
+          "hi": 0.718,
+          "hits": 5.0,
+          "lo": 0.659,
+          "mean_pred": 0.687625,
+          "n": 8.0,
+          "prior": 0.589929,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.682671,
+          "hi": 0.789,
+          "hits": 6.0,
+          "lo": 0.718,
+          "mean_pred": 0.752875,
+          "n": 8.0,
+          "prior": 0.644198,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.780443,
+          "hi": 0.853,
+          "hits": 8.0,
+          "lo": 0.789,
+          "mean_pred": 0.810556,
+          "n": 9.0,
+          "prior": 0.710729,
+          "raw_rate": 0.888889
+        },
+        {
+          "calibrated": 0.792488,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.853,
+          "mean_pred": 0.883375,
+          "n": 8.0,
+          "prior": 0.745338,
+          "raw_rate": 0.875
+        }
+      ],
+      "knots_x": [
+        0.350375,
+        0.598667,
+        0.687625,
+        0.752875,
+        0.810556,
+        0.883375
+      ],
+      "knots_y": [
+        0.3879,
+        0.477886,
+        0.602682,
+        0.682671,
+        0.780443,
+        0.792488
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Brasileirão Série B|family:goals"
+    },
+    "league:Brasileirão Série B|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.225827,
+          "hi": 0.265,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.2366,
+          "n": 10.0,
+          "prior": 0.315704,
+          "raw_rate": 0.1
+        },
+        {
+          "calibrated": 0.3662,
+          "hi": 0.289,
+          "hits": 6.0,
+          "lo": 0.265,
+          "mean_pred": 0.2778,
+          "n": 10.0,
+          "prior": 0.359712,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.3662,
+          "hi": 0.3,
+          "hits": 2.0,
+          "lo": 0.289,
+          "mean_pred": 0.293333,
+          "n": 9.0,
+          "prior": 0.367462,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.3662,
+          "hi": 0.329,
+          "hits": 4.0,
+          "lo": 0.3,
+          "mean_pred": 0.3137,
+          "n": 10.0,
+          "prior": 0.377391,
+          "raw_rate": 0.4
+        },
+        {
+          "calibrated": 0.3662,
+          "hi": 0.352,
+          "hits": 2.0,
+          "lo": 0.329,
+          "mean_pred": 0.338444,
+          "n": 9.0,
+          "prior": 0.389455,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.3662,
+          "hi": 0.362,
+          "hits": 3.0,
+          "lo": 0.352,
+          "mean_pred": 0.35575,
+          "n": 8.0,
+          "prior": 0.395862,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.3662,
+          "hi": 0.413,
+          "hits": 3.0,
+          "lo": 0.362,
+          "mean_pred": 0.375583,
+          "n": 12.0,
+          "prior": 0.395862,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.460259,
+          "hi": 1.0,
+          "hits": 5.0,
+          "lo": 0.413,
+          "mean_pred": 0.468,
+          "n": 10.0,
+          "prior": 0.431872,
+          "raw_rate": 0.5
+        }
+      ],
+      "knots_x": [
+        0.2366,
+        0.2778,
+        0.293333,
+        0.3137,
+        0.338444,
+        0.35575,
+        0.375583,
+        0.468
+      ],
+      "knots_y": [
+        0.225827,
+        0.3662,
+        0.3662,
+        0.3662,
+        0.3662,
+        0.3662,
+        0.3662,
+        0.460259
+      ],
+      "n_samples": 78.0,
+      "segment": "league:Brasileirão Série B|family:result"
+    },
+    "league:Brasileirão Série B|family:shots": {
+      "bins": [
+        {
+          "calibrated": 0.263018,
+          "hi": 0.044,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.0275,
+          "n": 8.0,
+          "prior": 0.199028,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.315422,
+          "hi": 0.324,
+          "hits": 3.0,
+          "lo": 0.044,
+          "mean_pred": 0.225556,
+          "n": 9.0,
+          "prior": 0.303907,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.410156,
+          "hi": 0.368,
+          "hits": 5.0,
+          "lo": 0.324,
+          "mean_pred": 0.346125,
+          "n": 8.0,
+          "prior": 0.393199,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.410156,
+          "hi": 0.42,
+          "hits": 2.0,
+          "lo": 0.368,
+          "mean_pred": 0.38275,
+          "n": 8.0,
+          "prior": 0.395862,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.412138,
+          "hi": 0.88,
+          "hits": 2.0,
+          "lo": 0.42,
+          "mean_pred": 0.549222,
+          "n": 9.0,
+          "prior": 0.534227,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.656124,
+          "hi": 1.0,
+          "hits": 4.0,
+          "lo": 0.88,
+          "mean_pred": 0.914,
+          "n": 8.0,
+          "prior": 0.745338,
+          "raw_rate": 0.5
+        }
+      ],
+      "knots_x": [
+        0.0275,
+        0.225556,
+        0.346125,
+        0.38275,
+        0.549222,
+        0.914
+      ],
+      "knots_y": [
+        0.263018,
+        0.315422,
+        0.410156,
+        0.410156,
+        0.412138,
+        0.656124
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Brasileirão Série B|family:shots"
+    },
+    "league:Brasileirão Série B|family:shots_target": {
+      "bins": [
+        {
+          "calibrated": 0.126654,
+          "hi": 0.1,
+          "hits": 0.0,
+          "lo": 0.0,
+          "mean_pred": 0.074125,
+          "n": 8.0,
+          "prior": 0.199028,
+          "raw_rate": 0.0
+        },
+        {
+          "calibrated": 0.269312,
+          "hi": 0.278,
+          "hits": 2.0,
+          "lo": 0.1,
+          "mean_pred": 0.2035,
+          "n": 8.0,
+          "prior": 0.280348,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.324939,
+          "hi": 0.541,
+          "hits": 2.0,
+          "lo": 0.278,
+          "mean_pred": 0.341556,
+          "n": 9.0,
+          "prior": 0.390972,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.573664,
+          "hi": 0.588,
+          "hits": 5.0,
+          "lo": 0.541,
+          "mean_pred": 0.562875,
+          "n": 8.0,
+          "prior": 0.54433,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.576478,
+          "hi": 0.786,
+          "hits": 5.0,
+          "lo": 0.588,
+          "mean_pred": 0.641556,
+          "n": 9.0,
+          "prior": 0.589929,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.731391,
+          "hi": 1.0,
+          "hits": 6.0,
+          "lo": 0.786,
+          "mean_pred": 0.81925,
+          "n": 8.0,
+          "prior": 0.720757,
+          "raw_rate": 0.75
+        }
+      ],
+      "knots_x": [
+        0.074125,
+        0.2035,
+        0.341556,
+        0.562875,
+        0.641556,
+        0.81925
+      ],
+      "knots_y": [
+        0.126654,
+        0.269312,
+        0.324939,
+        0.573664,
+        0.576478,
+        0.731391
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Brasileirão Série B|family:shots_target"
+    },
+    "league:Bundesliga": {
+      "bins": [
+        {
+          "calibrated": 0.33901,
+          "hi": 0.098,
+          "hits": 17.0,
+          "lo": 0.0,
+          "mean_pred": 0.048306,
+          "n": 36.0,
+          "prior": 0.22364,
+          "raw_rate": 0.472222
+        },
+        {
+          "calibrated": 0.33901,
+          "hi": 0.221,
+          "hits": 11.0,
+          "lo": 0.098,
+          "mean_pred": 0.160059,
+          "n": 34.0,
+          "prior": 0.24559,
+          "raw_rate": 0.323529
+        },
+        {
+          "calibrated": 0.33901,
+          "hi": 0.357,
+          "hits": 11.0,
+          "lo": 0.221,
+          "mean_pred": 0.281972,
+          "n": 36.0,
+          "prior": 0.328871,
+          "raw_rate": 0.305556
+        },
+        {
+          "calibrated": 0.422752,
+          "hi": 0.544,
+          "hits": 15.0,
+          "lo": 0.357,
+          "mean_pred": 0.430111,
+          "n": 36.0,
+          "prior": 0.4384,
+          "raw_rate": 0.416667
+        },
+        {
+          "calibrated": 0.575537,
+          "hi": 0.62,
+          "hits": 21.0,
+          "lo": 0.544,
+          "mean_pred": 0.58375,
+          "n": 36.0,
+          "prior": 0.555489,
+          "raw_rate": 0.583333
+        },
+        {
+          "calibrated": 0.586191,
+          "hi": 0.718,
+          "hits": 20.0,
+          "lo": 0.62,
+          "mean_pred": 0.666314,
+          "n": 35.0,
+          "prior": 0.623097,
+          "raw_rate": 0.571429
+        },
+        {
+          "calibrated": 0.590256,
+          "hi": 0.853,
+          "hits": 21.0,
+          "lo": 0.718,
+          "mean_pred": 0.7848,
+          "n": 35.0,
+          "prior": 0.679734,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.590256,
+          "hi": 1.0,
+          "hits": 18.0,
+          "lo": 0.853,
+          "mean_pred": 0.898639,
+          "n": 36.0,
+          "prior": 0.708501,
+          "raw_rate": 0.5
+        }
+      ],
+      "knots_x": [
+        0.048306,
+        0.160059,
+        0.281972,
+        0.430111,
+        0.58375,
+        0.666314,
+        0.7848,
+        0.898639
+      ],
+      "knots_y": [
+        0.33901,
+        0.33901,
+        0.33901,
+        0.422752,
+        0.575537,
+        0.586191,
+        0.590256,
+        0.590256
+      ],
+      "n_samples": 284.0,
+      "segment": "league:Bundesliga"
+    },
+    "league:Bundesliga|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.403272,
+          "hi": 0.535,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.297875,
+          "n": 8.0,
+          "prior": 0.347999,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.583873,
+          "hi": 0.625,
+          "hits": 5.0,
+          "lo": 0.535,
+          "mean_pred": 0.5685,
+          "n": 8.0,
+          "prior": 0.560372,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.600447,
+          "hi": 0.716,
+          "hits": 5.0,
+          "lo": 0.625,
+          "mean_pred": 0.672875,
+          "n": 8.0,
+          "prior": 0.586416,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.625202,
+          "hi": 0.761,
+          "hits": 7.0,
+          "lo": 0.716,
+          "mean_pred": 0.74675,
+          "n": 8.0,
+          "prior": 0.58895,
+          "raw_rate": 0.875
+        },
+        {
+          "calibrated": 0.625202,
+          "hi": 0.857,
+          "hits": 4.0,
+          "lo": 0.761,
+          "mean_pred": 0.804625,
+          "n": 8.0,
+          "prior": 0.590256,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.693799,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.857,
+          "mean_pred": 0.909625,
+          "n": 8.0,
+          "prior": 0.590256,
+          "raw_rate": 0.875
+        }
+      ],
+      "knots_x": [
+        0.297875,
+        0.5685,
+        0.672875,
+        0.74675,
+        0.804625,
+        0.909625
+      ],
+      "knots_y": [
+        0.403272,
+        0.583873,
+        0.600447,
+        0.625202,
+        0.625202,
+        0.693799
+      ],
+      "n_samples": 48.0,
+      "segment": "league:Bundesliga|family:double_chance"
+    },
+    "league:Bundesliga|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.306642,
+          "hi": 0.19,
+          "hits": 2.0,
+          "lo": 0.0,
+          "mean_pred": 0.132125,
+          "n": 8.0,
+          "prior": 0.33901,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.306642,
+          "hi": 0.243,
+          "hits": 3.0,
+          "lo": 0.19,
+          "mean_pred": 0.21375,
+          "n": 8.0,
+          "prior": 0.33901,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.306642,
+          "hi": 0.297,
+          "hits": 1.0,
+          "lo": 0.243,
+          "mean_pred": 0.259375,
+          "n": 8.0,
+          "prior": 0.33901,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.386731,
+          "hi": 0.389,
+          "hits": 4.0,
+          "lo": 0.297,
+          "mean_pred": 0.33175,
+          "n": 8.0,
+          "prior": 0.367149,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.386731,
+          "hi": 0.468,
+          "hits": 2.0,
+          "lo": 0.389,
+          "mean_pred": 0.42475,
+          "n": 8.0,
+          "prior": 0.419722,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.552534,
+          "hi": 1.0,
+          "hits": 4.0,
+          "lo": 0.468,
+          "mean_pred": 0.638125,
+          "n": 8.0,
+          "prior": 0.582553,
+          "raw_rate": 0.5
+        }
+      ],
+      "knots_x": [
+        0.132125,
+        0.21375,
+        0.259375,
+        0.33175,
+        0.42475,
+        0.638125
+      ],
+      "knots_y": [
+        0.306642,
+        0.306642,
+        0.306642,
+        0.386731,
+        0.386731,
+        0.552534
+      ],
+      "n_samples": 48.0,
+      "segment": "league:Bundesliga|family:result"
+    },
+    "league:CONMEBOL Sudamericana": {
+      "bins": [
+        {
+          "calibrated": 0.258421,
+          "hi": 0.268,
+          "hits": 5.0,
+          "lo": 0.0,
+          "mean_pred": 0.179389,
+          "n": 18.0,
+          "prior": 0.258653,
+          "raw_rate": 0.277778
+        },
+        {
+          "calibrated": 0.258421,
+          "hi": 0.313,
+          "hits": 3.0,
+          "lo": 0.268,
+          "mean_pred": 0.287118,
+          "n": 17.0,
+          "prior": 0.332815,
+          "raw_rate": 0.176471
+        },
+        {
+          "calibrated": 0.377613,
+          "hi": 0.428,
+          "hits": 7.0,
+          "lo": 0.313,
+          "mean_pred": 0.362158,
+          "n": 19.0,
+          "prior": 0.390088,
+          "raw_rate": 0.368421
+        },
+        {
+          "calibrated": 0.461401,
+          "hi": 0.505,
+          "hits": 9.0,
+          "lo": 0.428,
+          "mean_pred": 0.462611,
+          "n": 18.0,
+          "prior": 0.460702,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.461401,
+          "hi": 0.571,
+          "hits": 7.0,
+          "lo": 0.505,
+          "mean_pred": 0.534,
+          "n": 18.0,
+          "prior": 0.505702,
+          "raw_rate": 0.388889
+        },
+        {
+          "calibrated": 0.594155,
+          "hi": 0.653,
+          "hits": 11.0,
+          "lo": 0.571,
+          "mean_pred": 0.608167,
+          "n": 18.0,
+          "prior": 0.583075,
+          "raw_rate": 0.611111
+        },
+        {
+          "calibrated": 0.594155,
+          "hi": 0.732,
+          "hits": 10.0,
+          "lo": 0.653,
+          "mean_pred": 0.691944,
+          "n": 18.0,
+          "prior": 0.633061,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.764697,
+          "hi": 1.0,
+          "hits": 15.0,
+          "lo": 0.732,
+          "mean_pred": 0.778722,
+          "n": 18.0,
+          "prior": 0.676451,
+          "raw_rate": 0.833333
+        }
+      ],
+      "knots_x": [
+        0.179389,
+        0.287118,
+        0.362158,
+        0.462611,
+        0.534,
+        0.608167,
+        0.691944,
+        0.778722
+      ],
+      "knots_y": [
+        0.258421,
+        0.258421,
+        0.377613,
+        0.461401,
+        0.461401,
+        0.594155,
+        0.594155,
+        0.764697
+      ],
+      "n_samples": 144.0,
+      "segment": "league:CONMEBOL Sudamericana"
+    },
+    "league:Campeonato Brasileiro Série A": {
+      "bins": [
+        {
+          "calibrated": 0.237509,
+          "hi": 0.267,
+          "hits": 14.0,
+          "lo": 0.0,
+          "mean_pred": 0.199689,
+          "n": 61.0,
+          "prior": 0.272372,
+          "raw_rate": 0.229508
+        },
+        {
+          "calibrated": 0.319506,
+          "hi": 0.364,
+          "hits": 19.0,
+          "lo": 0.267,
+          "mean_pred": 0.31541,
+          "n": 61.0,
+          "prior": 0.354495,
+          "raw_rate": 0.311475
+        },
+        {
+          "calibrated": 0.405667,
+          "hi": 0.434,
+          "hits": 25.0,
+          "lo": 0.364,
+          "mean_pred": 0.399274,
+          "n": 62.0,
+          "prior": 0.416477,
+          "raw_rate": 0.403226
+        },
+        {
+          "calibrated": 0.420947,
+          "hi": 0.517,
+          "hits": 25.0,
+          "lo": 0.434,
+          "mean_pred": 0.476344,
+          "n": 61.0,
+          "prior": 0.469358,
+          "raw_rate": 0.409836
+        },
+        {
+          "calibrated": 0.504445,
+          "hi": 0.593,
+          "hits": 30.0,
+          "lo": 0.517,
+          "mean_pred": 0.555433,
+          "n": 60.0,
+          "prior": 0.523497,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.6259,
+          "hi": 0.694,
+          "hits": 39.0,
+          "lo": 0.593,
+          "mean_pred": 0.637839,
+          "n": 62.0,
+          "prior": 0.612027,
+          "raw_rate": 0.629032
+        },
+        {
+          "calibrated": 0.686543,
+          "hi": 0.795,
+          "hits": 43.0,
+          "lo": 0.694,
+          "mean_pred": 0.739984,
+          "n": 62.0,
+          "prior": 0.655521,
+          "raw_rate": 0.693548
+        },
+        {
+          "calibrated": 0.785587,
+          "hi": 1.0,
+          "hits": 49.0,
+          "lo": 0.795,
+          "mean_pred": 0.843541,
+          "n": 61.0,
+          "prior": 0.708501,
+          "raw_rate": 0.803279
+        }
+      ],
+      "knots_x": [
+        0.199689,
+        0.31541,
+        0.399274,
+        0.476344,
+        0.555433,
+        0.637839,
+        0.739984,
+        0.843541
+      ],
+      "knots_y": [
+        0.237509,
+        0.319506,
+        0.405667,
+        0.420947,
+        0.504445,
+        0.6259,
+        0.686543,
+        0.785587
+      ],
+      "n_samples": 490.0,
+      "segment": "league:Campeonato Brasileiro Série A"
+    },
+    "league:Campeonato Brasileiro Série A|family:btts": {
+      "bins": [
+        {
+          "calibrated": 0.381934,
+          "hi": 0.408,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.35575,
+          "n": 8.0,
+          "prior": 0.360951,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.381934,
+          "hi": 0.44,
+          "hits": 2.0,
+          "lo": 0.408,
+          "mean_pred": 0.425375,
+          "n": 8.0,
+          "prior": 0.410842,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.447663,
+          "hi": 0.481,
+          "hits": 4.0,
+          "lo": 0.44,
+          "mean_pred": 0.46025,
+          "n": 8.0,
+          "prior": 0.417756,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.465586,
+          "hi": 0.52,
+          "hits": 4.0,
+          "lo": 0.481,
+          "mean_pred": 0.5,
+          "n": 8.0,
+          "prior": 0.445922,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.492292,
+          "hi": 0.561,
+          "hits": 4.0,
+          "lo": 0.52,
+          "mean_pred": 0.53975,
+          "n": 8.0,
+          "prior": 0.487888,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.597139,
+          "hi": 0.599,
+          "hits": 6.0,
+          "lo": 0.561,
+          "mean_pred": 0.574625,
+          "n": 8.0,
+          "prior": 0.532731,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.597139,
+          "hi": 1.0,
+          "hits": 4.0,
+          "lo": 0.599,
+          "mean_pred": 0.64425,
+          "n": 8.0,
+          "prior": 0.629706,
+          "raw_rate": 0.5
+        }
+      ],
+      "knots_x": [
+        0.35575,
+        0.425375,
+        0.46025,
+        0.5,
+        0.53975,
+        0.574625,
+        0.64425
+      ],
+      "knots_y": [
+        0.381934,
+        0.381934,
+        0.447663,
+        0.465586,
+        0.492292,
+        0.597139,
+        0.597139
+      ],
+      "n_samples": 56.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:btts"
+    },
+    "league:Campeonato Brasileiro Série A|family:cards": {
+      "bins": [
+        {
+          "calibrated": 0.434205,
+          "hi": 0.593,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.482667,
+          "n": 9.0,
+          "prior": 0.427622,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.602407,
+          "hi": 0.739,
+          "hits": 5.0,
+          "lo": 0.593,
+          "mean_pred": 0.649,
+          "n": 9.0,
+          "prior": 0.632526,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.749935,
+          "hi": 0.801,
+          "hits": 7.0,
+          "lo": 0.739,
+          "mean_pred": 0.7665,
+          "n": 8.0,
+          "prior": 0.711904,
+          "raw_rate": 0.875
+        },
+        {
+          "calibrated": 0.749935,
+          "hi": 0.826,
+          "hits": 7.0,
+          "lo": 0.801,
+          "mean_pred": 0.8086,
+          "n": 10.0,
+          "prior": 0.752169,
+          "raw_rate": 0.7
+        },
+        {
+          "calibrated": 0.760792,
+          "hi": 0.879,
+          "hits": 8.0,
+          "lo": 0.826,
+          "mean_pred": 0.845667,
+          "n": 9.0,
+          "prior": 0.785587,
+          "raw_rate": 0.888889
+        },
+        {
+          "calibrated": 0.760792,
+          "hi": 1.0,
+          "hits": 5.0,
+          "lo": 0.879,
+          "mean_pred": 0.894222,
+          "n": 9.0,
+          "prior": 0.785587,
+          "raw_rate": 0.555556
+        }
+      ],
+      "knots_x": [
+        0.482667,
+        0.649,
+        0.7665,
+        0.8086,
+        0.845667,
+        0.894222
+      ],
+      "knots_y": [
+        0.434205,
+        0.602407,
+        0.749935,
+        0.749935,
+        0.760792,
+        0.760792
+      ],
+      "n_samples": 54.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:cards"
+    },
+    "league:Campeonato Brasileiro Série A|family:corners": {
+      "bins": [
+        {
+          "calibrated": 0.151142,
+          "hi": 0.105,
+          "hits": 0.0,
+          "lo": 0.0,
+          "mean_pred": 0.079875,
+          "n": 8.0,
+          "prior": 0.237509,
+          "raw_rate": 0.0
+        },
+        {
+          "calibrated": 0.196597,
+          "hi": 0.254,
+          "hits": 1.0,
+          "lo": 0.105,
+          "mean_pred": 0.184875,
+          "n": 8.0,
+          "prior": 0.237509,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.280544,
+          "hi": 0.439,
+          "hits": 1.0,
+          "lo": 0.254,
+          "mean_pred": 0.364,
+          "n": 8.0,
+          "prior": 0.369427,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.440784,
+          "hi": 0.494,
+          "hits": 4.0,
+          "lo": 0.439,
+          "mean_pred": 0.46225,
+          "n": 8.0,
+          "prior": 0.418153,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.440784,
+          "hi": 0.574,
+          "hits": 3.0,
+          "lo": 0.494,
+          "mean_pred": 0.520125,
+          "n": 8.0,
+          "prior": 0.467169,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.677841,
+          "hi": 0.819,
+          "hits": 6.0,
+          "lo": 0.574,
+          "mean_pred": 0.655875,
+          "n": 8.0,
+          "prior": 0.636608,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.818101,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.819,
+          "mean_pred": 0.849,
+          "n": 8.0,
+          "prior": 0.785587,
+          "raw_rate": 0.875
+        }
+      ],
+      "knots_x": [
+        0.079875,
+        0.184875,
+        0.364,
+        0.46225,
+        0.520125,
+        0.655875,
+        0.849
+      ],
+      "knots_y": [
+        0.151142,
+        0.196597,
+        0.280544,
+        0.440784,
+        0.440784,
+        0.677841,
+        0.818101
+      ],
+      "n_samples": 56.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:corners"
+    },
+    "league:Campeonato Brasileiro Série A|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.407773,
+          "hi": 0.532,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.4379,
+          "n": 10.0,
+          "prior": 0.413325,
+          "raw_rate": 0.4
+        },
+        {
+          "calibrated": 0.578939,
+          "hi": 0.618,
+          "hits": 7.0,
+          "lo": 0.532,
+          "mean_pred": 0.575364,
+          "n": 11.0,
+          "prior": 0.53382,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.629511,
+          "hi": 0.652,
+          "hits": 7.0,
+          "lo": 0.618,
+          "mean_pred": 0.636636,
+          "n": 11.0,
+          "prior": 0.624128,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.677737,
+          "hi": 0.696,
+          "hits": 8.0,
+          "lo": 0.652,
+          "mean_pred": 0.6697,
+          "n": 10.0,
+          "prior": 0.644816,
+          "raw_rate": 0.8
+        },
+        {
+          "calibrated": 0.677737,
+          "hi": 0.719,
+          "hits": 8.0,
+          "lo": 0.696,
+          "mean_pred": 0.7094,
+          "n": 10.0,
+          "prior": 0.668386,
+          "raw_rate": 0.8
+        },
+        {
+          "calibrated": 0.677737,
+          "hi": 0.737,
+          "hits": 6.0,
+          "lo": 0.719,
+          "mean_pred": 0.728182,
+          "n": 11.0,
+          "prior": 0.679536,
+          "raw_rate": 0.545455
+        },
+        {
+          "calibrated": 0.677737,
+          "hi": 0.779,
+          "hits": 6.0,
+          "lo": 0.737,
+          "mean_pred": 0.7572,
+          "n": 10.0,
+          "prior": 0.703009,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.822159,
+          "hi": 1.0,
+          "hits": 10.0,
+          "lo": 0.779,
+          "mean_pred": 0.810364,
+          "n": 11.0,
+          "prior": 0.753856,
+          "raw_rate": 0.909091
+        }
+      ],
+      "knots_x": [
+        0.4379,
+        0.575364,
+        0.636636,
+        0.6697,
+        0.7094,
+        0.728182,
+        0.7572,
+        0.810364
+      ],
+      "knots_y": [
+        0.407773,
+        0.578939,
+        0.629511,
+        0.677737,
+        0.677737,
+        0.677737,
+        0.677737,
+        0.822159
+      ],
+      "n_samples": 84.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:double_chance"
+    },
+    "league:Campeonato Brasileiro Série A|family:goals": {
+      "bins": [
+        {
+          "calibrated": 0.213195,
+          "hi": 0.517,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.2365,
+          "n": 8.0,
+          "prior": 0.263593,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.396764,
+          "hi": 0.574,
+          "hits": 2.0,
+          "lo": 0.517,
+          "mean_pred": 0.532875,
+          "n": 8.0,
+          "prior": 0.480629,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.508905,
+          "hi": 0.668,
+          "hits": 3.0,
+          "lo": 0.574,
+          "mean_pred": 0.610375,
+          "n": 8.0,
+          "prior": 0.585422,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.682975,
+          "hi": 0.743,
+          "hits": 6.0,
+          "lo": 0.668,
+          "mean_pred": 0.689625,
+          "n": 8.0,
+          "prior": 0.656645,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.682975,
+          "hi": 0.775,
+          "hits": 5.0,
+          "lo": 0.743,
+          "mean_pred": 0.758375,
+          "n": 8.0,
+          "prior": 0.704133,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.800882,
+          "hi": 0.856,
+          "hits": 7.0,
+          "lo": 0.775,
+          "mean_pred": 0.81525,
+          "n": 8.0,
+          "prior": 0.758529,
+          "raw_rate": 0.875
+        },
+        {
+          "calibrated": 0.818101,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.856,
+          "mean_pred": 0.872625,
+          "n": 8.0,
+          "prior": 0.785587,
+          "raw_rate": 0.875
+        }
+      ],
+      "knots_x": [
+        0.2365,
+        0.532875,
+        0.610375,
+        0.689625,
+        0.758375,
+        0.81525,
+        0.872625
+      ],
+      "knots_y": [
+        0.213195,
+        0.396764,
+        0.508905,
+        0.682975,
+        0.682975,
+        0.800882,
+        0.818101
+      ],
+      "n_samples": 56.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:goals"
+    },
+    "league:Campeonato Brasileiro Série A|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.187948,
+          "hi": 0.241,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.2184,
+          "n": 10.0,
+          "prior": 0.250768,
+          "raw_rate": 0.1
+        },
+        {
+          "calibrated": 0.297732,
+          "hi": 0.264,
+          "hits": 4.0,
+          "lo": 0.241,
+          "mean_pred": 0.2494,
+          "n": 10.0,
+          "prior": 0.272733,
+          "raw_rate": 0.4
+        },
+        {
+          "calibrated": 0.297732,
+          "hi": 0.276,
+          "hits": 5.0,
+          "lo": 0.264,
+          "mean_pred": 0.268636,
+          "n": 11.0,
+          "prior": 0.286364,
+          "raw_rate": 0.454545
+        },
+        {
+          "calibrated": 0.297732,
+          "hi": 0.308,
+          "hits": 1.0,
+          "lo": 0.276,
+          "mean_pred": 0.288364,
+          "n": 11.0,
+          "prior": 0.300342,
+          "raw_rate": 0.090909
+        },
+        {
+          "calibrated": 0.320122,
+          "hi": 0.35,
+          "hits": 3.0,
+          "lo": 0.308,
+          "mean_pred": 0.33,
+          "n": 10.0,
+          "prior": 0.334496,
+          "raw_rate": 0.3
+        },
+        {
+          "calibrated": 0.32782,
+          "hi": 0.388,
+          "hits": 3.0,
+          "lo": 0.35,
+          "mean_pred": 0.365636,
+          "n": 11.0,
+          "prior": 0.371108,
+          "raw_rate": 0.272727
+        },
+        {
+          "calibrated": 0.429636,
+          "hi": 0.477,
+          "hits": 5.0,
+          "lo": 0.388,
+          "mean_pred": 0.421455,
+          "n": 11.0,
+          "prior": 0.410064,
+          "raw_rate": 0.454545
+        },
+        {
+          "calibrated": 0.524717,
+          "hi": 1.0,
+          "hits": 6.0,
+          "lo": 0.477,
+          "mean_pred": 0.5237,
+          "n": 10.0,
+          "prior": 0.470943,
+          "raw_rate": 0.6
+        }
+      ],
+      "knots_x": [
+        0.2184,
+        0.2494,
+        0.268636,
+        0.288364,
+        0.33,
+        0.365636,
+        0.421455,
+        0.5237
+      ],
+      "knots_y": [
+        0.187948,
+        0.297732,
+        0.297732,
+        0.297732,
+        0.320122,
+        0.32782,
+        0.429636,
+        0.524717
+      ],
+      "n_samples": 84.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:result"
+    },
+    "league:Campeonato Brasileiro Série A|family:shots": {
+      "bins": [
+        {
+          "calibrated": 0.216521,
+          "hi": 0.306,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.243875,
+          "n": 8.0,
+          "prior": 0.268819,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.370987,
+          "hi": 0.342,
+          "hits": 4.0,
+          "lo": 0.306,
+          "mean_pred": 0.319556,
+          "n": 9.0,
+          "prior": 0.323765,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.381607,
+          "hi": 0.363,
+          "hits": 3.0,
+          "lo": 0.342,
+          "mean_pred": 0.353,
+          "n": 7.0,
+          "prior": 0.358125,
+          "raw_rate": 0.428571
+        },
+        {
+          "calibrated": 0.432454,
+          "hi": 0.396,
+          "hits": 5.0,
+          "lo": 0.363,
+          "mean_pred": 0.372556,
+          "n": 9.0,
+          "prior": 0.378216,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.432454,
+          "hi": 0.438,
+          "hits": 4.0,
+          "lo": 0.396,
+          "mean_pred": 0.410333,
+          "n": 9.0,
+          "prior": 0.407859,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.432454,
+          "hi": 1.0,
+          "hits": 3.0,
+          "lo": 0.438,
+          "mean_pred": 0.51075,
+          "n": 8.0,
+          "prior": 0.457271,
+          "raw_rate": 0.375
+        }
+      ],
+      "knots_x": [
+        0.243875,
+        0.319556,
+        0.353,
+        0.372556,
+        0.410333,
+        0.51075
+      ],
+      "knots_y": [
+        0.216521,
+        0.370987,
+        0.381607,
+        0.432454,
+        0.432454,
+        0.432454
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:shots"
+    },
+    "league:Campeonato Brasileiro Série A|family:shots_target": {
+      "bins": [
+        {
+          "calibrated": 0.347433,
+          "hi": 0.267,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.242375,
+          "n": 8.0,
+          "prior": 0.267756,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.347433,
+          "hi": 0.426,
+          "hits": 3.0,
+          "lo": 0.267,
+          "mean_pred": 0.344111,
+          "n": 9.0,
+          "prior": 0.348993,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.40265,
+          "hi": 0.501,
+          "hits": 3.0,
+          "lo": 0.426,
+          "mean_pred": 0.46375,
+          "n": 8.0,
+          "prior": 0.41845,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.497499,
+          "hi": 0.573,
+          "hits": 4.0,
+          "lo": 0.501,
+          "mean_pred": 0.5475,
+          "n": 8.0,
+          "prior": 0.49607,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.579491,
+          "hi": 0.629,
+          "hits": 6.0,
+          "lo": 0.573,
+          "mean_pred": 0.604778,
+          "n": 9.0,
+          "prior": 0.577172,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.579491,
+          "hi": 1.0,
+          "hits": 3.0,
+          "lo": 0.629,
+          "mean_pred": 0.666,
+          "n": 8.0,
+          "prior": 0.642619,
+          "raw_rate": 0.375
+        }
+      ],
+      "knots_x": [
+        0.242375,
+        0.344111,
+        0.46375,
+        0.5475,
+        0.604778,
+        0.666
+      ],
+      "knots_y": [
+        0.347433,
+        0.347433,
+        0.40265,
+        0.497499,
+        0.579491,
+        0.579491
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Campeonato Brasileiro Série A|family:shots_target"
+    },
+    "league:Canadian Premier League": {
+      "bins": [
+        {
+          "calibrated": 0.196297,
+          "hi": 0.252,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.1889,
+          "n": 10.0,
+          "prior": 0.265081,
+          "raw_rate": 0.1
+        },
+        {
+          "calibrated": 0.230973,
+          "hi": 0.31,
+          "hits": 1.0,
+          "lo": 0.252,
+          "mean_pred": 0.2763,
+          "n": 10.0,
+          "prior": 0.324525,
+          "raw_rate": 0.1
+        },
+        {
+          "calibrated": 0.359499,
+          "hi": 0.421,
+          "hits": 3.0,
+          "lo": 0.31,
+          "mean_pred": 0.343889,
+          "n": 9.0,
+          "prior": 0.376319,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.474976,
+          "hi": 0.497,
+          "hits": 5.0,
+          "lo": 0.421,
+          "mean_pred": 0.4569,
+          "n": 10.0,
+          "prior": 0.457102,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.547089,
+          "hi": 0.578,
+          "hits": 6.0,
+          "lo": 0.497,
+          "mean_pred": 0.5397,
+          "n": 10.0,
+          "prior": 0.509295,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.636286,
+          "hi": 0.704,
+          "hits": 6.0,
+          "lo": 0.578,
+          "mean_pred": 0.65,
+          "n": 9.0,
+          "prior": 0.616755,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.700881,
+          "hi": 0.777,
+          "hits": 7.0,
+          "lo": 0.704,
+          "mean_pred": 0.732444,
+          "n": 9.0,
+          "prior": 0.651448,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.790118,
+          "hi": 1.0,
+          "hits": 10.0,
+          "lo": 0.777,
+          "mean_pred": 0.816091,
+          "n": 11.0,
+          "prior": 0.69664,
+          "raw_rate": 0.909091
+        }
+      ],
+      "knots_x": [
+        0.1889,
+        0.2763,
+        0.343889,
+        0.4569,
+        0.5397,
+        0.65,
+        0.732444,
+        0.816091
+      ],
+      "knots_y": [
+        0.196297,
+        0.230973,
+        0.359499,
+        0.474976,
+        0.547089,
+        0.636286,
+        0.700881,
+        0.790118
+      ],
+      "n_samples": 78.0,
+      "segment": "league:Canadian Premier League"
+    },
+    "league:División Profesional": {
+      "bins": [
+        {
+          "calibrated": 0.192894,
+          "hi": 0.251,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.193143,
+          "n": 21.0,
+          "prior": 0.267948,
+          "raw_rate": 0.142857
+        },
+        {
+          "calibrated": 0.281216,
+          "hi": 0.374,
+          "hits": 5.0,
+          "lo": 0.251,
+          "mean_pred": 0.30419,
+          "n": 21.0,
+          "prior": 0.345898,
+          "raw_rate": 0.238095
+        },
+        {
+          "calibrated": 0.470578,
+          "hi": 0.46,
+          "hits": 10.0,
+          "lo": 0.374,
+          "mean_pred": 0.41625,
+          "n": 20.0,
+          "prior": 0.428546,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.502999,
+          "hi": 0.514,
+          "hits": 11.0,
+          "lo": 0.46,
+          "mean_pred": 0.48019,
+          "n": 21.0,
+          "prior": 0.471783,
+          "raw_rate": 0.52381
+        },
+        {
+          "calibrated": 0.534368,
+          "hi": 0.588,
+          "hits": 11.0,
+          "lo": 0.514,
+          "mean_pred": 0.54405,
+          "n": 20.0,
+          "prior": 0.512037,
+          "raw_rate": 0.55
+        },
+        {
+          "calibrated": 0.580875,
+          "hi": 0.669,
+          "hits": 12.0,
+          "lo": 0.588,
+          "mean_pred": 0.618762,
+          "n": 21.0,
+          "prior": 0.595046,
+          "raw_rate": 0.571429
+        },
+        {
+          "calibrated": 0.741872,
+          "hi": 0.754,
+          "hits": 17.0,
+          "lo": 0.669,
+          "mean_pred": 0.71081,
+          "n": 21.0,
+          "prior": 0.640395,
+          "raw_rate": 0.809524
+        },
+        {
+          "calibrated": 0.787828,
+          "hi": 1.0,
+          "hits": 18.0,
+          "lo": 0.754,
+          "mean_pred": 0.792429,
+          "n": 21.0,
+          "prior": 0.683856,
+          "raw_rate": 0.857143
+        }
+      ],
+      "knots_x": [
+        0.193143,
+        0.30419,
+        0.41625,
+        0.48019,
+        0.54405,
+        0.618762,
+        0.71081,
+        0.792429
+      ],
+      "knots_y": [
+        0.192894,
+        0.281216,
+        0.470578,
+        0.502999,
+        0.534368,
+        0.580875,
+        0.741872,
+        0.787828
+      ],
+      "n_samples": 166.0,
+      "segment": "league:División Profesional"
+    },
+    "league:División Profesional|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.440461,
+          "hi": 0.531,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.430625,
+          "n": 8.0,
+          "prior": 0.477867,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.564238,
+          "hi": 0.705,
+          "hits": 5.0,
+          "lo": 0.531,
+          "mean_pred": 0.601,
+          "n": 9.0,
+          "prior": 0.569819,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.701681,
+          "hi": 0.74,
+          "hits": 5.0,
+          "lo": 0.705,
+          "mean_pred": 0.71725,
+          "n": 8.0,
+          "prior": 0.745499,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.772629,
+          "hi": 0.783,
+          "hits": 7.0,
+          "lo": 0.74,
+          "mean_pred": 0.759556,
+          "n": 9.0,
+          "prior": 0.769319,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.864981,
+          "hi": 1.0,
+          "hits": 8.0,
+          "lo": 0.783,
+          "mean_pred": 0.821125,
+          "n": 8.0,
+          "prior": 0.787828,
+          "raw_rate": 1.0
+        }
+      ],
+      "knots_x": [
+        0.430625,
+        0.601,
+        0.71725,
+        0.759556,
+        0.821125
+      ],
+      "knots_y": [
+        0.440461,
+        0.564238,
+        0.701681,
+        0.772629,
+        0.864981
+      ],
+      "n_samples": 42.0,
+      "segment": "league:División Profesional|family:double_chance"
+    },
+    "league:División Profesional|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.172878,
+          "hi": 0.24,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.202375,
+          "n": 8.0,
+          "prior": 0.200237,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.189117,
+          "hi": 0.268,
+          "hits": 1.0,
+          "lo": 0.24,
+          "mean_pred": 0.251444,
+          "n": 9.0,
+          "prior": 0.239264,
+          "raw_rate": 0.111111
+        },
+        {
+          "calibrated": 0.307947,
+          "hi": 0.35,
+          "hits": 3.0,
+          "lo": 0.268,
+          "mean_pred": 0.289625,
+          "n": 8.0,
+          "prior": 0.269631,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.43838,
+          "hi": 0.465,
+          "hits": 4.0,
+          "lo": 0.35,
+          "mean_pred": 0.394889,
+          "n": 9.0,
+          "prior": 0.434481,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.563168,
+          "hi": 1.0,
+          "hits": 5.0,
+          "lo": 0.465,
+          "mean_pred": 0.53075,
+          "n": 8.0,
+          "prior": 0.527835,
+          "raw_rate": 0.625
+        }
+      ],
+      "knots_x": [
+        0.202375,
+        0.251444,
+        0.289625,
+        0.394889,
+        0.53075
+      ],
+      "knots_y": [
+        0.172878,
+        0.189117,
+        0.307947,
+        0.43838,
+        0.563168
+      ],
+      "n_samples": 42.0,
+      "segment": "league:División Profesional|family:result"
+    },
+    "league:LaLiga": {
+      "bins": [
+        {
+          "calibrated": 0.211412,
+          "hi": 0.139,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.056933,
+          "n": 15.0,
+          "prior": 0.22364,
+          "raw_rate": 0.2
+        },
+        {
+          "calibrated": 0.336966,
+          "hi": 0.272,
+          "hits": 6.0,
+          "lo": 0.139,
+          "mean_pred": 0.195333,
+          "n": 15.0,
+          "prior": 0.269429,
+          "raw_rate": 0.4
+        },
+        {
+          "calibrated": 0.41183,
+          "hi": 0.381,
+          "hits": 8.0,
+          "lo": 0.272,
+          "mean_pred": 0.314,
+          "n": 16.0,
+          "prior": 0.353415,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.41183,
+          "hi": 0.498,
+          "hits": 5.0,
+          "lo": 0.381,
+          "mean_pred": 0.451467,
+          "n": 15.0,
+          "prior": 0.453583,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.523605,
+          "hi": 0.599,
+          "hits": 8.0,
+          "lo": 0.498,
+          "mean_pred": 0.545867,
+          "n": 15.0,
+          "prior": 0.513182,
+          "raw_rate": 0.533333
+        },
+        {
+          "calibrated": 0.59207,
+          "hi": 0.72,
+          "hits": 10.0,
+          "lo": 0.599,
+          "mean_pred": 0.651687,
+          "n": 16.0,
+          "prior": 0.617411,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.59207,
+          "hi": 0.823,
+          "hits": 7.0,
+          "lo": 0.72,
+          "mean_pred": 0.754667,
+          "n": 15.0,
+          "prior": 0.663454,
+          "raw_rate": 0.466667
+        },
+        {
+          "calibrated": 0.617897,
+          "hi": 1.0,
+          "hits": 8.0,
+          "lo": 0.823,
+          "mean_pred": 0.8754,
+          "n": 15.0,
+          "prior": 0.708501,
+          "raw_rate": 0.533333
+        }
+      ],
+      "knots_x": [
+        0.056933,
+        0.195333,
+        0.314,
+        0.451467,
+        0.545867,
+        0.651687,
+        0.754667,
+        0.8754
+      ],
+      "knots_y": [
+        0.211412,
+        0.336966,
+        0.41183,
+        0.41183,
+        0.523605,
+        0.59207,
+        0.59207,
+        0.617897
+      ],
+      "n_samples": 122.0,
+      "segment": "league:LaLiga"
+    },
+    "league:Liga MX, Apertura": {
+      "bins": [
+        {
+          "calibrated": 0.298258,
+          "hi": 0.257,
+          "hits": 7.0,
+          "lo": 0.0,
+          "mean_pred": 0.1743,
+          "n": 20.0,
+          "prior": 0.255214,
+          "raw_rate": 0.35
+        },
+        {
+          "calibrated": 0.298258,
+          "hi": 0.352,
+          "hits": 5.0,
+          "lo": 0.257,
+          "mean_pred": 0.2917,
+          "n": 20.0,
+          "prior": 0.336326,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.465586,
+          "hi": 0.439,
+          "hits": 10.0,
+          "lo": 0.352,
+          "mean_pred": 0.383263,
+          "n": 19.0,
+          "prior": 0.405093,
+          "raw_rate": 0.526316
+        },
+        {
+          "calibrated": 0.465586,
+          "hi": 0.522,
+          "hits": 9.0,
+          "lo": 0.439,
+          "mean_pred": 0.4709,
+          "n": 20.0,
+          "prior": 0.465927,
+          "raw_rate": 0.45
+        },
+        {
+          "calibrated": 0.494962,
+          "hi": 0.609,
+          "hits": 9.0,
+          "lo": 0.522,
+          "mean_pred": 0.555737,
+          "n": 19.0,
+          "prior": 0.52384,
+          "raw_rate": 0.473684
+        },
+        {
+          "calibrated": 0.605058,
+          "hi": 0.691,
+          "hits": 12.0,
+          "lo": 0.609,
+          "mean_pred": 0.6385,
+          "n": 20.0,
+          "prior": 0.612284,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.707307,
+          "hi": 0.781,
+          "hits": 15.0,
+          "lo": 0.691,
+          "mean_pred": 0.72295,
+          "n": 20.0,
+          "prior": 0.646318,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.762324,
+          "hi": 1.0,
+          "hits": 16.0,
+          "lo": 0.781,
+          "mean_pred": 0.87935,
+          "n": 20.0,
+          "prior": 0.708501,
+          "raw_rate": 0.8
+        }
+      ],
+      "knots_x": [
+        0.1743,
+        0.2917,
+        0.383263,
+        0.4709,
+        0.555737,
+        0.6385,
+        0.72295,
+        0.87935
+      ],
+      "knots_y": [
+        0.298258,
+        0.298258,
+        0.465586,
+        0.465586,
+        0.494962,
+        0.605058,
+        0.707307,
+        0.762324
+      ],
+      "n_samples": 158.0,
+      "segment": "league:Liga MX, Apertura"
+    },
+    "league:Liga Profesional de Fútbol": {
+      "bins": [
+        {
+          "calibrated": 0.16845,
+          "hi": 0.266,
+          "hits": 6.0,
+          "lo": 0.0,
+          "mean_pred": 0.177326,
+          "n": 43.0,
+          "prior": 0.257259,
+          "raw_rate": 0.139535
+        },
+        {
+          "calibrated": 0.370063,
+          "hi": 0.33,
+          "hits": 16.0,
+          "lo": 0.266,
+          "mean_pred": 0.293095,
+          "n": 42.0,
+          "prior": 0.337395,
+          "raw_rate": 0.380952
+        },
+        {
+          "calibrated": 0.438834,
+          "hi": 0.387,
+          "hits": 21.0,
+          "lo": 0.33,
+          "mean_pred": 0.355581,
+          "n": 43.0,
+          "prior": 0.38528,
+          "raw_rate": 0.488372
+        },
+        {
+          "calibrated": 0.438834,
+          "hi": 0.447,
+          "hits": 18.0,
+          "lo": 0.387,
+          "mean_pred": 0.41369,
+          "n": 42.0,
+          "prior": 0.426726,
+          "raw_rate": 0.428571
+        },
+        {
+          "calibrated": 0.438834,
+          "hi": 0.528,
+          "hits": 18.0,
+          "lo": 0.447,
+          "mean_pred": 0.487841,
+          "n": 44.0,
+          "prior": 0.476605,
+          "raw_rate": 0.409091
+        },
+        {
+          "calibrated": 0.530677,
+          "hi": 0.627,
+          "hits": 22.0,
+          "lo": 0.528,
+          "mean_pred": 0.580024,
+          "n": 42.0,
+          "prior": 0.551279,
+          "raw_rate": 0.52381
+        },
+        {
+          "calibrated": 0.557131,
+          "hi": 0.734,
+          "hits": 23.0,
+          "lo": 0.627,
+          "mean_pred": 0.672395,
+          "n": 43.0,
+          "prior": 0.625461,
+          "raw_rate": 0.534884
+        },
+        {
+          "calibrated": 0.748093,
+          "hi": 1.0,
+          "hits": 33.0,
+          "lo": 0.734,
+          "mean_pred": 0.801326,
+          "n": 43.0,
+          "prior": 0.688663,
+          "raw_rate": 0.767442
+        }
+      ],
+      "knots_x": [
+        0.177326,
+        0.293095,
+        0.355581,
+        0.41369,
+        0.487841,
+        0.580024,
+        0.672395,
+        0.801326
+      ],
+      "knots_y": [
+        0.16845,
+        0.370063,
+        0.438834,
+        0.438834,
+        0.438834,
+        0.530677,
+        0.557131,
+        0.748093
+      ],
+      "n_samples": 342.0,
+      "segment": "league:Liga Profesional de Fútbol"
+    },
+    "league:Liga Profesional de Fútbol|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.531596,
+          "hi": 0.594,
+          "hits": 5.0,
+          "lo": 0.0,
+          "mean_pred": 0.527375,
+          "n": 8.0,
+          "prior": 0.478222,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.550161,
+          "hi": 0.627,
+          "hits": 5.0,
+          "lo": 0.594,
+          "mean_pred": 0.610125,
+          "n": 8.0,
+          "prior": 0.539298,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.550161,
+          "hi": 0.645,
+          "hits": 4.0,
+          "lo": 0.627,
+          "mean_pred": 0.63675,
+          "n": 8.0,
+          "prior": 0.546923,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.554489,
+          "hi": 0.675,
+          "hits": 5.0,
+          "lo": 0.645,
+          "mean_pred": 0.660778,
+          "n": 9.0,
+          "prior": 0.553804,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.646686,
+          "hi": 0.731,
+          "hits": 6.0,
+          "lo": 0.675,
+          "mean_pred": 0.693,
+          "n": 8.0,
+          "prior": 0.587649,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.741493,
+          "hi": 0.748,
+          "hits": 8.0,
+          "lo": 0.731,
+          "mean_pred": 0.737625,
+          "n": 8.0,
+          "prior": 0.653744,
+          "raw_rate": 1.0
+        },
+        {
+          "calibrated": 0.741493,
+          "hi": 1.0,
+          "hits": 5.0,
+          "lo": 0.748,
+          "mean_pred": 0.80175,
+          "n": 8.0,
+          "prior": 0.748093,
+          "raw_rate": 0.625
+        }
+      ],
+      "knots_x": [
+        0.527375,
+        0.610125,
+        0.63675,
+        0.660778,
+        0.693,
+        0.737625,
+        0.80175
+      ],
+      "knots_y": [
+        0.531596,
+        0.550161,
+        0.550161,
+        0.554489,
+        0.646686,
+        0.741493,
+        0.741493
+      ],
+      "n_samples": 57.0,
+      "segment": "league:Liga Profesional de Fútbol|family:double_chance"
+    },
+    "league:Liga Profesional de Fútbol|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.21061,
+          "hi": 0.269,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.229625,
+          "n": 8.0,
+          "prior": 0.259529,
+          "raw_rate": 0.125
+        },
+        {
+          "calibrated": 0.309121,
+          "hi": 0.294,
+          "hits": 2.0,
+          "lo": 0.269,
+          "mean_pred": 0.2775,
+          "n": 8.0,
+          "prior": 0.342904,
+          "raw_rate": 0.25
+        },
+        {
+          "calibrated": 0.348376,
+          "hi": 0.31,
+          "hits": 2.0,
+          "lo": 0.294,
+          "mean_pred": 0.301857,
+          "n": 7.0,
+          "prior": 0.379706,
+          "raw_rate": 0.285714
+        },
+        {
+          "calibrated": 0.375947,
+          "hi": 0.334,
+          "hits": 3.0,
+          "lo": 0.31,
+          "mean_pred": 0.323333,
+          "n": 9.0,
+          "prior": 0.403342,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.394482,
+          "hi": 0.381,
+          "hits": 3.0,
+          "lo": 0.334,
+          "mean_pred": 0.351,
+          "n": 9.0,
+          "prior": 0.433791,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.461076,
+          "hi": 0.396,
+          "hits": 4.0,
+          "lo": 0.381,
+          "mean_pred": 0.388429,
+          "n": 7.0,
+          "prior": 0.438834,
+          "raw_rate": 0.571429
+        },
+        {
+          "calibrated": 0.461076,
+          "hi": 1.0,
+          "hits": 4.0,
+          "lo": 0.396,
+          "mean_pred": 0.449,
+          "n": 9.0,
+          "prior": 0.438834,
+          "raw_rate": 0.444444
+        }
+      ],
+      "knots_x": [
+        0.229625,
+        0.2775,
+        0.301857,
+        0.323333,
+        0.351,
+        0.388429,
+        0.449
+      ],
+      "knots_y": [
+        0.21061,
+        0.309121,
+        0.348376,
+        0.375947,
+        0.394482,
+        0.461076,
+        0.461076
+      ],
+      "n_samples": 57.0,
+      "segment": "league:Liga Profesional de Fútbol|family:result"
+    },
+    "league:Liga de Primera": {
+      "bins": [
+        {
+          "calibrated": 0.21379,
+          "hi": 0.223,
+          "hits": 2.0,
+          "lo": 0.0,
+          "mean_pred": 0.1209,
+          "n": 10.0,
+          "prior": 0.22364,
+          "raw_rate": 0.2
+        },
+        {
+          "calibrated": 0.275867,
+          "hi": 0.294,
+          "hits": 2.0,
+          "lo": 0.223,
+          "mean_pred": 0.255889,
+          "n": 9.0,
+          "prior": 0.310353,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.368212,
+          "hi": 0.4,
+          "hits": 4.0,
+          "lo": 0.294,
+          "mean_pred": 0.338,
+          "n": 11.0,
+          "prior": 0.371807,
+          "raw_rate": 0.363636
+        },
+        {
+          "calibrated": 0.444628,
+          "hi": 0.494,
+          "hits": 5.0,
+          "lo": 0.4,
+          "mean_pred": 0.427909,
+          "n": 11.0,
+          "prior": 0.436835,
+          "raw_rate": 0.454545
+        },
+        {
+          "calibrated": 0.589748,
+          "hi": 0.573,
+          "hits": 7.0,
+          "lo": 0.494,
+          "mean_pred": 0.5424,
+          "n": 10.0,
+          "prior": 0.510997,
+          "raw_rate": 0.7
+        },
+        {
+          "calibrated": 0.64889,
+          "hi": 0.675,
+          "hits": 8.0,
+          "lo": 0.573,
+          "mean_pred": 0.611909,
+          "n": 11.0,
+          "prior": 0.587303,
+          "raw_rate": 0.727273
+        },
+        {
+          "calibrated": 0.664616,
+          "hi": 0.752,
+          "hits": 7.0,
+          "lo": 0.675,
+          "mean_pred": 0.7081,
+          "n": 10.0,
+          "prior": 0.639342,
+          "raw_rate": 0.7
+        },
+        {
+          "calibrated": 0.693315,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.752,
+          "mean_pred": 0.8011,
+          "n": 10.0,
+          "prior": 0.688541,
+          "raw_rate": 0.7
+        }
+      ],
+      "knots_x": [
+        0.1209,
+        0.255889,
+        0.338,
+        0.427909,
+        0.5424,
+        0.611909,
+        0.7081,
+        0.8011
+      ],
+      "knots_y": [
+        0.21379,
+        0.275867,
+        0.368212,
+        0.444628,
+        0.589748,
+        0.64889,
+        0.664616,
+        0.693315
+      ],
+      "n_samples": 82.0,
+      "segment": "league:Liga de Primera"
+    },
+    "league:LigaPro Serie A": {
+      "bins": [
+        {
+          "calibrated": 0.146055,
+          "hi": 0.272,
+          "hits": 5.0,
+          "lo": 0.0,
+          "mean_pred": 0.178978,
+          "n": 45.0,
+          "prior": 0.258375,
+          "raw_rate": 0.111111
+        },
+        {
+          "calibrated": 0.351904,
+          "hi": 0.326,
+          "hits": 16.0,
+          "lo": 0.272,
+          "mean_pred": 0.296711,
+          "n": 45.0,
+          "prior": 0.340166,
+          "raw_rate": 0.355556
+        },
+        {
+          "calibrated": 0.396676,
+          "hi": 0.39,
+          "hits": 18.0,
+          "lo": 0.326,
+          "mean_pred": 0.356511,
+          "n": 45.0,
+          "prior": 0.385992,
+          "raw_rate": 0.4
+        },
+        {
+          "calibrated": 0.428689,
+          "hi": 0.51,
+          "hits": 19.0,
+          "lo": 0.39,
+          "mean_pred": 0.445689,
+          "n": 45.0,
+          "prior": 0.449476,
+          "raw_rate": 0.422222
+        },
+        {
+          "calibrated": 0.62678,
+          "hi": 0.604,
+          "hits": 30.0,
+          "lo": 0.51,
+          "mean_pred": 0.560067,
+          "n": 45.0,
+          "prior": 0.528732,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.62678,
+          "hi": 0.664,
+          "hits": 28.0,
+          "lo": 0.604,
+          "mean_pred": 0.635889,
+          "n": 45.0,
+          "prior": 0.611269,
+          "raw_rate": 0.622222
+        },
+        {
+          "calibrated": 0.676133,
+          "hi": 0.724,
+          "hits": 31.0,
+          "lo": 0.664,
+          "mean_pred": 0.697267,
+          "n": 45.0,
+          "prior": 0.63513,
+          "raw_rate": 0.688889
+        },
+        {
+          "calibrated": 0.721076,
+          "hi": 1.0,
+          "hits": 33.0,
+          "lo": 0.724,
+          "mean_pred": 0.7884,
+          "n": 45.0,
+          "prior": 0.681679,
+          "raw_rate": 0.733333
+        }
+      ],
+      "knots_x": [
+        0.178978,
+        0.296711,
+        0.356511,
+        0.445689,
+        0.560067,
+        0.635889,
+        0.697267,
+        0.7884
+      ],
+      "knots_y": [
+        0.146055,
+        0.351904,
+        0.396676,
+        0.428689,
+        0.62678,
+        0.62678,
+        0.676133,
+        0.721076
+      ],
+      "n_samples": 360.0,
+      "segment": "league:LigaPro Serie A"
+    },
+    "league:LigaPro Serie A|family:btts": {
+      "bins": [
+        {
+          "calibrated": 0.370649,
+          "hi": 0.371,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.281111,
+          "n": 9.0,
+          "prior": 0.324628,
+          "raw_rate": 0.444444
+        },
+        {
+          "calibrated": 0.370649,
+          "hi": 0.412,
+          "hits": 3.0,
+          "lo": 0.371,
+          "mean_pred": 0.3905,
+          "n": 8.0,
+          "prior": 0.408877,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.370649,
+          "hi": 0.474,
+          "hits": 2.0,
+          "lo": 0.412,
+          "mean_pred": 0.432444,
+          "n": 9.0,
+          "prior": 0.423935,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.514478,
+          "hi": 0.533,
+          "hits": 4.0,
+          "lo": 0.474,
+          "mean_pred": 0.5,
+          "n": 8.0,
+          "prior": 0.52275,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.649485,
+          "hi": 0.589,
+          "hits": 7.0,
+          "lo": 0.533,
+          "mean_pred": 0.567556,
+          "n": 9.0,
+          "prior": 0.62678,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.649485,
+          "hi": 0.644,
+          "hits": 5.0,
+          "lo": 0.589,
+          "mean_pred": 0.6095,
+          "n": 8.0,
+          "prior": 0.62678,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.649485,
+          "hi": 1.0,
+          "hits": 5.0,
+          "lo": 0.644,
+          "mean_pred": 0.718889,
+          "n": 9.0,
+          "prior": 0.686796,
+          "raw_rate": 0.555556
+        }
+      ],
+      "knots_x": [
+        0.281111,
+        0.3905,
+        0.432444,
+        0.5,
+        0.567556,
+        0.6095,
+        0.718889
+      ],
+      "knots_y": [
+        0.370649,
+        0.370649,
+        0.370649,
+        0.514478,
+        0.649485,
+        0.649485,
+        0.649485
+      ],
+      "n_samples": 60.0,
+      "segment": "league:LigaPro Serie A|family:btts"
+    },
+    "league:LigaPro Serie A|family:corners": {
+      "bins": [
+        {
+          "calibrated": 0.132642,
+          "hi": 0.207,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.179222,
+          "n": 9.0,
+          "prior": 0.146483,
+          "raw_rate": 0.111111
+        },
+        {
+          "calibrated": 0.183814,
+          "hi": 0.236,
+          "hits": 1.0,
+          "lo": 0.207,
+          "mean_pred": 0.212286,
+          "n": 7.0,
+          "prior": 0.204292,
+          "raw_rate": 0.142857
+        },
+        {
+          "calibrated": 0.299974,
+          "hi": 0.308,
+          "hits": 3.0,
+          "lo": 0.236,
+          "mean_pred": 0.267,
+          "n": 10.0,
+          "prior": 0.299956,
+          "raw_rate": 0.3
+        },
+        {
+          "calibrated": 0.384798,
+          "hi": 0.386,
+          "hits": 3.0,
+          "lo": 0.308,
+          "mean_pred": 0.348125,
+          "n": 8.0,
+          "prior": 0.390397,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.477502,
+          "hi": 0.502,
+          "hits": 5.0,
+          "lo": 0.386,
+          "mean_pred": 0.441889,
+          "n": 9.0,
+          "prior": 0.427325,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.545041,
+          "hi": 0.575,
+          "hits": 5.0,
+          "lo": 0.502,
+          "mean_pred": 0.517875,
+          "n": 8.0,
+          "prior": 0.553708,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.545041,
+          "hi": 1.0,
+          "hits": 3.0,
+          "lo": 0.575,
+          "mean_pred": 0.627889,
+          "n": 9.0,
+          "prior": 0.62678,
+          "raw_rate": 0.333333
+        }
+      ],
+      "knots_x": [
+        0.179222,
+        0.212286,
+        0.267,
+        0.348125,
+        0.441889,
+        0.517875,
+        0.627889
+      ],
+      "knots_y": [
+        0.132642,
+        0.183814,
+        0.299974,
+        0.384798,
+        0.477502,
+        0.545041,
+        0.545041
+      ],
+      "n_samples": 60.0,
+      "segment": "league:LigaPro Serie A|family:corners"
+    },
+    "league:LigaPro Serie A|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.556429,
+          "hi": 0.571,
+          "hits": 7.0,
+          "lo": 0.0,
+          "mean_pred": 0.483182,
+          "n": 11.0,
+          "prior": 0.493623,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.630997,
+          "hi": 0.628,
+          "hits": 7.0,
+          "lo": 0.571,
+          "mean_pred": 0.604,
+          "n": 11.0,
+          "prior": 0.62678,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.631456,
+          "hi": 0.652,
+          "hits": 7.0,
+          "lo": 0.628,
+          "mean_pred": 0.636909,
+          "n": 11.0,
+          "prior": 0.6276,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.643506,
+          "hi": 0.67,
+          "hits": 9.0,
+          "lo": 0.652,
+          "mean_pred": 0.656545,
+          "n": 11.0,
+          "prior": 0.643389,
+          "raw_rate": 0.818182
+        },
+        {
+          "calibrated": 0.643506,
+          "hi": 0.701,
+          "hits": 6.0,
+          "lo": 0.67,
+          "mean_pred": 0.683417,
+          "n": 12.0,
+          "prior": 0.664996,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.643506,
+          "hi": 0.719,
+          "hits": 7.0,
+          "lo": 0.701,
+          "mean_pred": 0.709167,
+          "n": 12.0,
+          "prior": 0.682001,
+          "raw_rate": 0.583333
+        },
+        {
+          "calibrated": 0.643506,
+          "hi": 0.774,
+          "hits": 6.0,
+          "lo": 0.719,
+          "mean_pred": 0.741636,
+          "n": 11.0,
+          "prior": 0.698014,
+          "raw_rate": 0.545455
+        },
+        {
+          "calibrated": 0.843803,
+          "hi": 1.0,
+          "hits": 11.0,
+          "lo": 0.774,
+          "mean_pred": 0.812727,
+          "n": 11.0,
+          "prior": 0.721076,
+          "raw_rate": 1.0
+        }
+      ],
+      "knots_x": [
+        0.483182,
+        0.604,
+        0.636909,
+        0.656545,
+        0.683417,
+        0.709167,
+        0.741636,
+        0.812727
+      ],
+      "knots_y": [
+        0.556429,
+        0.630997,
+        0.631456,
+        0.643506,
+        0.643506,
+        0.643506,
+        0.643506,
+        0.843803
+      ],
+      "n_samples": 90.0,
+      "segment": "league:LigaPro Serie A|family:double_chance"
+    },
+    "league:LigaPro Serie A|family:goals": {
+      "bins": [
+        {
+          "calibrated": 0.088903,
+          "hi": 0.11,
+          "hits": 0.0,
+          "lo": 0.0,
+          "mean_pred": 0.055444,
+          "n": 9.0,
+          "prior": 0.146055,
+          "raw_rate": 0.0
+        },
+        {
+          "calibrated": 0.594641,
+          "hi": 0.596,
+          "hits": 6.0,
+          "lo": 0.11,
+          "mean_pred": 0.49025,
+          "n": 8.0,
+          "prior": 0.505864,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.642388,
+          "hi": 0.675,
+          "hits": 6.0,
+          "lo": 0.596,
+          "mean_pred": 0.630333,
+          "n": 9.0,
+          "prior": 0.62678,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.697804,
+          "hi": 0.703,
+          "hits": 6.0,
+          "lo": 0.675,
+          "mean_pred": 0.687125,
+          "n": 8.0,
+          "prior": 0.667978,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.70298,
+          "hi": 0.748,
+          "hits": 7.0,
+          "lo": 0.703,
+          "mean_pred": 0.717889,
+          "n": 9.0,
+          "prior": 0.686303,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.70298,
+          "hi": 0.805,
+          "hits": 5.0,
+          "lo": 0.748,
+          "mean_pred": 0.778375,
+          "n": 8.0,
+          "prior": 0.716132,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.83022,
+          "hi": 1.0,
+          "hits": 9.0,
+          "lo": 0.805,
+          "mean_pred": 0.841889,
+          "n": 9.0,
+          "prior": 0.721076,
+          "raw_rate": 1.0
+        }
+      ],
+      "knots_x": [
+        0.055444,
+        0.49025,
+        0.630333,
+        0.687125,
+        0.717889,
+        0.778375,
+        0.841889
+      ],
+      "knots_y": [
+        0.088903,
+        0.594641,
+        0.642388,
+        0.697804,
+        0.70298,
+        0.70298,
+        0.83022
+      ],
+      "n_samples": 60.0,
+      "segment": "league:LigaPro Serie A|family:goals"
+    },
+    "league:LigaPro Serie A|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.129167,
+          "hi": 0.274,
+          "hits": 0.0,
+          "lo": 0.0,
+          "mean_pred": 0.227364,
+          "n": 11.0,
+          "prior": 0.230655,
+          "raw_rate": 0.0
+        },
+        {
+          "calibrated": 0.341327,
+          "hi": 0.288,
+          "hits": 4.0,
+          "lo": 0.274,
+          "mean_pred": 0.280636,
+          "n": 11.0,
+          "prior": 0.323798,
+          "raw_rate": 0.363636
+        },
+        {
+          "calibrated": 0.360966,
+          "hi": 0.301,
+          "hits": 6.0,
+          "lo": 0.288,
+          "mean_pred": 0.29325,
+          "n": 12.0,
+          "prior": 0.345852,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.360966,
+          "hi": 0.326,
+          "hits": 3.0,
+          "lo": 0.301,
+          "mean_pred": 0.314273,
+          "n": 11.0,
+          "prior": 0.365052,
+          "raw_rate": 0.272727
+        },
+        {
+          "calibrated": 0.360966,
+          "hi": 0.343,
+          "hits": 5.0,
+          "lo": 0.326,
+          "mean_pred": 0.333,
+          "n": 11.0,
+          "prior": 0.379073,
+          "raw_rate": 0.454545
+        },
+        {
+          "calibrated": 0.360966,
+          "hi": 0.37,
+          "hits": 2.0,
+          "lo": 0.343,
+          "mean_pred": 0.357583,
+          "n": 12.0,
+          "prior": 0.397061,
+          "raw_rate": 0.166667
+        },
+        {
+          "calibrated": 0.445472,
+          "hi": 0.405,
+          "hits": 6.0,
+          "lo": 0.37,
+          "mean_pred": 0.385,
+          "n": 10.0,
+          "prior": 0.406903,
+          "raw_rate": 0.6
+        },
+        {
+          "calibrated": 0.445472,
+          "hi": 1.0,
+          "hits": 4.0,
+          "lo": 0.405,
+          "mean_pred": 0.469417,
+          "n": 12.0,
+          "prior": 0.469783,
+          "raw_rate": 0.333333
+        }
+      ],
+      "knots_x": [
+        0.227364,
+        0.280636,
+        0.29325,
+        0.314273,
+        0.333,
+        0.357583,
+        0.385,
+        0.469417
+      ],
+      "knots_y": [
+        0.129167,
+        0.341327,
+        0.360966,
+        0.360966,
+        0.360966,
+        0.360966,
+        0.445472,
+        0.445472
+      ],
+      "n_samples": 90.0,
+      "segment": "league:LigaPro Serie A|family:result"
+    },
+    "league:Ligue 1": {
+      "bins": [
+        {
+          "calibrated": 0.27868,
+          "hi": 0.176,
+          "hits": 3.0,
+          "lo": 0.0,
+          "mean_pred": 0.094875,
+          "n": 8.0,
+          "prior": 0.22364,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.4042,
+          "hi": 0.359,
+          "hits": 5.0,
+          "lo": 0.176,
+          "mean_pred": 0.250778,
+          "n": 9.0,
+          "prior": 0.306899,
+          "raw_rate": 0.555556
+        },
+        {
+          "calibrated": 0.452097,
+          "hi": 0.502,
+          "hits": 4.0,
+          "lo": 0.359,
+          "mean_pred": 0.410875,
+          "n": 8.0,
+          "prior": 0.424724,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.52264,
+          "hi": 0.618,
+          "hits": 4.0,
+          "lo": 0.502,
+          "mean_pred": 0.566125,
+          "n": 8.0,
+          "prior": 0.535576,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.592606,
+          "hi": 0.749,
+          "hits": 6.0,
+          "lo": 0.618,
+          "mean_pred": 0.670889,
+          "n": 9.0,
+          "prior": 0.624875,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.592606,
+          "hi": 1.0,
+          "hits": 2.0,
+          "lo": 0.749,
+          "mean_pred": 0.8515,
+          "n": 8.0,
+          "prior": 0.708501,
+          "raw_rate": 0.25
+        }
+      ],
+      "knots_x": [
+        0.094875,
+        0.250778,
+        0.410875,
+        0.566125,
+        0.670889,
+        0.8515
+      ],
+      "knots_y": [
+        0.27868,
+        0.4042,
+        0.452097,
+        0.52264,
+        0.592606,
+        0.592606
+      ],
+      "n_samples": 50.0,
+      "segment": "league:Ligue 1"
+    },
+    "league:Premier League": {
+      "bins": [
+        {
+          "calibrated": 0.2844,
+          "hi": 0.118,
+          "hits": 8.0,
+          "lo": 0.0,
+          "mean_pred": 0.058091,
+          "n": 22.0,
+          "prior": 0.22364,
+          "raw_rate": 0.363636
+        },
+        {
+          "calibrated": 0.2844,
+          "hi": 0.239,
+          "hits": 6.0,
+          "lo": 0.118,
+          "mean_pred": 0.180348,
+          "n": 23.0,
+          "prior": 0.259301,
+          "raw_rate": 0.26087
+        },
+        {
+          "calibrated": 0.320065,
+          "hi": 0.4,
+          "hits": 7.0,
+          "lo": 0.239,
+          "mean_pred": 0.304174,
+          "n": 23.0,
+          "prior": 0.345885,
+          "raw_rate": 0.304348
+        },
+        {
+          "calibrated": 0.512693,
+          "hi": 0.508,
+          "hits": 14.0,
+          "lo": 0.4,
+          "mean_pred": 0.462,
+          "n": 22.0,
+          "prior": 0.460317,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.512693,
+          "hi": 0.613,
+          "hits": 9.0,
+          "lo": 0.508,
+          "mean_pred": 0.564318,
+          "n": 22.0,
+          "prior": 0.533535,
+          "raw_rate": 0.409091
+        },
+        {
+          "calibrated": 0.598399,
+          "hi": 0.69,
+          "hits": 17.0,
+          "lo": 0.613,
+          "mean_pred": 0.652087,
+          "n": 23.0,
+          "prior": 0.617566,
+          "raw_rate": 0.73913
+        },
+        {
+          "calibrated": 0.598399,
+          "hi": 0.811,
+          "hits": 11.0,
+          "lo": 0.69,
+          "mean_pred": 0.750783,
+          "n": 23.0,
+          "prior": 0.661355,
+          "raw_rate": 0.478261
+        },
+        {
+          "calibrated": 0.598399,
+          "hi": 1.0,
+          "hits": 10.0,
+          "lo": 0.811,
+          "mean_pred": 0.871364,
+          "n": 22.0,
+          "prior": 0.708501,
+          "raw_rate": 0.454545
+        }
+      ],
+      "knots_x": [
+        0.058091,
+        0.180348,
+        0.304174,
+        0.462,
+        0.564318,
+        0.652087,
+        0.750783,
+        0.871364
+      ],
+      "knots_y": [
+        0.2844,
+        0.2844,
+        0.320065,
+        0.512693,
+        0.512693,
+        0.598399,
+        0.598399,
+        0.598399
+      ],
+      "n_samples": 180.0,
+      "segment": "league:Premier League"
+    },
+    "league:Primera A": {
+      "bins": [
+        {
+          "calibrated": 0.244861,
+          "hi": 0.272,
+          "hits": 7.0,
+          "lo": 0.0,
+          "mean_pred": 0.195533,
+          "n": 30.0,
+          "prior": 0.269564,
+          "raw_rate": 0.233333
+        },
+        {
+          "calibrated": 0.301777,
+          "hi": 0.325,
+          "hits": 7.0,
+          "lo": 0.272,
+          "mean_pred": 0.29736,
+          "n": 25.0,
+          "prior": 0.340663,
+          "raw_rate": 0.28
+        },
+        {
+          "calibrated": 0.364152,
+          "hi": 0.432,
+          "hits": 12.0,
+          "lo": 0.325,
+          "mean_pred": 0.363971,
+          "n": 34.0,
+          "prior": 0.391377,
+          "raw_rate": 0.352941
+        },
+        {
+          "calibrated": 0.523841,
+          "hi": 0.511,
+          "hits": 19.0,
+          "lo": 0.432,
+          "mean_pred": 0.464258,
+          "n": 31.0,
+          "prior": 0.46174,
+          "raw_rate": 0.612903
+        },
+        {
+          "calibrated": 0.523841,
+          "hi": 0.582,
+          "hits": 14.0,
+          "lo": 0.511,
+          "mean_pred": 0.5428,
+          "n": 30.0,
+          "prior": 0.511249,
+          "raw_rate": 0.466667
+        },
+        {
+          "calibrated": 0.612801,
+          "hi": 0.668,
+          "hits": 16.0,
+          "lo": 0.582,
+          "mean_pred": 0.630231,
+          "n": 26.0,
+          "prior": 0.608003,
+          "raw_rate": 0.615385
+        },
+        {
+          "calibrated": 0.663095,
+          "hi": 0.718,
+          "hits": 23.0,
+          "lo": 0.668,
+          "mean_pred": 0.685647,
+          "n": 34.0,
+          "prior": 0.630613,
+          "raw_rate": 0.676471
+        },
+        {
+          "calibrated": 0.695655,
+          "hi": 1.0,
+          "hits": 21.0,
+          "lo": 0.718,
+          "mean_pred": 0.797033,
+          "n": 30.0,
+          "prior": 0.686344,
+          "raw_rate": 0.7
+        }
+      ],
+      "knots_x": [
+        0.195533,
+        0.29736,
+        0.363971,
+        0.464258,
+        0.5428,
+        0.630231,
+        0.685647,
+        0.797033
+      ],
+      "knots_y": [
+        0.244861,
+        0.301777,
+        0.364152,
+        0.523841,
+        0.523841,
+        0.612801,
+        0.663095,
+        0.695655
+      ],
+      "n_samples": 240.0,
+      "segment": "league:Primera A"
+    },
+    "league:Primera A|family:btts": {
+      "bins": [
+        {
+          "calibrated": 0.471794,
+          "hi": 0.458,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.400286,
+          "n": 7.0,
+          "prior": 0.421977,
+          "raw_rate": 0.571429
+        },
+        {
+          "calibrated": 0.511399,
+          "hi": 0.473,
+          "hits": 7.0,
+          "lo": 0.458,
+          "mean_pred": 0.458727,
+          "n": 11.0,
+          "prior": 0.515034,
+          "raw_rate": 0.636364
+        },
+        {
+          "calibrated": 0.511399,
+          "hi": 0.535,
+          "hits": 4.0,
+          "lo": 0.473,
+          "mean_pred": 0.5,
+          "n": 8.0,
+          "prior": 0.523841,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.511399,
+          "hi": 0.542,
+          "hits": 1.0,
+          "lo": 0.535,
+          "mean_pred": 0.538,
+          "n": 2.0,
+          "prior": 0.523841,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.511399,
+          "hi": 1.0,
+          "hits": 6.0,
+          "lo": 0.542,
+          "mean_pred": 0.56725,
+          "n": 16.0,
+          "prior": 0.548719,
+          "raw_rate": 0.375
+        }
+      ],
+      "knots_x": [
+        0.400286,
+        0.458727,
+        0.5,
+        0.538,
+        0.56725
+      ],
+      "knots_y": [
+        0.471794,
+        0.511399,
+        0.511399,
+        0.511399,
+        0.511399
+      ],
+      "n_samples": 44.0,
+      "segment": "league:Primera A|family:btts"
+    },
+    "league:Primera A|family:double_chance": {
+      "bins": [
+        {
+          "calibrated": 0.515171,
+          "hi": 0.574,
+          "hits": 4.0,
+          "lo": 0.0,
+          "mean_pred": 0.476625,
+          "n": 8.0,
+          "prior": 0.523841,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.568283,
+          "hi": 0.653,
+          "hits": 4.0,
+          "lo": 0.574,
+          "mean_pred": 0.598667,
+          "n": 6.0,
+          "prior": 0.580685,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.568283,
+          "hi": 0.668,
+          "hits": 4.0,
+          "lo": 0.653,
+          "mean_pred": 0.6535,
+          "n": 10.0,
+          "prior": 0.63392,
+          "raw_rate": 0.4
+        },
+        {
+          "calibrated": 0.687656,
+          "hi": 0.669,
+          "hits": 7.0,
+          "lo": 0.668,
+          "mean_pred": 0.668,
+          "n": 9.0,
+          "prior": 0.647079,
+          "raw_rate": 0.777778
+        },
+        {
+          "calibrated": 0.687656,
+          "hi": 0.68,
+          "hits": 1.0,
+          "lo": 0.669,
+          "mean_pred": 0.669,
+          "n": 1.0,
+          "prior": 0.647987,
+          "raw_rate": 1.0
+        },
+        {
+          "calibrated": 0.688427,
+          "hi": 0.716,
+          "hits": 12.0,
+          "lo": 0.68,
+          "mean_pred": 0.688875,
+          "n": 16.0,
+          "prior": 0.664039,
+          "raw_rate": 0.75
+        },
+        {
+          "calibrated": 0.688427,
+          "hi": 0.769,
+          "hits": 5.0,
+          "lo": 0.716,
+          "mean_pred": 0.739,
+          "n": 8.0,
+          "prior": 0.678691,
+          "raw_rate": 0.625
+        },
+        {
+          "calibrated": 0.760871,
+          "hi": 1.0,
+          "hits": 7.0,
+          "lo": 0.769,
+          "mean_pred": 0.80675,
+          "n": 8.0,
+          "prior": 0.695655,
+          "raw_rate": 0.875
+        }
+      ],
+      "knots_x": [
+        0.476625,
+        0.598667,
+        0.6535,
+        0.668,
+        0.669,
+        0.688875,
+        0.739,
+        0.80675
+      ],
+      "knots_y": [
+        0.515171,
+        0.568283,
+        0.568283,
+        0.687656,
+        0.687656,
+        0.688427,
+        0.688427,
+        0.760871
+      ],
+      "n_samples": 66.0,
+      "segment": "league:Primera A|family:double_chance"
+    },
+    "league:Primera A|family:result": {
+      "bins": [
+        {
+          "calibrated": 0.216623,
+          "hi": 0.246,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.211,
+          "n": 7.0,
+          "prior": 0.253506,
+          "raw_rate": 0.142857
+        },
+        {
+          "calibrated": 0.274196,
+          "hi": 0.277,
+          "hits": 3.0,
+          "lo": 0.246,
+          "mean_pred": 0.259556,
+          "n": 9.0,
+          "prior": 0.280646,
+          "raw_rate": 0.333333
+        },
+        {
+          "calibrated": 0.274196,
+          "hi": 0.304,
+          "hits": 2.0,
+          "lo": 0.277,
+          "mean_pred": 0.279333,
+          "n": 3.0,
+          "prior": 0.291701,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.274196,
+          "hi": 0.325,
+          "hits": 1.0,
+          "lo": 0.304,
+          "mean_pred": 0.307538,
+          "n": 13.0,
+          "prior": 0.311308,
+          "raw_rate": 0.076923
+        },
+        {
+          "calibrated": 0.286401,
+          "hi": 0.33,
+          "hits": 2.0,
+          "lo": 0.325,
+          "mean_pred": 0.325,
+          "n": 9.0,
+          "prior": 0.327659,
+          "raw_rate": 0.222222
+        },
+        {
+          "calibrated": 0.398023,
+          "hi": 0.37,
+          "hits": 2.0,
+          "lo": 0.33,
+          "mean_pred": 0.338667,
+          "n": 3.0,
+          "prior": 0.340457,
+          "raw_rate": 0.666667
+        },
+        {
+          "calibrated": 0.422498,
+          "hi": 0.432,
+          "hits": 6.0,
+          "lo": 0.37,
+          "mean_pred": 0.377846,
+          "n": 13.0,
+          "prior": 0.386246,
+          "raw_rate": 0.461538
+        },
+        {
+          "calibrated": 0.536251,
+          "hi": 1.0,
+          "hits": 5.0,
+          "lo": 0.432,
+          "mean_pred": 0.498667,
+          "n": 9.0,
+          "prior": 0.523841,
+          "raw_rate": 0.555556
+        }
+      ],
+      "knots_x": [
+        0.211,
+        0.259556,
+        0.279333,
+        0.307538,
+        0.325,
+        0.338667,
+        0.377846,
+        0.498667
+      ],
+      "knots_y": [
+        0.216623,
+        0.274196,
+        0.274196,
+        0.274196,
+        0.286401,
+        0.398023,
+        0.422498,
+        0.536251
+      ],
+      "n_samples": 66.0,
+      "segment": "league:Primera A|family:result"
+    },
+    "league:Saudi Pro League": {
+      "bins": [
+        {
+          "calibrated": 0.147534,
+          "hi": 0.186,
+          "hits": 1.0,
+          "lo": 0.0,
+          "mean_pred": 0.108429,
+          "n": 14.0,
+          "prior": 0.22364,
+          "raw_rate": 0.071429
+        },
+        {
+          "calibrated": 0.291651,
+          "hi": 0.292,
+          "hits": 4.0,
+          "lo": 0.186,
+          "mean_pred": 0.237,
+          "n": 14.0,
+          "prior": 0.297588,
+          "raw_rate": 0.285714
+        },
+        {
+          "calibrated": 0.381367,
+          "hi": 0.391,
+          "hits": 5.0,
+          "lo": 0.292,
+          "mean_pred": 0.346538,
+          "n": 13.0,
+          "prior": 0.37835,
+          "raw_rate": 0.384615
+        },
+        {
+          "calibrated": 0.471766,
+          "hi": 0.48,
+          "hits": 7.0,
+          "lo": 0.391,
+          "mean_pred": 0.437929,
+          "n": 14.0,
+          "prior": 0.443958,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.471766,
+          "hi": 0.603,
+          "hits": 6.0,
+          "lo": 0.48,
+          "mean_pred": 0.5475,
+          "n": 14.0,
+          "prior": 0.514534,
+          "raw_rate": 0.428571
+        },
+        {
+          "calibrated": 0.595987,
+          "hi": 0.704,
+          "hits": 8.0,
+          "lo": 0.603,
+          "mean_pred": 0.635154,
+          "n": 13.0,
+          "prior": 0.610983,
+          "raw_rate": 0.615385
+        },
+        {
+          "calibrated": 0.595987,
+          "hi": 0.8,
+          "hits": 7.0,
+          "lo": 0.704,
+          "mean_pred": 0.746357,
+          "n": 14.0,
+          "prior": 0.658964,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.818536,
+          "hi": 1.0,
+          "hits": 13.0,
+          "lo": 0.8,
+          "mean_pred": 0.863143,
+          "n": 14.0,
+          "prior": 0.708501,
+          "raw_rate": 0.928571
+        }
+      ],
+      "knots_x": [
+        0.108429,
+        0.237,
+        0.346538,
+        0.437929,
+        0.5475,
+        0.635154,
+        0.746357,
+        0.863143
+      ],
+      "knots_y": [
+        0.147534,
+        0.291651,
+        0.381367,
+        0.471766,
+        0.471766,
+        0.595987,
+        0.595987,
+        0.818536
+      ],
+      "n_samples": 110.0,
+      "segment": "league:Saudi Pro League"
+    },
+    "league:Serie A": {
+      "bins": [
+        {
+          "calibrated": 0.319236,
+          "hi": 0.144,
+          "hits": 9.0,
+          "lo": 0.0,
+          "mean_pred": 0.091458,
+          "n": 24.0,
+          "prior": 0.22364,
+          "raw_rate": 0.375
+        },
+        {
+          "calibrated": 0.331807,
+          "hi": 0.29,
+          "hits": 11.0,
+          "lo": 0.144,
+          "mean_pred": 0.231923,
+          "n": 26.0,
+          "prior": 0.294157,
+          "raw_rate": 0.423077
+        },
+        {
+          "calibrated": 0.331807,
+          "hi": 0.371,
+          "hits": 6.0,
+          "lo": 0.29,
+          "mean_pred": 0.32768,
+          "n": 25.0,
+          "prior": 0.363898,
+          "raw_rate": 0.24
+        },
+        {
+          "calibrated": 0.38784,
+          "hi": 0.488,
+          "hits": 9.0,
+          "lo": 0.371,
+          "mean_pred": 0.42892,
+          "n": 25.0,
+          "prior": 0.437554,
+          "raw_rate": 0.36
+        },
+        {
+          "calibrated": 0.505667,
+          "hi": 0.597,
+          "hits": 12.0,
+          "lo": 0.488,
+          "mean_pred": 0.54825,
+          "n": 24.0,
+          "prior": 0.515381,
+          "raw_rate": 0.5
+        },
+        {
+          "calibrated": 0.600727,
+          "hi": 0.655,
+          "hits": 19.0,
+          "lo": 0.597,
+          "mean_pred": 0.622192,
+          "n": 26.0,
+          "prior": 0.598921,
+          "raw_rate": 0.730769
+        },
+        {
+          "calibrated": 0.600727,
+          "hi": 0.725,
+          "hits": 12.0,
+          "lo": 0.655,
+          "mean_pred": 0.6878,
+          "n": 25.0,
+          "prior": 0.63145,
+          "raw_rate": 0.48
+        },
+        {
+          "calibrated": 0.600727,
+          "hi": 1.0,
+          "hits": 13.0,
+          "lo": 0.725,
+          "mean_pred": 0.80388,
+          "n": 25.0,
+          "prior": 0.690043,
+          "raw_rate": 0.52
+        }
+      ],
+      "knots_x": [
+        0.091458,
+        0.231923,
+        0.32768,
+        0.42892,
+        0.54825,
+        0.622192,
+        0.6878,
+        0.80388
+      ],
+      "knots_y": [
+        0.319236,
+        0.331807,
+        0.331807,
+        0.38784,
+        0.505667,
+        0.600727,
+        0.600727,
+        0.600727
+      ],
+      "n_samples": 200.0,
+      "segment": "league:Serie A"
+    },
+    "league:UEFA Champions League": {
+      "bins": [
+        {
+          "calibrated": 0.190035,
+          "hi": 0.187,
+          "hits": 2.0,
+          "lo": 0.0,
+          "mean_pred": 0.079846,
+          "n": 13.0,
+          "prior": 0.22364,
+          "raw_rate": 0.153846
+        },
+        {
+          "calibrated": 0.292695,
+          "hi": 0.257,
+          "hits": 4.0,
+          "lo": 0.187,
+          "mean_pred": 0.209154,
+          "n": 13.0,
+          "prior": 0.278769,
+          "raw_rate": 0.307692
+        },
+        {
+          "calibrated": 0.335893,
+          "hi": 0.388,
+          "hits": 4.0,
+          "lo": 0.257,
+          "mean_pred": 0.325308,
+          "n": 13.0,
+          "prior": 0.36208,
+          "raw_rate": 0.307692
+        },
+        {
+          "calibrated": 0.506943,
+          "hi": 0.592,
+          "hits": 7.0,
+          "lo": 0.388,
+          "mean_pred": 0.489538,
+          "n": 13.0,
+          "prior": 0.477675,
+          "raw_rate": 0.538462
+        },
+        {
+          "calibrated": 0.576587,
+          "hi": 0.661,
+          "hits": 8.0,
+          "lo": 0.592,
+          "mean_pred": 0.620462,
+          "n": 13.0,
+          "prior": 0.596966,
+          "raw_rate": 0.615385
+        },
+        {
+          "calibrated": 0.576587,
+          "hi": 0.703,
+          "hits": 6.0,
+          "lo": 0.661,
+          "mean_pred": 0.676385,
+          "n": 13.0,
+          "prior": 0.627012,
+          "raw_rate": 0.461538
+        },
+        {
+          "calibrated": 0.6673,
+          "hi": 0.79,
+          "hits": 9.0,
+          "lo": 0.703,
+          "mean_pred": 0.731769,
+          "n": 13.0,
+          "prior": 0.651083,
+          "raw_rate": 0.692308
+        },
+        {
+          "calibrated": 0.6673,
+          "hi": 1.0,
+          "hits": 8.0,
+          "lo": 0.79,
+          "mean_pred": 0.860154,
+          "n": 13.0,
+          "prior": 0.708501,
+          "raw_rate": 0.615385
+        }
+      ],
+      "knots_x": [
+        0.079846,
+        0.209154,
+        0.325308,
+        0.489538,
+        0.620462,
+        0.676385,
+        0.731769,
+        0.860154
+      ],
+      "knots_y": [
+        0.190035,
+        0.292695,
+        0.335893,
+        0.506943,
+        0.576587,
+        0.576587,
+        0.6673,
+        0.6673
+      ],
+      "n_samples": 104.0,
+      "segment": "league:UEFA Champions League"
     }
   },
   "deactivated_at_utc": null,
-  "fitted_at": "2026-10-03T13:05:50.416981+00:00",
+  "fitted_at": "2026-10-05T14:39:29.053926+00:00",
   "format_version": 1,
   "metadata": {
     "cutoff_date": "2026-07-30",
@@ -2878,8 +7368,8 @@
       "picks_unsettled": 0,
       "rows_bad_json": 0,
       "rows_empty_picks": 0,
-      "rows_no_picks": 44833,
-      "rows_seen": 45065,
+      "rows_no_picks": 45209,
+      "rows_seen": 45441,
       "rows_without_results": 0
     },
     "forced": false,
@@ -2892,15 +7382,15 @@
       "league_family_side"
     ],
     "n_samples": 3604.0,
-    "n_segments": 27,
+    "n_segments": 74,
     "tail_policy": "flat_observed_tail",
     "walk_forward": {
       "calibrated": {
-        "brier": 0.22287821859546877,
-        "ece": 0.018636616093827812,
-        "log_loss": 0.6362541425926445,
+        "brier": 0.22442658057082615,
+        "ece": 0.010131059805400952,
+        "log_loss": 0.6398987559146219,
         "mean_outcome": 0.4839893262174783,
-        "mean_prob": 0.481977345838379,
+        "mean_prob": 0.481191147165402,
         "n": 2998
       },
       "n_folds": 5,
@@ -2915,7 +7405,7 @@
       "skipped_no_train": 0
     }
   },
-  "min_league_samples": 80.0,
+  "min_league_samples": 40.0,
   "min_line_samples": 120.0,
   "min_samples": 60.0,
   "prior_strength": 35.0,

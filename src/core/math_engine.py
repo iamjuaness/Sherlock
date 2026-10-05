@@ -14,16 +14,186 @@ from __future__ import annotations
 import math
 import logging
 from typing import Dict, List, Optional, Tuple, Any
-from datetime import datetime
+from datetime import datetime, timezone
 
-from src.domain.temporal import TemporalCutoff, record_date
+from src.domain.temporal import TemporalCutoff, record_date, parse_utc
 
 logger = logging.getLogger("sherlock.math_engine")
 
 
 # ---------------------------------------------------------------------------
+import json
+from pathlib import Path
+
+PROFILES_JSON_PATH = Path("data/league_profiles.json")
+CALCULATED_PARAMS_JSON_PATH = Path("data/calculated_league_params.json")
+
+DEFAULT_LEAGUE_HISTORY_PROFILES: Dict[str, Dict[str, Any]] = {
+    "stable_high_volume": {
+        "league_prior_half_life_days": 420.0,
+        "team_half_life_matches": 17.5,
+        "team_max_matches": 40,
+        "league_history_seasons": 4,
+        "min_effective_sample_size": 30.0,
+        "league_prior_strength": 18.0,
+    },
+    "small_or_short_format": {
+        "league_prior_half_life_days": 600.0,
+        "team_half_life_matches": 20.0,
+        "team_max_matches": 45,
+        "league_history_seasons": 5,
+        "min_effective_sample_size": 18.0,
+        "league_prior_strength": 28.0,
+    },
+    "high_turnover_or_structural_change": {
+        "league_prior_half_life_days": 270.0,
+        "team_half_life_matches": 12.5,
+        "team_max_matches": 30,
+        "league_history_seasons": 4,
+        "min_effective_sample_size": 24.0,
+        "league_prior_strength": 24.0,
+    },
+}
+
+LEAGUE_HISTORY_PROFILES = DEFAULT_LEAGUE_HISTORY_PROFILES
+COMPETITION_PROFILE_MAPPING: Dict[str, str] = {}
+
+
+def load_league_profiles_config() -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+    """
+    Carga perfiles y ligas desde data/league_profiles.json si existe.
+    """
+    profiles = {k: dict(v) for k, v in DEFAULT_LEAGUE_HISTORY_PROFILES.items()}
+    leagues_map: Dict[str, Any] = {}
+
+    if PROFILES_JSON_PATH.exists():
+        try:
+            with open(PROFILES_JSON_PATH, "r", encoding="utf-8") as f:
+                content = json.load(f)
+            if isinstance(content, dict):
+                p_data = content.get("profiles")
+                if isinstance(p_data, dict):
+                    for pk, pv in p_data.items():
+                        if isinstance(pv, dict):
+                            profiles[pk] = pv
+                l_data = content.get("leagues")
+                if isinstance(l_data, dict):
+                    leagues_map = l_data
+        except Exception as exc:
+            logger.warning("No se pudo cargar %s (%s). Usando perfiles base.", PROFILES_JSON_PATH, exc)
+
+    return profiles, leagues_map
+
+
+def get_league_profile(
+    competition_id: Optional[Any] = None,
+    profile_name: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Obtiene los parámetros del perfil de histórico para una competición.
+    Carga dinámicamente desde data/league_profiles.json si existe.
+    """
+    profiles, leagues_map = load_league_profiles_config()
+
+    if profile_name and profile_name in profiles:
+        return dict(profiles[profile_name])
+
+    if competition_id is not None:
+        comp_key = str(competition_id).strip()
+        comp_norm = comp_key.lower()
+
+        for l_name, l_config in leagues_map.items():
+            if l_name.lower() == comp_norm or (isinstance(l_config, dict) and str(l_config.get("id", "")).strip() == comp_key):
+                p_name = l_config.get("profile") if isinstance(l_config, dict) else str(l_config)
+                if p_name in profiles:
+                    res = dict(profiles[p_name])
+                    if isinstance(l_config, dict) and "overrides" in l_config and isinstance(l_config["overrides"], dict):
+                        res.update(l_config["overrides"])
+                    return res
+
+    return dict(profiles.get("stable_high_volume", DEFAULT_LEAGUE_HISTORY_PROFILES["stable_high_volume"]))
+
+
+def load_calculated_league_params(
+    competition_id: Optional[Any] = None,
+) -> Optional[Dict[str, Any]]:
+    """
+    Carga los parámetros matemáticos calculados por liga desde data/calculated_league_params.json si existe.
+    """
+    if not CALCULATED_PARAMS_JSON_PATH.exists():
+        return None
+
+    try:
+        with open(CALCULATED_PARAMS_JSON_PATH, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        if not isinstance(data, dict):
+            return None
+
+        if competition_id is None:
+            return data
+
+        comp_key = str(competition_id).strip().lower()
+
+        for l_name, l_params in data.items():
+            clean = str(l_name).strip().lower()
+            if comp_key == clean or comp_key in clean or clean in comp_key:
+                if isinstance(l_params, dict):
+                    return l_params
+    except Exception as exc:
+        logger.warning("No se pudo cargar %s (%s).", CALCULATED_PARAMS_JSON_PATH, exc)
+
+    return None
+
+
+# ---------------------------------------------------------------------------
 # Funciones Estadísticas Base
 # ---------------------------------------------------------------------------
+
+def calculate_time_decay_weight(
+    match_date: Any,
+    reference_date: Optional[Any] = None,
+    half_life_days: float = 365.0,
+) -> float:
+    """
+    Calcula el peso temporal de un partido según la distancia entre su fecha y una fecha de referencia.
+    Fórmula: w_i = 0.5 ** (d_i / h)
+    Donde:
+      - d_i: antigüedad del partido en días.
+      - h: half_life_days (días para que el peso caiga al 50%).
+    
+    Reglas:
+      - El partido en fecha igual a reference_date tiene peso 1.0 (d_i = 0).
+      - Un partido con d_i == half_life_days tiene peso 0.5.
+      - Un partido futuro (match_date > reference_date) retorna 0.0.
+      - Fechas inválidas o nulas retornan 0.0.
+      - half_life_days <= 0 retorna 0.0.
+    """
+    if half_life_days <= 0:
+        return 0.0
+
+    m_dt = parse_utc(match_date)
+    if m_dt is None:
+        return 0.0
+
+    if reference_date is None:
+        ref_dt = datetime.now(timezone.utc)
+    else:
+        ref_dt = parse_utc(reference_date)
+
+    if ref_dt is None:
+        return 0.0
+
+    if m_dt > ref_dt:
+        return 0.0
+
+    delta_days = (ref_dt - m_dt).total_seconds() / 86400.0
+    if delta_days < 0:
+        return 0.0
+
+    weight = 0.5 ** (delta_days / float(half_life_days))
+    return max(0.0, min(1.0, float(weight)))
+
 
 def _poisson_pmf(k: int, lam: float) -> float:
     if lam <= 0:
@@ -99,19 +269,27 @@ def calculate_weighted_average(values: List[float], half_life: float = 5.0) -> f
     return sum(v * w for v, w in zip(values, weights)) / sum_w
 
 
-def estimate_nb_dispersion(values: List[float]) -> float:
+def estimate_nb_dispersion(values: List[float], weights: Optional[List[float]] = None) -> float:
     """
     Estima el parámetro de dispersión (alpha/k) de la Binomial Negativa por Método de Momentos.
     Var(X) = mu + alpha * mu^2  =>  alpha = (Var - mu) / mu^2
+    Soporta lista opcional de pesos temporales por observación.
     """
     if len(values) < 3:
-        return 0.05 # Dispersión baja por defecto
+        return 0.05  # Dispersión baja por defecto
 
-    mu = sum(values) / len(values)
+    if weights is None or len(weights) != len(values):
+        weights = [1.0] * len(values)
+
+    sum_w = sum(weights)
+    if sum_w <= 0:
+        return 0.05
+
+    mu = sum(v * w for v, w in zip(values, weights)) / sum_w
     if mu <= 0:
         return 0.05
 
-    var = sum((x - mu) ** 2 for x in values) / (len(values) - 1)
+    var = sum(w * ((x - mu) ** 2) for x, w in zip(values, weights)) / sum_w
     if var <= mu:
         return 0.001  # Casi Poisson puro
 
@@ -162,12 +340,7 @@ class LeagueMathEngine:
                 "avg_corners_per_game": 9.3,
             }
 
-        ref_dt = None
-        if reference_date:
-            try:
-                ref_dt = datetime.fromisoformat(str(reference_date).replace("Z", "+00:00"))
-            except Exception:
-                ref_dt = None
+        ref_dt = parse_utc(reference_date) if reference_date else None
 
         past_matches = []
         for m in matches:
@@ -176,13 +349,8 @@ class LeagueMathEngine:
             if ch is None or ca is None:
                 continue
 
-            m_date_str = m.get("match_date") or m.get("date")
-            if not m_date_str:
-                continue
-
-            try:
-                m_dt = datetime.fromisoformat(str(m_date_str).replace("Z", "+00:00"))
-            except Exception:
+            m_dt = record_date(m)
+            if not m_dt:
                 continue
 
             if ref_dt and m_dt >= ref_dt:
@@ -222,78 +390,226 @@ class LeagueMathEngine:
         }
 
     @classmethod
-    def compute_league_averages(cls, historical_matches: List[Dict[str, Any]]) -> Dict[str, float]:
-
+    def compute_league_averages(
+        cls,
+        historical_matches: List[Dict[str, Any]],
+        reference_date: Optional[Any] = None,
+        half_life_days: float = 420.0,
+        min_effective_sample_size: float = 1.0,
+        fallback_defaults: Optional[Dict[str, float]] = None,
+        competition_id: Optional[Any] = None,
+    ) -> Dict[str, Any]:
         """
-        Calcula los promedios específicos de la liga basándose en los partidos históricos jugados.
+        Calcula los promedios específicos de la liga ponderados por reciencia temporal.
+        Respetando reciencia temporal, perfiles de liga y Kish ESS.
         """
-        if not historical_matches:
-            return cls().defaults
+        defaults_map = dict(cls().defaults)
 
-        total_home_goals, total_away_goals = 0.0, 0.0
-        total_home_corners, total_away_corners = 0.0, 0.0
-        total_home_cards, total_away_cards = 0.0, 0.0
-        total_home_shots, total_away_shots = 0.0, 0.0
-        total_home_shots_target, total_away_shots_target = 0.0, 0.0
-        total_home_fouls, total_away_fouls = 0.0, 0.0
-        count = 0
+        calc_params = load_calculated_league_params(competition_id) if competition_id else None
+        if calc_params and isinstance(calc_params.get("averages"), dict):
+            for k, v in calc_params["averages"].items():
+                if isinstance(v, (int, float)) and v > 0:
+                    defaults_map[k] = float(v)
 
-        for m in historical_matches:
-            sh = m.get("final_score_home")
-            sa = m.get("final_score_away")
-            if sh is not None and sa is not None:
-                total_home_goals += float(sh)
-                total_away_goals += float(sa)
-                count += 1
+        if fallback_defaults:
+            defaults_map.update(fallback_defaults)
 
-            ch = m.get("final_corners_home")
-            ca = m.get("final_corners_away")
-            if ch is not None and ca is not None:
-                total_home_corners += float(ch)
-                total_away_corners += float(ca)
+        ref_dt = parse_utc(reference_date) if reference_date is not None else None
 
-            yh = m.get("final_yellow_cards_home")
-            ya = m.get("final_yellow_cards_away")
-            if yh is not None and ya is not None:
-                total_home_cards += float(yh)
-                total_away_cards += float(ya)
+        metric_keys = [
+            ("home_goals", "away_goals", "final_score_home", "final_score_away"),
+            ("home_corners", "away_corners", "final_corners_home", "final_corners_away"),
+            ("home_cards", "away_cards", "final_yellow_cards_home", "final_yellow_cards_away"),
+            ("home_shots", "away_shots", "final_shots_home", "final_shots_away"),
+            ("home_shots_target", "away_shots_target", "final_shots_on_target_home", "final_shots_on_target_away"),
+            ("home_fouls", "away_fouls", "final_fouls_home", "final_fouls_away"),
+        ]
 
-            sth = m.get("final_shots_home")
-            sta = m.get("final_shots_away")
-            if sth is not None and sta is not None:
-                total_home_shots += float(sth)
-                total_away_shots += float(sta)
+        results: Dict[str, Any] = {}
+        metric_sources: Dict[str, str] = {}
+        all_included_dates: List[datetime] = []
+        metric_stats: Dict[str, Dict[str, float]] = {}
 
-            stth = m.get("final_shots_on_target_home")
-            stta = m.get("final_shots_on_target_away")
-            if stth is not None and stta is not None:
-                total_home_shots_target += float(stth)
-                total_away_shots_target += float(stta)
+        for key_home, key_away, raw_home_key, raw_away_key in metric_keys:
+            total_h_weighted = 0.0
+            total_a_weighted = 0.0
+            sum_w = 0.0
+            sum_w2 = 0.0
+            valid_cnt = 0
 
-            fh = m.get("final_fouls_home")
-            fa = m.get("final_fouls_away")
-            if fh is not None and fa is not None:
-                total_home_fouls += float(fh)
-                total_away_fouls += float(fa)
+            for m in historical_matches or []:
+                vh = m.get(raw_home_key)
+                va = m.get(raw_away_key)
+                if vh is None or va is None:
+                    continue
 
-        if count == 0:
-            return cls().defaults
+                m_date = record_date(m)
+                if m_date is None:
+                    if reference_date is None:
+                        w = 1.0
+                    else:
+                        continue
+                else:
+                    if ref_dt is not None and m_date >= ref_dt:
+                        continue
 
-        return {
-            "home_goals": total_home_goals / count,
-            "away_goals": total_away_goals / count,
-            "home_corners": total_home_corners / count if total_home_corners > 0 else 5.2,
-            "away_corners": total_away_corners / count if total_away_corners > 0 else 4.1,
-            "home_cards": total_home_cards / count if total_home_cards > 0 else 2.1,
-            "away_cards": total_away_cards / count if total_away_cards > 0 else 2.3,
-            "home_shots": total_home_shots / count if total_home_shots > 0 else 12.5,
-            "away_shots": total_away_shots / count if total_away_shots > 0 else 9.8,
-            "home_shots_target": total_home_shots_target / count if total_home_shots_target > 0 else 4.5,
-            "away_shots_target": total_away_shots_target / count if total_away_shots_target > 0 else 3.6,
-            "home_fouls": total_home_fouls / count if total_home_fouls > 0 else 11.5,
-            "away_fouls": total_away_fouls / count if total_away_fouls > 0 else 12.0,
+                    w = calculate_time_decay_weight(m_date, reference_date=reference_date, half_life_days=half_life_days)
+                    if w <= 0:
+                        continue
+
+                try:
+                    fh = float(vh)
+                    fa = float(va)
+                except (ValueError, TypeError):
+                    continue
+
+                total_h_weighted += fh * w
+                total_a_weighted += fa * w
+                sum_w += w
+                sum_w2 += w * w
+                valid_cnt += 1
+                all_included_dates.append(m_date)
+
+            ess = (sum_w ** 2) / sum_w2 if sum_w2 > 0 else 0.0
+
+            if valid_cnt > 0 and sum_w > 0 and ess >= min_effective_sample_size:
+                results[key_home] = total_h_weighted / sum_w
+                results[key_away] = total_a_weighted / sum_w
+                metric_sources[key_home] = "history"
+                metric_sources[key_away] = "history"
+            else:
+                results[key_home] = defaults_map.get(key_home, 1.45 if "goals" in key_home else 5.0)
+                results[key_away] = defaults_map.get(key_away, 1.15 if "goals" in key_away else 4.0)
+                metric_sources[key_home] = "default"
+                metric_sources[key_away] = "default"
+
+            metric_stats[key_home] = {"count": valid_cnt, "sum_w": sum_w, "ess": ess}
+
+        goals_stat = metric_stats.get("home_goals", {"count": 0, "sum_w": 0.0, "ess": 0.0})
+        sample_size = goals_stat["count"]
+        effective_sample_size = round(goals_stat["ess"], 2)
+        total_weight = round(goals_stat["sum_w"], 4)
+
+        history_count = sum(1 for src in metric_sources.values() if src == "history")
+        total_metrics = len(metric_sources)
+
+        if history_count == total_metrics:
+            global_source = "weighted_league_history"
+        elif history_count > 0:
+            global_source = "mixed_with_defaults"
+        else:
+            global_source = "defaults"
+
+        valid_dates = [d for d in all_included_dates if d is not None]
+        coverage_start = min(valid_dates).strftime("%Y-%m-%d") if valid_dates else None
+        coverage_end = max(valid_dates).strftime("%Y-%m-%d") if valid_dates else None
+
+        results.update({
+            "sample_size": sample_size,
+            "effective_sample_size": effective_sample_size,
+            "total_weight": total_weight,
+            "reference_date": ref_dt.isoformat() if ref_dt else None,
+            "half_life_days": float(half_life_days),
+            "source": global_source,
+            "coverage_start_date": coverage_start,
+            "coverage_end_date": coverage_end,
+        })
+
+        return results
+
+    def calculate_expected_goals_with_meta(
+        self,
+        home_recent_scored: List[float],
+        home_recent_conceded: List[float],
+        away_recent_scored: List[float],
+        away_recent_conceded: List[float],
+        league_home_avg: float = 1.45,
+        league_away_avg: float = 1.15,
+        half_life: float = 17.5,
+        is_home_newly_promoted: bool = False,
+        is_away_newly_promoted: bool = False,
+        home_lower_div_scored: Optional[List[float]] = None,
+        home_lower_div_conceded: Optional[List[float]] = None,
+        away_lower_div_scored: Optional[List[float]] = None,
+        away_lower_div_conceded: Optional[List[float]] = None,
+    ) -> Tuple[float, float, Dict[str, Any]]:
+        """
+        Capa 2: Calcula lambda_home y mu_away usando fuerza ofensiva/defensiva relativa con decay exponencial
+        y shrinkage Bayesiano para recién ascendidos, retornando metadatos estructurados.
+        """
+        league_home_avg = max(0.5, league_home_avg)
+        league_away_avg = max(0.5, league_away_avg)
+
+        home_att_raw = calculate_weighted_average(home_recent_scored, half_life=half_life) if home_recent_scored else league_home_avg
+        home_def_raw = calculate_weighted_average(home_recent_conceded, half_life=half_life) if home_recent_conceded else league_away_avg
+
+        away_att_raw = calculate_weighted_average(away_recent_scored, half_life=half_life) if away_recent_scored else league_away_avg
+        away_def_raw = calculate_weighted_average(away_recent_conceded, half_life=half_life) if away_recent_conceded else league_home_avg
+
+        home_top_matches = len(home_recent_scored) if home_recent_scored else 0
+        away_top_matches = len(away_recent_scored) if away_recent_scored else 0
+
+        home_shrinkage_weight = 1.0
+        home_used_aux = False
+        if is_home_newly_promoted or home_top_matches < 8:
+            home_shrinkage_weight = min(1.0, home_top_matches / 10.0)
+            non_top_w = 1.0 - home_shrinkage_weight
+            if home_lower_div_scored and home_lower_div_conceded:
+                home_used_aux = True
+                low_att = calculate_weighted_average(home_lower_div_scored, half_life=half_life)
+                low_def = calculate_weighted_average(home_lower_div_conceded, half_life=half_life)
+                aux_w = 0.3 * non_top_w
+                lg_w = 0.7 * non_top_w
+                home_att_raw = home_att_raw * home_shrinkage_weight + low_att * aux_w + league_home_avg * lg_w
+                home_def_raw = home_def_raw * home_shrinkage_weight + low_def * aux_w + league_away_avg * lg_w
+            else:
+                home_att_raw = home_att_raw * home_shrinkage_weight + league_home_avg * non_top_w
+                home_def_raw = home_def_raw * home_shrinkage_weight + league_away_avg * non_top_w
+
+        away_shrinkage_weight = 1.0
+        away_used_aux = False
+        if is_away_newly_promoted or away_top_matches < 8:
+            away_shrinkage_weight = min(1.0, away_top_matches / 10.0)
+            non_top_w = 1.0 - away_shrinkage_weight
+            if away_lower_div_scored and away_lower_div_conceded:
+                away_used_aux = True
+                low_att = calculate_weighted_average(away_lower_div_scored, half_life=half_life)
+                low_def = calculate_weighted_average(away_lower_div_conceded, half_life=half_life)
+                aux_w = 0.3 * non_top_w
+                lg_w = 0.7 * non_top_w
+                away_att_raw = away_att_raw * away_shrinkage_weight + low_att * aux_w + league_away_avg * lg_w
+                away_def_raw = away_def_raw * away_shrinkage_weight + low_def * aux_w + league_home_avg * lg_w
+            else:
+                away_att_raw = away_att_raw * away_shrinkage_weight + league_away_avg * non_top_w
+                away_def_raw = away_def_raw * away_shrinkage_weight + league_home_avg * non_top_w
+
+        home_attack_strength = home_att_raw / league_home_avg
+        home_defense_strength = home_def_raw / league_away_avg
+        away_attack_strength = away_att_raw / league_away_avg
+        away_defense_strength = away_def_raw / league_home_avg
+
+        lambda_home = home_attack_strength * away_defense_strength * league_home_avg
+        mu_away = away_attack_strength * home_defense_strength * league_away_avg
+
+        lambda_home = max(0.2, min(4.5, lambda_home))
+        mu_away = max(0.2, min(4.5, mu_away))
+
+        meta = {
+            "home": {
+                "is_newly_promoted": is_home_newly_promoted,
+                "top_division_matches": home_top_matches,
+                "shrinkage_weight": round(home_shrinkage_weight, 4),
+                "used_lower_division_auxiliary_signal": home_used_aux,
+            },
+            "away": {
+                "is_newly_promoted": is_away_newly_promoted,
+                "top_division_matches": away_top_matches,
+                "shrinkage_weight": round(away_shrinkage_weight, 4),
+                "used_lower_division_auxiliary_signal": away_used_aux,
+            }
         }
 
+        return lambda_home, mu_away, meta
 
     def calculate_expected_goals(
         self,
@@ -306,68 +622,57 @@ class LeagueMathEngine:
         half_life: float = 17.5,
         is_home_newly_promoted: bool = False,
         is_away_newly_promoted: bool = False,
+        home_lower_div_scored: Optional[List[float]] = None,
+        home_lower_div_conceded: Optional[List[float]] = None,
+        away_lower_div_scored: Optional[List[float]] = None,
+        away_lower_div_conceded: Optional[List[float]] = None,
     ) -> Tuple[float, float]:
         """
-        Capa 2: Calcula lambda_home y mu_away usando fuerza ofensiva y defensiva relativa con decay exponencial.
-        - half_life: 15-20 partidos (default 17.5) para ponderar reciencia y evitar contaminación por temporadas lejanas.
-        - is_home_newly_promoted / is_away_newly_promoted: Equipos recién ascendidos con < 10 partidos en la liga
-          cuyo prior Bayesiano se apoya fuertemente en la media de la liga.
+        Capa 2: Retorna (lambda_home, mu_away) para compatibilidad hacia atrás.
         """
-        league_home_avg = max(0.5, league_home_avg)
-        league_away_avg = max(0.5, league_away_avg)
-
-        # Promedios ponderados de equipos con Half-Life de 15-20 partidos
-        home_att_raw = calculate_weighted_average(home_recent_scored, half_life=half_life) if home_recent_scored else league_home_avg
-        home_def_raw = calculate_weighted_average(home_recent_conceded, half_life=half_life) if home_recent_conceded else league_away_avg
-
-        away_att_raw = calculate_weighted_average(away_recent_scored, half_life=half_life) if away_recent_scored else league_away_avg
-        away_def_raw = calculate_weighted_average(away_recent_conceded, half_life=half_life) if away_recent_conceded else league_home_avg
-
-        # Shrinkage Bayesiano para recién ascendidos (< 10 partidos en categoría)
-        if is_home_newly_promoted or len(home_recent_scored) < 8:
-            shrinkage_weight = min(1.0, len(home_recent_scored) / 10.0)
-            home_att_raw = home_att_raw * shrinkage_weight + league_home_avg * (1.0 - shrinkage_weight)
-            home_def_raw = home_def_raw * shrinkage_weight + league_away_avg * (1.0 - shrinkage_weight)
-
-        if is_away_newly_promoted or len(away_recent_scored) < 8:
-            shrinkage_weight = min(1.0, len(away_recent_scored) / 10.0)
-            away_att_raw = away_att_raw * shrinkage_weight + league_away_avg * (1.0 - shrinkage_weight)
-            away_def_raw = away_def_raw * shrinkage_weight + league_home_avg * (1.0 - shrinkage_weight)
-
-        # Fuerza relativa
-        home_attack_strength = home_att_raw / league_home_avg
-        home_defense_strength = home_def_raw / league_away_avg
-
-        away_attack_strength = away_att_raw / league_away_avg
-        away_defense_strength = away_def_raw / league_home_avg
-
-        # Exponentes / Lambdas esperados
-        lambda_home = home_attack_strength * away_defense_strength * league_home_avg
-        mu_away = away_attack_strength * home_defense_strength * league_away_avg
-
-        # Limitar a rangos razonables de fútbol profesional (0.2 a 4.5 goles)
-        lambda_home = max(0.2, min(4.5, lambda_home))
-        mu_away = max(0.2, min(4.5, mu_away))
-
-        return lambda_home, mu_away
+        lambda_h, mu_a, _ = self.calculate_expected_goals_with_meta(
+            home_recent_scored=home_recent_scored,
+            home_recent_conceded=home_recent_conceded,
+            away_recent_scored=away_recent_scored,
+            away_recent_conceded=away_recent_conceded,
+            league_home_avg=league_home_avg,
+            league_away_avg=league_away_avg,
+            half_life=half_life,
+            is_home_newly_promoted=is_home_newly_promoted,
+            is_away_newly_promoted=is_away_newly_promoted,
+            home_lower_div_scored=home_lower_div_scored,
+            home_lower_div_conceded=home_lower_div_conceded,
+            away_lower_div_scored=away_lower_div_scored,
+            away_lower_div_conceded=away_lower_div_conceded,
+        )
+        return lambda_h, mu_a
 
     def predict_market_totals(
         self,
         home_values: List[float],
         away_values: List[float],
         league_avg_total: float,
-        half_life: float = 17.5
+        half_life: float = 17.5,
+        home_weights: Optional[List[float]] = None,
+        away_weights: Optional[List[float]] = None,
     ) -> Tuple[float, float]:
         """
         Calcula el valor esperado para mercados secundarios (corners, tarjetas, tiros, etc.)
         aplicando decaimiento exponencial y suavizado de liga.
         """
-        h_avg = calculate_weighted_average(home_values, half_life=half_life) if home_values else (league_avg_total * 0.55)
-        a_avg = calculate_weighted_average(away_values, half_life=half_life) if away_values else (league_avg_total * 0.45)
-        
-        # Suavizado con la media de la liga
+        if home_weights and len(home_weights) == len(home_values):
+            sum_hw = sum(home_weights)
+            h_avg = sum(v * w for v, w in zip(home_values, home_weights)) / sum_hw if sum_hw > 0 else (league_avg_total * 0.55)
+        else:
+            h_avg = calculate_weighted_average(home_values, half_life=half_life) if home_values else (league_avg_total * 0.55)
+
+        if away_weights and len(away_weights) == len(away_values):
+            sum_aw = sum(away_weights)
+            a_avg = sum(v * w for v, w in zip(away_values, away_weights)) / sum_aw if sum_aw > 0 else (league_avg_total * 0.45)
+        else:
+            a_avg = calculate_weighted_average(away_values, half_life=half_life) if away_values else (league_avg_total * 0.45)
+
         total_expected = (h_avg + a_avg) * 0.75 + (league_avg_total) * 0.25
-        
         h_prop = h_avg / max(0.1, h_avg + a_avg)
         return total_expected * h_prop, total_expected * (1.0 - h_prop)
 
