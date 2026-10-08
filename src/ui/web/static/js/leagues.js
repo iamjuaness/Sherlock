@@ -9,6 +9,343 @@ let isMarketSelectMode = false;
 let selectedMarketsSet = new Set();
 let currentMarketsList = [];
 
+function isZeroH2hPick(p) {
+  if (!p) return false;
+  const h2hCount =
+    p.h2h_samples != null
+      ? p.h2h_samples
+      : Array.isArray(p.h2h_matches)
+        ? p.h2h_matches.length
+        : 0;
+  if (h2hCount <= 0) return false;
+
+  const h2hHits =
+    p.h2h_hits != null
+      ? p.h2h_hits
+      : Array.isArray(p.h2h_matches)
+        ? p.h2h_matches.filter((m) => m.hit === true).length
+        : null;
+  if (h2hHits === 0) return true;
+
+  const h2hHr =
+    p.h2h_hit_rate != null
+      ? Number(p.h2h_hit_rate)
+      : p.h2h_raw_hit_rate != null
+        ? Number(p.h2h_raw_hit_rate)
+        : null;
+  if (h2hHr === 0) return true;
+
+  return false;
+}
+
+function getCanonicalMarketKey(pick, snapObj = {}) {
+  const originalSel = (pick.selection || "N/A").trim();
+  const lowerSel = originalSel.toLowerCase();
+  const effectiveLine =
+    pick.line !== undefined && pick.line !== null ? pick.line : snapObj.line;
+
+  let familyLabel = "";
+  let hasLine = true;
+
+  if (
+    lowerSel === "empate" ||
+    lowerSel === "draw" ||
+    /\b(empate|draw)\b/i.test(lowerSel)
+  ) {
+    familyLabel = "Empate";
+    hasLine = false;
+  } else if (
+    lowerSel === "local" ||
+    lowerSel === "home" ||
+    lowerSel === "victoria local" ||
+    /\b(local|victoria local)\b/i.test(lowerSel)
+  ) {
+    familyLabel = "Local";
+    hasLine = false;
+  } else if (
+    lowerSel === "visitante" ||
+    lowerSel === "away" ||
+    lowerSel === "victoria visitante" ||
+    /\b(visitante|victoria visitante)\b/i.test(lowerSel)
+  ) {
+    familyLabel = "Visitante";
+    hasLine = false;
+  } else {
+    const isShotsTargetText =
+      lowerSel.includes("shot_target") ||
+      lowerSel.includes("shots_target") ||
+      lowerSel.includes("tiro_a_puerta") ||
+      lowerSel.includes("tiros_a_puerta") ||
+      lowerSel.includes("remates a puerta") ||
+      lowerSel.includes("tiros a puerta") ||
+      lowerSel.includes("shots on target") ||
+      lowerSel.includes("tiros al arco") ||
+      lowerSel.includes("remates al arco") ||
+      lowerSel.includes("tiro al arco") ||
+      lowerSel.includes("tiro a puerta") ||
+      lowerSel.includes("tiros a pta") ||
+      lowerSel.includes("tiro a pta") ||
+      lowerSel.includes("a pta") ||
+      /\b(sot)\b/i.test(lowerSel);
+
+    if (isShotsTargetText) {
+      familyLabel = "Tiros a puerta";
+    } else {
+      const mFam = (
+        pick.market_family ||
+        snapObj.market_family ||
+        ""
+      ).toLowerCase();
+      if (
+        mFam === "shots_target" ||
+        mFam === "shots_on_target" ||
+        mFam === "tiros_a_puerta" ||
+        mFam === "shot_on_target"
+      ) {
+        familyLabel = "Tiros a puerta";
+      } else if (mFam === "shots" || mFam === "tiros") {
+        familyLabel = "Tiros";
+      } else if (mFam === "btts") {
+        familyLabel = "BTTS";
+        hasLine = false;
+      } else if (mFam === "double_chance" || mFam === "doublechance") {
+        familyLabel = "Doble Oportunidad";
+        hasLine = false;
+      } else if (mFam === "cards" || mFam === "tarjetas") {
+        familyLabel = "Tarjetas";
+      } else if (mFam === "corners" || mFam === "córners") {
+        familyLabel = "Córners";
+      } else if (mFam === "goals" || mFam === "goles") {
+        familyLabel = "Goles";
+      } else if (mFam === "fouls" || mFam === "faltas") {
+        familyLabel = "Faltas";
+      }
+    }
+
+    if (!familyLabel) {
+      if (
+        lowerSel.includes("btts") ||
+        lowerSel.includes("ambos marcan") ||
+        lowerSel.includes("both teams to score")
+      ) {
+        familyLabel = "BTTS";
+        hasLine = false;
+      } else if (
+        lowerSel.includes("doble oportunidad") ||
+        lowerSel.includes("double chance")
+      ) {
+        familyLabel = "Doble Oportunidad";
+        hasLine = false;
+      } else if (
+        lowerSel.includes("tarjeta") ||
+        lowerSel.includes("card") ||
+        lowerSel.includes("amarilla")
+      ) {
+        familyLabel = "Tarjetas";
+      } else if (
+        lowerSel.includes("corner") ||
+        lowerSel.includes("córner") ||
+        lowerSel.includes("saques de esquina")
+      ) {
+        familyLabel = "Córners";
+      } else if (isShotsTargetText) {
+        familyLabel = "Tiros a puerta";
+      } else if (
+        lowerSel.includes("shot") ||
+        lowerSel.includes("tiro") ||
+        lowerSel.includes("remate")
+      ) {
+        familyLabel = "Tiros";
+      } else if (lowerSel.includes("foul") || lowerSel.includes("falta")) {
+        familyLabel = "Faltas";
+      } else if (
+        lowerSel.includes("gol") ||
+        lowerSel.includes("goal") ||
+        lowerSel.includes("over") ||
+        lowerSel.includes("under")
+      ) {
+        familyLabel = "Goles";
+      }
+    }
+  }
+
+  let sideLabel = "";
+  if (familyLabel === "BTTS") {
+    if (
+      lowerSel.includes("yes") ||
+      lowerSel.includes("sí") ||
+      lowerSel === "si" ||
+      lowerSel.endsWith(" si")
+    ) {
+      sideLabel = "Sí";
+    } else if (lowerSel.includes("no")) {
+      sideLabel = "No";
+    }
+  } else if (familyLabel === "Doble Oportunidad") {
+    if (
+      lowerSel.includes("homedraw") ||
+      lowerSel.includes("home draw") ||
+      /\b1x\b/i.test(lowerSel)
+    ) {
+      sideLabel = "1X";
+    } else if (
+      lowerSel.includes("homeaway") ||
+      lowerSel.includes("home away") ||
+      /\b12\b/i.test(lowerSel)
+    ) {
+      sideLabel = "12";
+    } else if (
+      lowerSel.includes("drawaway") ||
+      lowerSel.includes("draw away") ||
+      /\bx2\b/i.test(lowerSel)
+    ) {
+      sideLabel = "X2";
+    }
+  } else if (
+    familyLabel === "Local" ||
+    familyLabel === "Empate" ||
+    familyLabel === "Visitante"
+  ) {
+    sideLabel = "";
+  } else {
+    if (
+      lowerSel.includes("over") ||
+      lowerSel.includes("más de") ||
+      lowerSel.includes("mas de")
+    ) {
+      sideLabel = "Over";
+    } else if (
+      lowerSel.includes("under") ||
+      lowerSel.includes("menos de")
+    ) {
+      sideLabel = "Under";
+    }
+  }
+
+  let lineVal = null;
+  if (hasLine) {
+    lineVal =
+      effectiveLine !== undefined && effectiveLine !== null
+        ? effectiveLine
+        : null;
+    if (lineVal === null) {
+      const numMatch = originalSel.match(/(\d+(?:\.\d+)?)/);
+      if (numMatch) lineVal = parseFloat(numMatch[1]);
+    }
+  }
+
+  const lineStr = hasLine && lineVal !== null ? ` ${lineVal}` : "";
+
+  if (
+    familyLabel === "Local" ||
+    familyLabel === "Empate" ||
+    familyLabel === "Visitante"
+  ) {
+    return familyLabel;
+  } else if (
+    familyLabel === "Doble Oportunidad" ||
+    familyLabel === "BTTS"
+  ) {
+    return sideLabel ? `${familyLabel} ${sideLabel}` : familyLabel;
+  } else if (familyLabel) {
+    return sideLabel
+      ? `${sideLabel}${lineStr} ${familyLabel}`
+      : `${familyLabel}${lineStr}`;
+  }
+  return originalSel;
+}
+
+function buildLeagueMarketMap(matches) {
+  const map = {};
+  const useStake = localStorage.getItem("use_stake_system") !== "false";
+
+  (matches || []).forEach((match) => {
+    if (match.count_in_profitability === false) return;
+
+    const snapMap = {};
+    try {
+      const snap = match.compare_response_snapshot;
+      if (snap && snap.values && Array.isArray(snap.values)) {
+        snap.values.forEach((v) => {
+          const key = (v.selection || "").toLowerCase();
+          if (key) snapMap[key] = v;
+        });
+      }
+    } catch (_) {}
+
+    const rawPicks = Array.isArray(match.picks_calculados)
+      ? match.picks_calculados
+      : [];
+    const visiblePicks = rawPicks.filter(
+      (p) =>
+        !p.is_blacklisted &&
+        !p.is_rule_blocked &&
+        !isZeroH2hPick(p) &&
+        (p.is_publishable || p.is_underdog || p.is_value),
+    );
+
+    visiblePicks.forEach((pick) => {
+      const originalSel = pick.selection || "N/A";
+      const snapObj = snapMap[originalSel.toLowerCase()] || {};
+      const selKey = getCanonicalMarketKey(pick, snapObj);
+
+      const odds =
+        typeof pick.odds === "number" ? pick.odds : parseFloat(pick.odds || 0);
+      let success = pick.success;
+      if (success === undefined || success === null) {
+        success = snapObj.success;
+      }
+
+      const pickStake = useStake
+        ? pick.stake_units !== undefined && pick.stake_units !== null
+          ? pick.stake_units
+          : pick.kelly_fraction > 0
+            ? Math.min(
+                MAX_STAKE,
+                Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
+              )
+            : MIN_STAKE
+        : MIN_STAKE;
+
+      if (!map[selKey]) {
+        map[selKey] = {
+          name: selKey,
+          totalPicks: 0,
+          ganados: 0,
+          perdidos: 0,
+          nulos: 0,
+          pendientes: 0,
+          profit: 0.0,
+          oddsSum: 0.0,
+          oddsCount: 0,
+        };
+      }
+
+      const mData = map[selKey];
+      mData.totalPicks += 1;
+
+      if (success === true) {
+        mData.ganados += 1;
+        mData.profit += (odds - 1) * pickStake;
+      } else if (success === false) {
+        mData.perdidos += 1;
+        mData.profit -= pickStake;
+      } else if (success === "void") {
+        mData.nulos += 1;
+      } else {
+        mData.pendientes += 1;
+      }
+
+      if (odds > 0) {
+        mData.oddsSum += odds;
+        mData.oddsCount += 1;
+      }
+    });
+  });
+
+  return map;
+}
+
 function switchView(view) {
   activeView = view;
   const tabMatches = document.getElementById("tab-matches");
@@ -39,26 +376,10 @@ function switchView(view) {
     if (bulkActions) bulkActions.style.display = "none";
     isMarketSelectMode = false;
     selectedMarketsSet.clear();
-    updateBulkBlacklistButton();
-  } else {
+    updateBulkGovernanceButtons();
+  } else if (view === "markets") {
     tabMarkets && tabMarkets.classList.add("active");
     if (bulkActions) bulkActions.style.display = "flex";
-    // Si entramos a mercados y la liga activa no tiene los mercados cargados en memory, pedirlos de forma rápida
-    if (activeLeague) {
-      const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
-      if (leagueInfo && !leagueInfo.markets) {
-        const useStake = localStorage.getItem("use_stake_system") === "true";
-        fetch(
-          `/api/v1/leagues/${encodeURIComponent(activeLeague)}/markets?use_stake=${useStake}`,
-        )
-          .then((r) => r.json())
-          .then((m) => {
-            leagueInfo.markets = m;
-            if (activeView === "markets") renderFilteredMatches();
-          })
-          .catch(() => {});
-      }
-    }
   }
   renderFilteredMatches();
 }
@@ -176,9 +497,12 @@ function renderLeaguesList() {
       const profitClass =
         league.total_profit >= 0 ? "profit--positive" : "profit--negative";
       const profitSign = league.total_profit >= 0 ? "+" : "";
-      const roiVal = league.roi !== undefined
-        ? league.roi
-        : (league.total_picks > 0 ? (league.total_profit / league.total_picks * 100) : 0);
+      const roiVal =
+        league.roi !== undefined
+          ? league.roi
+          : league.total_picks > 0
+            ? (league.total_profit / league.total_picks) * 100
+            : 0;
       const roiSign = roiVal >= 0 ? "+" : "";
       return `
       <div class="league-list-item ${activeClass} ${pendingClass}" onclick="selectLeague('${escapeAttr(league.name)}')">
@@ -292,7 +616,10 @@ async function fetchMatchesForLeague(name, isLoadMore = false, signal = null) {
   try {
     const useStake = localStorage.getItem("use_stake_system") === "true";
     const fetchOptions = signal ? { signal } : {};
-    const seasonParam = activeSeason && activeSeason !== "all" ? `&season=${encodeURIComponent(activeSeason)}` : "";
+    const seasonParam =
+      activeSeason && activeSeason !== "all"
+        ? `&season=${encodeURIComponent(activeSeason)}`
+        : "";
     const res = await fetch(
       `/api/v1/leagues/${encodeURIComponent(name)}/matches?use_stake=${useStake}&limit=50&offset=${currentOffset}${seasonParam}`,
       fetchOptions,
@@ -367,7 +694,11 @@ function changeSelectedSeason() {
     matchesContainer.innerHTML = `<div class="dashboard-loader"><div class="spinner"></div><span>Cargando partidos...</span></div>`;
   }
 
-  fetchMatchesForLeague(activeLeague, false, currentLeagueFetchController.signal);
+  fetchMatchesForLeague(
+    activeLeague,
+    false,
+    currentLeagueFetchController.signal,
+  );
 }
 
 function renderFilteredMatches() {
@@ -420,7 +751,7 @@ function renderFilteredMatches() {
       loadMoreContainer.appendChild(loadMoreBtn);
       matchesContainer.appendChild(loadMoreContainer);
     }
-  } else {
+  } else if (activeView === "markets") {
     renderMarketsView(filtered, matchesContainer);
   }
 }
@@ -445,6 +776,32 @@ async function deleteHistoryEntry(id, leagueName) {
   }
 }
 
+function getLeagueMarketStats(pick, snapObj, activeLeagueName, currentMatches) {
+  const selKey = getCanonicalMarketKey(pick, snapObj);
+  const kLower = selKey.trim().toLowerCase();
+
+  let mStats = null;
+  if (activeLeagueName) {
+    const leagueInfo = leaguesData.find((l) => l.name === activeLeagueName);
+    if (
+      leagueInfo &&
+      Array.isArray(leagueInfo.markets) &&
+      leagueInfo.markets.length > 0
+    ) {
+      mStats = leagueInfo.markets.find(
+        (m) => m && m.name && m.name.trim().toLowerCase() === kLower,
+      );
+    }
+  }
+
+  if (!mStats) {
+    const localMap = buildLeagueMarketMap(currentMatches || []);
+    mStats = localMap[selKey] || localMap[kLower];
+  }
+
+  return { selKey, mStats };
+}
+
 function renderMatchesView(filtered, matchesContainer) {
   const cards = filtered.map((match) => {
     let scoreText = "-";
@@ -459,12 +816,16 @@ function renderMatchesView(filtered, matchesContainer) {
 
     // Build a success map from compare_response_snapshot if available
     const successMap = {};
+    const snapMap = {};
     try {
       const snap = match.compare_response_snapshot;
       if (snap && snap.values && Array.isArray(snap.values)) {
         snap.values.forEach((v) => {
           const key = (v.selection || "").toLowerCase();
-          if (key) successMap[key] = v.success;
+          if (key) {
+            successMap[key] = v.success;
+            snapMap[key] = v;
+          }
         });
       }
     } catch (_) {}
@@ -474,7 +835,11 @@ function renderMatchesView(filtered, matchesContainer) {
       : [];
 
     const visiblePicks = rawPicks.filter(
-      (p) => p.is_publishable || p.is_underdog || p.is_value,
+      (p) =>
+        !p.is_blacklisted &&
+        !p.is_rule_blocked &&
+        !isZeroH2hPick(p) &&
+        (p.is_publishable || p.is_underdog || p.is_value),
     );
 
     // Calculate total match profit/units considering all visible picks
@@ -586,10 +951,50 @@ function renderMatchesView(filtered, matchesContainer) {
           }
 
           // Bookmaker badge
-          const bmVal = pick.bookmaker || (match.payload && (match.payload.bookmaker || (match.payload.odds && match.payload.odds.bookmaker)));
+          const bmVal =
+            pick.bookmaker ||
+            (match.payload &&
+              (match.payload.bookmaker ||
+                (match.payload.odds && match.payload.odds.bookmaker)));
           const bmHtml = bmVal
             ? `<span style="font-size:0.72rem; background:rgba(255,255,255,0.06); color:var(--text-muted); border:1px solid rgba(255,255,255,0.12); padding:1px 5px; border-radius:4px; margin-left:4px;" title="Casa de apuestas">🏠 ${escapeHtml(String(bmVal))}</span>`
             : "";
+
+          // Market performance tooltip badge (i)
+          const snapObj = snapMap[sel.toLowerCase()] || {};
+          const compName = activeLeague || match.competition || "esta liga";
+          const { selKey, mStats } = getLeagueMarketStats(
+            pick,
+            snapObj,
+            compName,
+            currentMatchesCache,
+          );
+
+          let mTooltip = "";
+          const resolved = mStats ? (mStats.ganados + mStats.perdidos + mStats.nulos) : 0;
+
+          if (!mStats || mStats.totalPicks <= 0) {
+            mTooltip = `Competición: ${compName}\nMercado: ${selKey}\n---------------------------------\n🥇 Primer pick registrado para este mercado en esta liga (sin historial previo)`;
+          } else if (resolved === 0) {
+            const pendStr = mStats.pendientes > 0 ? ` (${mStats.pendientes} pendiente${mStats.pendientes > 1 ? "s" : ""})` : "";
+            mTooltip = `Rendimiento del mercado en ${compName}\nMercado: ${selKey}\n---------------------------------\n⏳ Sin picks evaluados aún${pendStr}\n(El historial se calculará una vez finalice algún partido)`;
+          } else {
+            const accuracyPct =
+              (mStats.ganados + mStats.perdidos) > 0
+                ? `${Math.round((mStats.ganados / (mStats.ganados + mStats.perdidos)) * 100)}% (${mStats.ganados}/${mStats.ganados + mStats.perdidos})`
+                : "N/A";
+            const sign = mStats.profit >= 0 ? "+" : "";
+            const avgOdds =
+              mStats.oddsCount > 0
+                ? (mStats.oddsSum / mStats.oddsCount).toFixed(2)
+                : "-";
+            const pendStr =
+              mStats.pendientes > 0 ? ` (+ ${mStats.pendientes} pend)` : "";
+
+            mTooltip = `Rendimiento del mercado en ${compName}\nMercado: ${selKey}\n---------------------------------\n📊 Picks evaluados: ${resolved}${pendStr}\n🏆 Historial: ${mStats.ganados}W - ${mStats.perdidos}L - ${mStats.nulos}V\n🎯 Acierto: ${accuracyPct}\n💰 Profit: ${sign}${mStats.profit.toFixed(2)}u\n🎲 Cuota Media: @${avgOdds}`;
+          }
+
+          const infoIconHtml = `<span style="font-size:0.72rem; background:rgba(56,189,248,0.08); color:#38bdf8; border:1px solid rgba(56,189,248,0.25); padding:1px 5px; border-radius:10px; margin-left:4px; cursor:help; font-weight:600; display:inline-flex; align-items:center;" title="${escapeHtml(mTooltip)}">ℹ️</span>`;
 
           return `
             <div class="pick-row">
@@ -600,6 +1005,7 @@ function renderMatchesView(filtered, matchesContainer) {
                 <span style="color: var(--text-muted); font-size: 0.8rem;">@${odds.toFixed(2)}</span>
                 ${bmHtml}
                 ${stakeHtml}
+                ${infoIconHtml}
               </div>
               <div>${badge}</div>
             </div>
@@ -652,9 +1058,9 @@ function renderMatchesView(filtered, matchesContainer) {
 }
 
 function renderMarketsView(filtered, matchesContainer) {
-  const useStake = localStorage.getItem("use_stake_system") === "true";
-  let markets = [];
+  const useStake = localStorage.getItem("use_stake_system") !== "false";
 
+  let markets;
   if (activeSeason === "all" && activeLeague) {
     const leagueInfo = leaguesData.find((l) => l.name === activeLeague);
     if (
@@ -667,140 +1073,7 @@ function renderMarketsView(filtered, matchesContainer) {
   }
 
   if (!markets || markets.length === 0) {
-    const marketMap = {};
-
-    filtered.forEach((match) => {
-      // Si el partido está excluido de rentabilidad, no incluir sus picks en la data de mercado (al igual que la cabecera)
-      if (match.count_in_profitability === false) return;
-
-      // Build success map
-      const successMap = {};
-      try {
-        const snap = match.compare_response_snapshot;
-        if (snap && snap.values && Array.isArray(snap.values)) {
-          snap.values.forEach((v) => {
-            const key = (v.selection || "").toLowerCase();
-            if (key) successMap[key] = v.success;
-          });
-        }
-      } catch (_) {}
-
-      const rawPicks = Array.isArray(match.picks_calculados)
-        ? match.picks_calculados
-        : [];
-
-      const visiblePicks = rawPicks.filter(
-        (p) =>
-          !p.is_blacklisted &&
-          !p.is_rule_blocked &&
-          (p.is_publishable || p.is_underdog || p.is_value),
-      );
-
-      visiblePicks.forEach((pick) => {
-        const originalSel = pick.selection || "N/A";
-        let selKey = originalSel.trim();
-        const lowerSel = selKey.toLowerCase();
-
-        // Determine category for Over/Under markets
-        let category = "";
-        if (lowerSel.includes("corner") || lowerSel.includes("córner")) {
-          category = "Córners";
-        } else if (
-          lowerSel.includes("tarjeta") ||
-          lowerSel.includes("card") ||
-          lowerSel.includes("amarilla")
-        ) {
-          category = "Tarjetas";
-        } else if (lowerSel.includes("foul") || lowerSel.includes("falta")) {
-          category = "Faltas";
-        } else if (
-          lowerSel.includes("shot_target") ||
-          lowerSel.includes("tiro_a_puerta") ||
-          lowerSel.includes("shots_target") ||
-          lowerSel.includes("pta")
-        ) {
-          category = "Tiros a puerta";
-        } else if (
-          lowerSel.includes("shot") ||
-          lowerSel.includes("tiro") ||
-          lowerSel.includes("remate")
-        ) {
-          category = "Tiros";
-        } else if (lowerSel.includes("goal") || lowerSel.includes("gol")) {
-          category = "Goles";
-        }
-
-        if (category) {
-          if (
-            lowerSel.includes("over") ||
-            lowerSel.includes("más de") ||
-            lowerSel.includes("mas de")
-          ) {
-            selKey = `Over ${category}`;
-          } else if (
-            lowerSel.includes("under") ||
-            lowerSel.includes("menos de")
-          ) {
-            selKey = `Under ${category}`;
-          }
-        }
-        const odds =
-          typeof pick.odds === "number"
-            ? pick.odds
-            : parseFloat(pick.odds) || 0;
-        let success = pick.success;
-        if (success === undefined || success === null) {
-          success = successMap[originalSel.toLowerCase()];
-        }
-
-        const pickStake = useStake
-          ? pick.stake_units !== undefined && pick.stake_units !== null
-            ? pick.stake_units
-            : pick.kelly_fraction > 0
-              ? Math.min(
-                  MAX_STAKE,
-                  Math.max(MIN_STAKE, Math.round(pick.kelly_fraction * 100)),
-                )
-              : MIN_STAKE
-          : MIN_STAKE;
-
-        if (!marketMap[selKey]) {
-          marketMap[selKey] = {
-            name: selKey,
-            totalPicks: 0,
-            ganados: 0,
-            perdidos: 0,
-            nulos: 0,
-            pendientes: 0,
-            profit: 0.0,
-            oddsSum: 0.0,
-            oddsCount: 0,
-          };
-        }
-
-        const mData = marketMap[selKey];
-        mData.totalPicks += 1;
-
-        if (success === true) {
-          mData.ganados += 1;
-          mData.profit += (odds - 1) * pickStake;
-        } else if (success === false) {
-          mData.perdidos += 1;
-          mData.profit -= pickStake;
-        } else if (success === "void") {
-          mData.nulos += 1;
-        } else {
-          mData.pendientes += 1;
-        }
-
-        // Acumular cuota para promedio (solo picks con cuota válida)
-        if (odds > 0) {
-          mData.oddsSum += odds;
-          mData.oddsCount += 1;
-        }
-      });
-    });
-
+    const marketMap = buildLeagueMarketMap(filtered);
     markets = Object.values(marketMap);
     markets.sort((a, b) => b.totalPicks - a.totalPicks);
   }
@@ -808,12 +1081,12 @@ function renderMarketsView(filtered, matchesContainer) {
   currentMarketsList = markets;
 
   if (markets.length === 0) {
-    matchesContainer.innerHTML = `<div style="color: var(--text-muted); padding: 2rem; text-align: center;">No hay mercados registrados para esta temporada.</div>`;
+    matchesContainer.innerHTML =
+      '<div style="color: var(--text-muted); padding: 2rem; text-align: center;">No hay mercados registrados para esta temporada.</div>';
     return;
   }
 
   const cardsHtml = markets.map((m) => {
-    const resolved = m.ganados + m.perdidos + m.nulos;
     const accuracy =
       m.ganados + m.perdidos > 0
         ? Math.round((m.ganados / (m.ganados + m.perdidos)) * 100)
@@ -823,10 +1096,13 @@ function renderMarketsView(filtered, matchesContainer) {
     const avgOdds = m.oddsCount > 0 ? m.oddsSum / m.oddsCount : 0;
     const avgOddsDisplay = avgOdds > 0 ? avgOdds.toFixed(2) : "0.00";
     const winPct = avgOdds > 0 ? ((1 / avgOdds) * 100).toFixed(1) : "0.0";
-
     const isChecked = selectedMarketsSet.has(m.name);
     const selectCheckboxHtml = isMarketSelectMode
-      ? `<input type="checkbox" ${isChecked ? "checked" : ""} onchange="toggleMarketSelection('${escapeAttr(m.name)}', this.checked)" style="width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; margin-right: 0.5rem;">`
+      ? `<input type="checkbox" ${
+          isChecked ? "checked" : ""
+        } onchange="toggleMarketSelection('${escapeAttr(
+          m.name,
+        )}', this.checked)" style="width: 18px; height: 18px; accent-color: var(--accent); cursor: pointer; margin-right: 0.5rem;">`
       : "";
 
     return `
@@ -835,18 +1111,18 @@ function renderMarketsView(filtered, matchesContainer) {
           <div style="display: flex; align-items: center; gap: 0.75rem;">
             ${selectCheckboxHtml}
             <span class="match-card__title" style="font-size: 1.15rem; font-weight: 700; color: #fff;">📊 ${escapeHtml(m.name)}</span>
-            <button onclick="reduceMarketStake('${escapeAttr(m.name)}')" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(245, 158, 11, 0.25)'" onmouseout="this.style.background='rgba(245, 158, 11, 0.12)'" title="Reducir stake a la mitad (50%) para este mercado en ${escapeAttr(activeLeague || "")}">📉 Reducir Stake (50%)</button>
-            <button onclick="addMarketToBlacklist('${escapeAttr(m.name)}')" style="background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'" title="Agregar este mercado a la blacklist de ${escapeAttr(activeLeague || "")}">🚫 Blacklist</button>
+            <button onclick="reduceMarketStake('${escapeAttr(m.name)}')" style="background: rgba(245, 158, 11, 0.12); color: #f59e0b; border: 1px solid rgba(245, 158, 11, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(245, 158, 11, 0.25)'" onmouseout="this.style.background='rgba(245, 158, 11, 0.12)'" title="Reducir stake en Segment Governance para ${escapeAttr(activeLeague || "")}">📉 Reducir Stake</button>
+            <button onclick="addMarketToBlacklist('${escapeAttr(m.name)}')" style="background: rgba(239, 68, 68, 0.12); color: var(--red); border: 1px solid rgba(239, 68, 68, 0.25); padding: 3px 8px; border-radius: 6px; font-weight: 600; font-size: 0.72rem; cursor: pointer; transition: 0.2s;" onmouseover="this.style.background='rgba(239, 68, 68, 0.25)'" onmouseout="this.style.background='rgba(239, 68, 68, 0.12)'" title="Agregar mercado a la blacklist de ${escapeAttr(activeLeague || "")}">🚫 Blacklist</button>
           </div>
           <span style="font-weight: 800; color: ${profitColor}; font-size: 1.1rem; background: rgba(255,255,255,0.03); padding: 4px 10px; border-radius: 6px;">
             ${profitSign}${m.profit.toFixed(2)} u
           </span>
         </div>
         <div class="match-card__body" style="padding-top: 0.5rem;">
-          <div class="league-stats-grid" style="grid-template-columns: repeat(7, 1fr); gap: 0.75rem;">
+          <div class="league-stats-grid" style="grid-template-columns: repeat(8, 1fr); gap: 0.5rem;">
             <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
               <div class="league-stat-box__val" style="font-size: 1.1rem;">${m.totalPicks}</div>
-              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Picks</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Total Picks</div>
             </div>
             <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
               <div class="league-stat-box__val" style="font-size: 1.1rem; color: var(--green);">${m.ganados}</div>
@@ -859,6 +1135,10 @@ function renderMarketsView(filtered, matchesContainer) {
             <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
               <div class="league-stat-box__val" style="font-size: 1.1rem; color: #94a3b8;">${m.nulos}</div>
               <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Nulos</div>
+            </div>
+            <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
+              <div class="league-stat-box__val" style="font-size: 1.1rem; color: #f59e0b;">${m.pendientes || 0}</div>
+              <div class="league-stat-box__lbl" style="font-size: 0.65rem;">Pendientes</div>
             </div>
             <div class="league-stat-box" style="padding: 0.5rem; background: rgba(255,255,255,0.01);">
               <div class="league-stat-box__val" style="font-size: 1.1rem; color: var(--accent-light);">${accuracy}%</div>
@@ -876,7 +1156,7 @@ function renderMarketsView(filtered, matchesContainer) {
           ${
             m.pendientes > 0
               ? `
-          <div style="margin-top: 0.75rem; text-align: right; font-size: 0.75rem; color: var(--text-secondary);">
+          <div style="margin-top: 0.75rem; text-align: right; font-size: 0.75rem; color: #f59e0b;">
             ⏳ ${m.pendientes} pick(s) pendiente(s)
           </div>`
               : ""
@@ -931,20 +1211,27 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
       }
       const roiEl = document.getElementById("lbl-roi");
       if (roiEl) {
-        const roiVal = leagueInfo.roi !== undefined
-          ? leagueInfo.roi
-          : (leagueInfo.total_picks > 0 ? (leagueInfo.total_profit / leagueInfo.total_picks * 100) : 0);
+        const roiVal =
+          leagueInfo.roi !== undefined
+            ? leagueInfo.roi
+            : leagueInfo.total_picks > 0
+              ? (leagueInfo.total_profit / leagueInfo.total_picks) * 100
+              : 0;
         roiEl.textContent = `(${roiVal >= 0 ? "+" : ""}${roiVal.toFixed(1)}%)`;
         roiEl.style.color = roiVal >= 0 ? "var(--green)" : "var(--red)";
       }
 
       const avgOddsEl = document.getElementById("lbl-avg-odds");
       if (avgOddsEl) {
-        avgOddsEl.textContent = leagueInfo.avg_odds ? leagueInfo.avg_odds.toFixed(2) : "0.00";
+        avgOddsEl.textContent = leagueInfo.avg_odds
+          ? leagueInfo.avg_odds.toFixed(2)
+          : "0.00";
       }
       const breakEvenEl = document.getElementById("lbl-break-even");
       if (breakEvenEl) {
-        breakEvenEl.textContent = leagueInfo.break_even_pct ? `${leagueInfo.break_even_pct.toFixed(1)}%` : "0.0%";
+        breakEvenEl.textContent = leagueInfo.break_even_pct
+          ? `${leagueInfo.break_even_pct.toFixed(1)}%`
+          : "0.0%";
       }
       return;
     }
@@ -980,6 +1267,7 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
       (p) =>
         !p.is_blacklisted &&
         !p.is_rule_blocked &&
+        !isZeroH2hPick(p) &&
         (p.is_publishable || p.is_underdog || p.is_value),
     );
 
@@ -1046,7 +1334,7 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
   }
   const roiEl = document.getElementById("lbl-roi");
   if (roiEl) {
-    const roiVal = totalPicks > 0 ? (totalProfit / totalPicks * 100) : 0;
+    const roiVal = totalPicks > 0 ? (totalProfit / totalPicks) * 100 : 0;
     roiEl.textContent = `(${roiVal >= 0 ? "+" : ""}${roiVal.toFixed(1)}%)`;
     roiEl.style.color = roiVal >= 0 ? "var(--green)" : "var(--red)";
   }
@@ -1057,7 +1345,8 @@ async function updateStatsSummaryForFiltered(filteredMatches) {
   }
   const breakEvenEl = document.getElementById("lbl-break-even");
   if (breakEvenEl) {
-    breakEvenEl.textContent = breakEvenPct > 0 ? `${breakEvenPct.toFixed(1)}%` : "0.0%";
+    breakEvenEl.textContent =
+      breakEvenPct > 0 ? `${breakEvenPct.toFixed(1)}%` : "0.0%";
   }
 }
 
@@ -1065,7 +1354,8 @@ function toggleMarketSelectMode() {
   isMarketSelectMode = !isMarketSelectMode;
   const selectBtn = document.getElementById("btn-select-markets");
   const selectAllBtn = document.getElementById("btn-select-all-markets");
-  const applyBtn = document.getElementById("btn-apply-bulk-blacklist");
+  const blockBtn = document.getElementById("btn-apply-bulk-block");
+  const reduceBtn = document.getElementById("btn-apply-bulk-reduce");
 
   if (isMarketSelectMode) {
     if (selectBtn) {
@@ -1075,7 +1365,8 @@ function toggleMarketSelectMode() {
       selectBtn.style.color = "var(--red)";
     }
     if (selectAllBtn) selectAllBtn.style.display = "inline-flex";
-    if (applyBtn) applyBtn.style.display = "inline-flex";
+    if (blockBtn) blockBtn.style.display = "inline-flex";
+    if (reduceBtn) reduceBtn.style.display = "inline-flex";
   } else {
     selectedMarketsSet.clear();
     if (selectBtn) {
@@ -1085,9 +1376,10 @@ function toggleMarketSelectMode() {
       selectBtn.style.color = "var(--accent-light)";
     }
     if (selectAllBtn) selectAllBtn.style.display = "none";
-    if (applyBtn) applyBtn.style.display = "none";
+    if (blockBtn) blockBtn.style.display = "none";
+    if (reduceBtn) reduceBtn.style.display = "none";
   }
-  updateBulkBlacklistButton();
+  updateBulkGovernanceButtons();
   renderFilteredMatches();
 }
 
@@ -1097,68 +1389,92 @@ function toggleMarketSelection(marketName, isChecked) {
   } else {
     selectedMarketsSet.delete(marketName);
   }
-  updateBulkBlacklistButton();
+  updateBulkGovernanceButtons();
   renderFilteredMatches();
 }
 
 function toggleSelectAllMarkets() {
   if (!currentMarketsList || currentMarketsList.length === 0) return;
-  const allSelected = currentMarketsList.every((m) => selectedMarketsSet.has(m.name));
+  const allSelected = currentMarketsList.every((m) =>
+    selectedMarketsSet.has(m.name),
+  );
   if (allSelected) {
     selectedMarketsSet.clear();
   } else {
     currentMarketsList.forEach((m) => selectedMarketsSet.add(m.name));
   }
-  updateBulkBlacklistButton();
+  updateBulkGovernanceButtons();
   renderFilteredMatches();
 }
 
-function updateBulkBlacklistButton() {
-  const applyBtn = document.getElementById("btn-apply-bulk-blacklist");
+function updateBulkGovernanceButtons() {
+  const blockBtn = document.getElementById("btn-apply-bulk-block");
+  const reduceBtn = document.getElementById("btn-apply-bulk-reduce");
   const selectAllBtn = document.getElementById("btn-select-all-markets");
-  if (!applyBtn) return;
+  if (!blockBtn && !reduceBtn) return;
 
   const count = selectedMarketsSet.size;
-  applyBtn.textContent = `🚫 Aplicar Blacklist (${count})`;
+  if (blockBtn) blockBtn.textContent = `🚫 Blacklist (${count})`;
+  if (reduceBtn) reduceBtn.textContent = `📉 Reducir Stake (${count})`;
 
-  if (count > 0) {
-    applyBtn.disabled = false;
-    applyBtn.style.opacity = "1";
-    applyBtn.style.cursor = "pointer";
-  } else {
-    applyBtn.disabled = true;
-    applyBtn.style.opacity = "0.6";
-    applyBtn.style.cursor = "not-allowed";
-  }
+  [blockBtn, reduceBtn].forEach((btn) => {
+    if (!btn) return;
+    if (count > 0) {
+      btn.disabled = false;
+      btn.style.opacity = "1";
+      btn.style.cursor = "pointer";
+    } else {
+      btn.disabled = true;
+      btn.style.opacity = "0.6";
+      btn.style.cursor = "not-allowed";
+    }
+  });
 
   if (selectAllBtn && currentMarketsList.length > 0) {
-    const allSelected = currentMarketsList.every((m) => selectedMarketsSet.has(m.name));
-    selectAllBtn.textContent = allSelected ? "Deseleccionar Todos" : "Seleccionar Todos";
+    const allSelected = currentMarketsList.every((m) =>
+      selectedMarketsSet.has(m.name),
+    );
+    selectAllBtn.textContent = allSelected
+      ? "Deseleccionar Todos"
+      : "Seleccionar Todos";
   }
 }
 
-async function applyBulkBlacklist() {
+async function applyBulkGovernance(action) {
   if (!activeLeague || selectedMarketsSet.size === 0) return;
   const count = selectedMarketsSet.size;
+  const actionLabel =
+    action === "block" ? "agregar a la blacklist" : "reducir stake de";
   if (
     !confirm(
-      `¿Deseas agregar los ${count} mercados seleccionados a la blacklist de la competición "${activeLeague}" y recalcular todo el historial?`
+      `¿Deseas ${actionLabel} los ${count} mercados seleccionados para "${activeLeague}"?`,
     )
   ) {
     return;
   }
 
   try {
-    const res = await fetch("/api/v1/leagues/blacklist-markets", {
+    const endpoint =
+      action === "block"
+        ? "/api/v1/leagues/blacklist-markets"
+        : "/api/v1/leagues/governance/batch-action";
+    const body =
+      action === "block"
+        ? { league: activeLeague, markets: Array.from(selectedMarketsSet) }
+        : {
+            league: activeLeague,
+            markets: Array.from(selectedMarketsSet),
+            action: action,
+            stake_multiplier: 0.5,
+          };
+
+    const res = await fetch(endpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        league: activeLeague,
-        markets: Array.from(selectedMarketsSet),
-      }),
+      body: JSON.stringify(body),
     });
     const data = await res.json();
-    alert(data.message || "Mercados añadidos a blacklist.");
+    alert(data.message || "Acción completada con éxito.");
 
     isMarketSelectMode = false;
     selectedMarketsSet.clear();
@@ -1171,13 +1487,15 @@ async function applyBulkBlacklist() {
     }
     const selectAllBtn = document.getElementById("btn-select-all-markets");
     if (selectAllBtn) selectAllBtn.style.display = "none";
-    const applyBtn = document.getElementById("btn-apply-bulk-blacklist");
-    if (applyBtn) applyBtn.style.display = "none";
+    const blockBtn = document.getElementById("btn-apply-bulk-block");
+    if (blockBtn) blockBtn.style.display = "none";
+    const reduceBtn = document.getElementById("btn-apply-bulk-reduce");
+    if (reduceBtn) reduceBtn.style.display = "none";
 
     await fetchLeagues();
   } catch (err) {
-    console.error("Error al agregar mercados a blacklist:", err);
-    alert("Error al aplicar la blacklist: " + err.message);
+    console.error("Error en gobernanza en lote:", err);
+    alert("Error al aplicar la acción de gobernanza: " + err.message);
   }
 }
 
@@ -1228,7 +1546,7 @@ async function addMarketToBlacklist(marketName) {
   if (!activeLeague) return;
   if (
     !confirm(
-      `¿Deseas agregar el mercado "${marketName}" a la blacklist de la competición "${activeLeague}" y aplicar a todos los picks del historial?`,
+      `¿Deseas agregar el mercado "${marketName}" a la blacklist de "${activeLeague}"?`,
     )
   ) {
     return;
@@ -1243,13 +1561,13 @@ async function addMarketToBlacklist(marketName) {
       }),
     });
     const data = await res.json();
-    alert(data.message || "Mercado añadido a blacklist.");
+    alert(data.message || "Mercado añadido a la blacklist.");
 
     // Recargar ligas para refrescar rentabilidades manteniendo la liga activa seleccionada
     await fetchLeagues();
   } catch (err) {
-    console.error("Error al agregar mercado a blacklist:", err);
-    alert("Error al agregar a blacklist: " + err.message);
+    console.error("Error al agregar mercado a la blacklist:", err);
+    alert("Error al agregar a la blacklist: " + err.message);
   }
 }
 
@@ -1257,7 +1575,7 @@ async function reduceMarketStake(marketName) {
   if (!activeLeague) return;
   if (
     !confirm(
-      `¿Deseas reducir el stake a la mitad (50%) para el mercado "${marketName}" en la competición "${activeLeague}" y recalcular todo el historial?`,
+      `¿Deseas reducir el stake (50%) para el mercado "${marketName}" en la gobernanza de "${activeLeague}"?`,
     )
   ) {
     return;

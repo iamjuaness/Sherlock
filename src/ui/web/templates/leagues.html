@@ -518,13 +518,22 @@
                 Seleccionar Todos
               </button>
               <button
-                id="btn-apply-bulk-blacklist"
+                id="btn-apply-bulk-block"
                 class="tab-btn"
-                onclick="applyBulkBlacklist()"
+                onclick="applyBulkGovernance('block')"
                 style="display: none; background: rgba(239, 68, 68, 0.2); color: #f87171; border: 1px solid rgba(239, 68, 68, 0.4); opacity: 0.6; cursor: not-allowed;"
                 disabled
               >
-                🚫 Aplicar Blacklist (0)
+                🚫 Bloquear Seleccionados (0)
+              </button>
+              <button
+                id="btn-apply-bulk-reduce"
+                class="tab-btn"
+                onclick="applyBulkGovernance('reduce')"
+                style="display: none; background: rgba(245, 158, 11, 0.2); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.4); opacity: 0.6; cursor: not-allowed;"
+                disabled
+              >
+                📉 Reducir Stake (0)
               </button>
             </div>
 

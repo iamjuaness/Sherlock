@@ -477,13 +477,48 @@ function renderMultiLineCards(values) {
     return;
   }
 
-  // ── 1. Evaluar picks (Sincronizado con Backend) ──
-  const valuePicks = values
-    .filter((v) => v.selection && v.odds != null)
+  // ── 1. Evaluar picks (Sincronizado con Backend y leagues.js) ──
+  const isZeroH2hPick = (p) => {
+    if (!p) return false;
+    const h2hCount =
+      p.h2h_samples != null
+        ? p.h2h_samples
+        : Array.isArray(p.h2h_matches)
+          ? p.h2h_matches.length
+          : 0;
+    if (h2hCount <= 0) return false;
+
+    const h2hHits =
+      p.h2h_hits != null
+        ? p.h2h_hits
+        : Array.isArray(p.h2h_matches)
+          ? p.h2h_matches.filter((m) => m.hit === true).length
+          : null;
+    if (h2hHits === 0) return true;
+
+    const h2hHr =
+      p.h2h_hit_rate != null
+        ? Number(p.h2h_hit_rate)
+        : p.h2h_raw_hit_rate != null
+          ? Number(p.h2h_raw_hit_rate)
+          : null;
+    if (h2hHr === 0) return true;
+
+    return false;
+  };
+
+  const validPicks = values
+    .filter((v) => v && v.selection && v.odds != null)
+    .filter(
+      (v) => !v.is_blacklisted && !v.is_rule_blocked && !isZeroH2hPick(v),
+    );
+
+  const valuePicks = validPicks
     .filter(
       (v) =>
-        v.is_value === true && v.is_underdog !== true && Number(v.odds) <= 3.5,
-    ) // Profesional
+        !v.is_underdog &&
+        (v.is_publishable === true || v.is_value === true),
+    ) // Profesional / Valor
     .sort((a, b) => {
       const dqA = a.data_quality_score ?? 0;
       const dqB = b.data_quality_score ?? 0;
@@ -491,8 +526,7 @@ function renderMultiLineCards(values) {
       return (b.model_prob ?? 0) - (a.model_prob ?? 0);
     });
 
-  const underdogPicks = values
-    .filter((v) => v.selection && v.odds != null)
+  const underdogPicks = validPicks
     .filter((v) => v.is_underdog === true)
     .sort((a, b) => {
       const dqA = a.data_quality_score ?? 0;
@@ -574,10 +608,7 @@ function renderMultiLineCards(values) {
       const parts = [];
       if (homeHr) parts.push(`Loc: <b>${homeHr}</b>`);
       if (awayHr) parts.push(`Vis: <b>${awayHr}</b>`);
-      if (empHr && (homeHr || awayHr) && empHr !== homeHr && empHr !== awayHr)
-        parts.push(`Total: <b>${empHr}</b>`);
-      else if (empHr && !homeHr && !awayHr)
-        parts.push(`Total: <b>${empHr}</b>`);
+      if (empHr) parts.push(`Total: <b>${empHr}</b>`);
       if (h2hHr)
         parts.push(
           `<span style="color:#a78bfa;" title="Hit rate en enfrentamientos directos previos">H2H: <b>${h2hHr}${h2hCount}</b></span>`,
@@ -766,7 +797,11 @@ function renderResults(data) {
   }
 
   try {
-    if (data.values) renderMultiLineCards(data.values);
+    const picksToRender =
+      Array.isArray(data.picks_calculados) && data.picks_calculados.length > 0
+        ? data.picks_calculados
+        : data.values;
+    if (picksToRender) renderMultiLineCards(picksToRender);
   } catch (e) {
     console.error("Error pintando tabla:", e);
   }
@@ -1771,6 +1806,16 @@ async function loadHistoryEntry(id) {
         ) {
           snapshot._actual_score_home = entry.final_score_home;
           snapshot._actual_score_away = entry.final_score_away;
+        }
+
+        if (entry.picks_calculados) {
+          const parsedPicks =
+            typeof entry.picks_calculados === "string"
+              ? JSON.parse(entry.picks_calculados)
+              : entry.picks_calculados;
+          if (Array.isArray(parsedPicks) && parsedPicks.length > 0) {
+            snapshot.picks_calculados = parsedPicks;
+          }
         }
 
         if (entry.sport === "football") {

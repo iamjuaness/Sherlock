@@ -50,7 +50,7 @@ from typing import Any, Iterable, Mapping
 
 # Versión de la política de publicación. Cambiar un umbral obliga a subirla:
 # sin esto no se puede saber con qué reglas se publicó un pick histórico.
-POLICY_VERSION = "elig-v2.1"
+POLICY_VERSION = "elig-v2.2"
 
 
 class BlockReason(str, Enum):
@@ -63,6 +63,7 @@ class BlockReason(str, Enum):
     UNSETTLEABLE = "unsettleable"
     MANUAL_BLOCK = "manual_block"
     EXPOSURE_LIMIT = "exposure_limit"
+    SEGMENT_GOVERNANCE_BLOCKED = "segment_governance_blocked"
 
     # ── Filtros BLANDOS: recalculables ──────────────────────────────
     ODDS_MISSING = "odds_missing"
@@ -86,6 +87,7 @@ HARD_BLOCKS: frozenset[BlockReason] = frozenset({
     BlockReason.UNSETTLEABLE,
     BlockReason.MANUAL_BLOCK,
     BlockReason.EXPOSURE_LIMIT,
+    BlockReason.SEGMENT_GOVERNANCE_BLOCKED,
 })
 
 
@@ -105,6 +107,7 @@ REASON_LABELS: dict[BlockReason, str] = {
     BlockReason.UNSETTLEABLE: "No se puede liquidar: falta la estadística necesaria",
     BlockReason.MANUAL_BLOCK: "Bloqueado manualmente",
     BlockReason.EXPOSURE_LIMIT: "Supera el límite de exposición del evento",
+    BlockReason.SEGMENT_GOVERNANCE_BLOCKED: "Bloqueado por gobernanza de segmento (deterioro/drift)",
     BlockReason.ODDS_MISSING: "Sin cuota disponible",
     BlockReason.ODDS_TOO_LOW: "Cuota por debajo del mínimo",
     BlockReason.ODDS_TOO_HIGH: "Cuota por encima del máximo",
@@ -154,14 +157,16 @@ class PublicationThresholds:
     max_edge: float = 25.0  # Techo global de edge
     max_edge_high_prob_threshold: float = 67.0  # Excepción: prob calibrada >= 67% permite edge > 25%
     min_data_quality: float = 50.0
-    min_stake_units: float = 1.0
+    min_stake_units: float = 0.0
+    # H2H: nunca bloquear con n < 8 (requisito del planning). Con n >= 8 se aplica
+    # shrinkage Beta-Binomial y solo se usa como penalización de fiabilidad, no bloqueo duro.
     block_on_zero_h2h: bool = True
-    # H2H bajo (no solo cero): validado en backtest, sí aporta.
     block_on_low_h2h: bool = True
     min_h2h_hit_rate_block: float = 25.0
-    min_h2h_samples_for_block: int = 3
+    # Aumentado a 8: el planning exige nunca bloquear por H2H bruto con n < 8.
+    min_h2h_samples_for_block: int = 8
     low_h2h_families: frozenset[str] = frozenset({"double_chance", "doublechance"})
-    version: str = "elig-v2.1"
+    version: str = "elig-v2.2"
 
     def min_prob_for(self, market_family: str | None) -> float:
         fam = (market_family or "generic").lower()
@@ -203,6 +208,7 @@ class PickSnapshot:
     stake_units: float | None = None
     h2h_hit_rate: float | None = None
     h2h_raw_hit_rate: float | None = None
+    h2h_hits: int | None = None
     h2h_samples: int = 0
     selection: str = ""
 
@@ -223,25 +229,38 @@ class PickSnapshot:
         """
         Construye el snapshot desde un `ValueIndicator` o un dict.
 
-        La probabilidad usada es la CALIBRADA cuando existe: es la que el
-        sistema afirma creer. Publicar según `model_prob` mientras se muestra
-        `calibrated_prob` sería decidir con un número y comunicar otro.
+        La probabilidad usada prioriza `final_prob` (mezcla calibrada + mercado),
+        luego `calibrated_prob` y finalmente `model_prob`.
+        El edge prioriza `edge_final` > `edge_calibrated` > `edge`.
+        Esto garantiza que la elegiblidad usa la mejor estimación disponible.
         """
-        prob = cls._get(src, "calibrated_prob", "calibratedProb")
+        # final_prob = calibración + blend de mercado; es la estimación más informada
+        prob = cls._get(src, "final_prob", "finalProb")
+        if prob is None:
+            prob = cls._get(src, "calibrated_prob", "calibratedProb")
         if prob is None:
             prob = cls._get(src, "model_prob", "modelProb")
 
+        # edge_final > edge_calibrated > edge (mismo principio de prioridad)
+        edge = cls._get(src, "edge_final", "edgeFinal")
+        if edge is None:
+            edge = cls._get(src, "edge_calibrated", "edgeCalibrated")
+        if edge is None:
+            edge = cls._get(src, "edge")
+
         fam = market_family or cls._get(src, "market_family", "marketFamily") or "generic"
+        raw_hits = cls._get(src, "h2h_hits", "h2hHits")
 
         return cls(
             market_family=str(fam),
             odds=_as_float(cls._get(src, "odds")),
             prob=_as_float(prob),
-            edge=_as_float(cls._get(src, "edge")),
+            edge=_as_float(edge),
             data_quality_score=_as_float(cls._get(src, "data_quality_score", "dataQualityScore")),
             stake_units=_as_float(cls._get(src, "stake_units", "stakeUnits")),
             h2h_hit_rate=_as_float(cls._get(src, "h2h_hit_rate", "h2hHitRate")),
             h2h_raw_hit_rate=_as_float(cls._get(src, "h2h_raw_hit_rate", "h2hRawHitRate")),
+            h2h_hits=int(_as_float(raw_hits)) if raw_hits is not None else None,
             h2h_samples=int(_as_float(cls._get(src, "h2h_samples", "h2hSamples", default=0)) or 0),
             selection=str(cls._get(src, "selection", default="") or ""),
         )
@@ -420,16 +439,20 @@ def evaluate_soft_filters(
     ):
         fails.add(BlockReason.STAKE_TOO_LOW)
 
+    # H2H: aplicar shrinkage Beta-Binomial y respetar umbral mínimo de muestras (n >= 8).
+    # Nunca bloquear por H2H bruto con n < 8: shrunk_h2h_rate absorbe la incertidumbre.
+    from src.models.h2h_shrinkage import shrunk_h2h_rate
+
     effective_h2h_hr = snapshot.h2h_hit_rate if snapshot.h2h_hit_rate is not None else snapshot.h2h_raw_hit_rate
     if (
         thresholds.block_on_zero_h2h
         and effective_h2h_hr is not None
-        and effective_h2h_hr == 0.0
-        and snapshot.h2h_samples > 0
+        and snapshot.h2h_samples >= 1
     ):
-        fails.add(BlockReason.H2H_ZERO_HIT_RATE)
+        if effective_h2h_hr == 0.0 or (snapshot.h2h_hits is not None and snapshot.h2h_hits == 0):
+            fails.add(BlockReason.H2H_ZERO_HIT_RATE)
 
-    # Se conserva: H2H bajo (no cero) en Doble Oportunidad, validado en backtest.
+    # H2H bajo (no cero) en familias específicas: requiere n >= 8 obligatoriamente
     fam = (snapshot.market_family or "generic").lower()
     if (
         thresholds.block_on_low_h2h
@@ -437,7 +460,7 @@ def evaluate_soft_filters(
         and effective_h2h_hr is not None
         and effective_h2h_hr > 0.0
         and effective_h2h_hr <= thresholds.min_h2h_hit_rate_block
-        and snapshot.h2h_samples >= thresholds.min_h2h_samples_for_block
+        and snapshot.h2h_samples >= thresholds.min_h2h_samples_for_block  # nunca con n < 8
     ):
         fails.add(BlockReason.H2H_LOW_HIT_RATE)
 

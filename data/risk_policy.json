@@ -1,0 +1,37 @@
+{
+  "version": "v2.0",
+  "updated_at": "2026-10-05T00:00:00Z",
+  "global_limits": {
+    "min_stake_units": 0.25,
+    "max_stake_units": 3.0,
+    "max_stake_per_match": 5.0,
+    "max_stake_per_league": 15.0,
+    "max_stake_per_segment": 8.0,
+    "max_stake_per_correlated_cluster": 6.0,
+    "min_edge_final_pct": 2.5,
+    "min_reliability_score": 0.35
+  },
+  "segment_status_overrides": {
+    "active": {
+      "stake_multiplier": 1.0,
+      "min_edge_add": 0.0
+    },
+    "watch": {
+      "stake_multiplier": 0.50,
+      "min_edge_add": 2.0
+    },
+    "reduced": {
+      "stake_multiplier": 0.25,
+      "min_edge_add": 4.0
+    },
+    "experimental": {
+      "stake_multiplier": 0.30,
+      "max_stake_cap": 1.0,
+      "min_edge_add": 3.0
+    },
+    "blocked": {
+      "stake_multiplier": 0.0,
+      "hard_block": true
+    }
+  }
+}

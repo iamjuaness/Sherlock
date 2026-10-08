@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from enum import Enum
 from typing import Optional
+import json
 import os, math
 import re
 import logging
@@ -30,6 +31,24 @@ from src.domain.eligibility import (
 )
 from src.models.count_negative_binomial import (
     under_over_probabilities as _nb_under_over_probabilities,
+)
+# ── Nueva Arquitectura: Stake Engine, Trazabilidad, Taxonomía de Mercado ──
+from src.domain.stake_engine import (
+    RiskPolicy,
+    StakeFactors,
+    EdgeResult,
+    compute_edge,
+    compute_stake_final,
+    compute_risk_decision,
+    kelly_fractional,
+)
+from src.domain.traceability import PickTrace
+from src.domain.market_taxonomy import (
+    parse_market,
+    market_group_key,
+    line_bucket_for,
+    normalize_market_side,
+    normalize_market_family,
 )
 
 load_dotenv()
@@ -604,6 +623,30 @@ class ValueIndicator(BaseModel):
     eligibility_reasons: List[str] = Field(default_factory=list)
     eligibility_policy_version: Optional[str] = None
 
+    # ── Nueva Arquitectura: Trazabilidad Completa (Fase 13) ───────────────
+    # Taxonomía canónica de mercado
+    market_family:  Optional[str]  = None  # goals | btts | result | corners | cards | shots | ...
+    market_side:    Optional[str]  = None  # over | under | yes | no | home | away | draw | ...
+    line_bucket:    Optional[str]  = None  # low_0_5_1_5 | core_2_5 | high_3_5 | no_line | ...
+    segment_key:    Optional[str]  = None  # league:X|family:Y|side:Z|bucket:W
+
+    # Probabilidades desglosadas por etapa del pipeline
+    final_prob:              Optional[float] = None  # blend calibrado + mercado (la más informada)
+    p_market_no_vig:         Optional[float] = None  # prob implícita de mercado sin vig (0-100)
+
+    # Edge desglosado (raw → calibrado → final)
+    edge_raw:        Optional[float] = None   # edge con prob. Poisson cruda
+    edge_calibrated: Optional[float] = None   # edge con prob. calibrada (curva jerárquica)
+    edge_final:      Optional[float] = None   # edge con prob. final (blend mercado)
+
+    # Gobernanza de segmento
+    segment_status:       Optional[str]   = None   # active | watch | reduced | blocked | experimental
+    drift_score:          Optional[float] = None   # score de drift del segmento (0-1)
+    governance_multiplier: Optional[float] = None  # factor aplicado al stake por gobernanza [0-1]
+
+    # Componentes de fiabilidad
+    reliability_components: Dict[str, float] = Field(default_factory=dict)
+
 
 class StatComparison(BaseModel):
     label:      str
@@ -913,6 +956,145 @@ MARKET_REF_ACCURACY = {
 CALIBRATION_ARTIFACT_PATH = os.getenv(
     "SHERLOCK_CALIBRATION_PATH", "data/calibration/active.json"
 )
+
+
+# ── Gobernanza de Segmentos ─────────────────────────────────────────────
+# Ruta configurable; fallback al JSON generado por update_governance.py.
+GOVERNANCE_PATH = os.getenv("SHERLOCK_GOVERNANCE_PATH", "data/segment_governance.json")
+
+_governance_cache: "dict[str, Any]" = {"mtime": None, "data": None}
+
+# Factores de stake por status de gobernanza
+_STATUS_MULTIPLIERS: "dict[str, float]" = {
+    "blocked":      0.0,   # bloqueo duro: stake cero -> SEGMENT_GOVERNANCE_BLOCKED
+    "reduced":      0.5,   # stake reducido al 50 %
+    "watch":        0.85,  # stake ligeramente reducido -- en vigilancia
+    "experimental": 0.30,  # segmento nuevo con muy poca muestra
+    "active":       1.0,   # sin restriccion
+}
+
+
+def get_segment_governance() -> "dict":
+    """
+    Devuelve el artefacto de gobernanza completo, recargandolo si cambio en disco.
+
+    Nunca lanza: un artefacto ausente o corrupto degrada a dict vacio (sin restricciones).
+    """
+    path = Path(GOVERNANCE_PATH)
+    try:
+        mtime = path.stat().st_mtime if path.exists() else None
+    except OSError:
+        mtime = None
+
+    if _governance_cache["data"] is not None and _governance_cache["mtime"] == mtime:
+        return _governance_cache["data"]
+
+    if mtime is None:
+        data: "dict" = {}
+    else:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            logger.info(
+                "Gobernanza cargada: %d segmentos (active=%s blocked=%s reduced=%s watch=%s).",
+                data.get("total_segments", 0),
+                data.get("status_counts", {}).get("active", 0),
+                data.get("status_counts", {}).get("blocked", 0),
+                data.get("status_counts", {}).get("reduced", 0),
+                data.get("status_counts", {}).get("watch", 0),
+            )
+        except Exception as exc:
+            logger.warning("Error cargando gobernanza desde %s (%s). Sin restricciones.", path, exc)
+            data = {}
+
+    _governance_cache["mtime"] = mtime
+    _governance_cache["data"] = data
+    return data
+
+
+def _get_governance_multiplier(
+    segment_key: "str",
+    league: "str | None" = None,
+    family: "str | None" = None,
+    side: "str | None" = None,
+    bucket: "str | None" = None,
+) -> "tuple[str, float, float]":
+    """
+    Resuelve el status de gobernanza y el multiplicador de stake para un segmento.
+
+    Busca en orden jerarquico decreciente (mas especifico primero):
+      1. segment_key completo (league+family+side+bucket)
+      2. league+family+side+bucket
+      3. league+family+side
+      4. league+family
+      5. league (solo)
+      6. family+side+bucket
+      7. family+side
+      8. family (solo)
+
+    Devuelve (status, governance_multiplier, drift_score).
+    Si el segmento no esta en el artefacto, devuelve ('active', 1.0, 0.0).
+    """
+    gov = get_segment_governance()
+    segments: "dict" = gov.get("segments", {})
+    segment_meta: "dict" = gov.get("segment_meta", {})
+
+    if not segments:
+        return "active", 1.0, 0.0
+
+    # Construir las claves a buscar en orden de especificidad
+    candidates: "list[str]" = []
+    if segment_key:
+        candidates.append(segment_key)
+
+    # Variantes jerarquicas parciales
+    if league and family and side and bucket:
+        candidates.append(f"league:{league}|family:{family}|side:{side}|bucket:{bucket}")
+    if league and family and side:
+        candidates.append(f"league:{league}|family:{family}|side:{side}")
+    if league and family:
+        candidates.append(f"league:{league}|family:{family}")
+    if league:
+        candidates.append(f"league:{league}")
+    if family and side and bucket:
+        candidates.append(f"family:{family}|side:{side}|bucket:{bucket}")
+    if family and side:
+        candidates.append(f"family:{family}|side:{side}")
+    if family:
+        candidates.append(f"family:{family}")
+
+    for key in candidates:
+        status = segments.get(key)
+        if status is not None:
+            status_str = str(status).lower()
+            meta = segment_meta.get(key, {})
+            drift = float(meta.get("drift_score", 0.0) or meta.get("calibration_gap", 0.0))
+
+            if status_str == "reduced":
+                # Si segment_meta especifica un stake_multiplier o un factor basado en calibration_gap/drift, lo usamos
+                if "stake_multiplier" in meta and meta["stake_multiplier"] is not None:
+                    multiplier = float(meta["stake_multiplier"])
+                elif "calibration_gap" in meta and meta["calibration_gap"] is not None:
+                    gap = abs(float(meta["calibration_gap"]))
+                    # Cuanto mayor sea el gap de calibración, mayor la reducción (mínimo 0.2, máximo 0.8)
+                    multiplier = max(0.2, min(0.8, round(1.0 - (gap * 2.0), 2)))
+                elif drift > 0:
+                    multiplier = max(0.2, min(0.8, round(1.0 - drift, 2)))
+                else:
+                    multiplier = _STATUS_MULTIPLIERS.get("reduced", 0.5)
+            else:
+                multiplier = _STATUS_MULTIPLIERS.get(status_str, 1.0)
+
+            return status_str, multiplier, drift
+
+    return "active", 1.0, 0.0
+
+
+def reset_governance_cache() -> None:
+    """Fuerza la recarga del artefacto de gobernanza en la siguiente llamada (tests)."""
+    _governance_cache["mtime"] = None
+    _governance_cache["data"] = None
+
 
 _calibrator_cache: "dict[str, Any]" = {"mtime": None, "obj": None}
 
@@ -1466,14 +1648,35 @@ def _calculate_kelly_fraction(
 
 
 def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None, odds_obj: Any = None, match_date: datetime | str | None = None):
+    """
+    Construye un ValueIndicator con la nueva arquitectura completa:
+      1. Calibración jerárquica de 9 niveles
+      2. Edge desglosado (raw -> calibrado -> final)
+      3. Gobernanza de segmento (segment_governance.json) con bloqueo duro si BLOCKED
+      4. Stake Engine (Kelly × LRS × governance_multiplier × data_quality)
+      5. Trazabilidad completa (PickTrace con todos los campos Fase 13)
+    """
     if odds is None or odds <= 1.0:
         return ValueIndicator(selection=sel, model_prob=round(modelp, 1), push_prob=round(push_p, 1))
 
+    # ── 1. Taxonomía Canónica de Mercado ────────────────────────────────
+    # family_legacy: usado para calibración, odds, EV (compatibilidad con código existente)
     family = _market_family(sel)
+    # mk: taxonomía canónica — determina el segment_key para gobernanza y trazabilidad
+    mk = parse_market(sel, sel)           # MarketKey canónica (family, side, line, line_bucket)
+    mkt_family = str(mk.family)           # familia canónica (goals, corners, cards, etc.)
+    mkt_side   = mk.side
+    mkt_bucket = mk.line_bucket or "no_line"
+    mkt_line   = mk.line
+
+    resolved_league_name = league_name or (getattr(league, "name", None) if league else None)
+    # El segment_key usa la familia CANÓNICA para coincidir con segment_governance.json
+    seg_key = market_group_key(resolved_league_name, mkt_family, mkt_side, mkt_bucket)
 
     pred_ts = match_date if match_date is not None else datetime.now(timezone.utc).isoformat()
     pred_ts_str = pred_ts.isoformat() if isinstance(pred_ts, datetime) else str(pred_ts)
 
+    # ── 2. Calibración Jerárquica ────────────────────────────────────────
     calibrated_p = apply_calibration(
         raw_prob=modelp,
         odds=odds,
@@ -1485,10 +1688,6 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     )
 
     # Recorte heurístico de respaldo: SOLO cuando no hay curva entrenada.
-    # Antes se aplicaba siempre (`calibrated_p *= 0.82` con edge >= 20), un
-    # factor codificado a mano sin respaldo empírico. Con artefacto entrenado
-    # la curva jerárquica ya corrige la sobreconfianza con evidencia real, y
-    # aplicar ambos castigaría dos veces el mismo sesgo.
     if not calibration_is_active():
         raw_implied_pre = (1.0 / odds) * 100.0
         if calibrated_p - raw_implied_pre >= 20.0:
@@ -1498,37 +1697,58 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     margin_factor = (overround / 100.0) if overround > 100 else 1.05
     implied_no_vig = raw_implied / margin_factor
 
-    # ── EV por distribución de retornos (motor único de settlement) ──────
-    # El cálculo anterior era  ev = (p·odds - 1) · (1 - p_push), que trata el
-    # push como pérdida y luego lo escala. El push devuelve la apuesta: su
-    # retorno es 0. EV correcto:  E[R] = P(win)·(odds-1) - P(loss).
+    # ── 3. Edge desglosado (raw → calibrado → final) ────────────────────
+    # edge_raw: usando prob. Poisson cruda (sin calibrar)
+    # edge_calibrated: usando prob. calibrada (curva jerárquica)
+    # edge_final: usando prob. final (blend con mercado; aquí = calibrada hasta blend)
+    _p_model_raw_01 = modelp / 100.0 if modelp > 1.0 else modelp
+    _p_calibrated_01 = calibrated_p / 100.0 if calibrated_p > 1.0 else calibrated_p
+
+    # Blend con probabilidad de mercado (no-vig): 80% calibrado + 20% mercado
+    _p_market_01 = (implied_no_vig / 100.0) if implied_no_vig > 0.0 else _p_calibrated_01
+    _p_final_01 = 0.80 * _p_calibrated_01 + 0.20 * _p_market_01
+
+    try:
+        edge_result = compute_edge(
+            p_final=_p_final_01,
+            odds=odds,
+            p_model_raw=_p_model_raw_01,
+            p_calibrated=_p_calibrated_01,
+        )
+        _edge_raw        = edge_result.edge_raw
+        _edge_calibrated = edge_result.edge_calibrated
+        _edge_final      = edge_result.edge_final
+    except Exception:
+        _edge_raw = _edge_calibrated = _edge_final = 0.0
+
+    # Prob final en % para el resto del pipeline
+    final_prob_pct = _p_final_01 * 100.0
+
+    # ── 4. EV y Edge de display ─────────────────────────────────────────
     ret_dist = ReturnDistribution.simple(
         odds=odds, p_win=calibrated_p, p_push=push_p or 0.0
     )
     ev = ret_dist.expected_value
-
-    # Edge en probabilidad, condicionado a que la apuesta resuelva.
-    # Sin push esto es idéntico a (calibrated_p - raw_implied).
     edge_prob = (ret_dist.p_win_effective * 100.0) - raw_implied
 
-    # ── League Reliability Score ──────────────────────────────────────────
-    # El LRS mide la confiabilidad histórica de la liga.
-    # PRINCIPIO CLAVE (planning.txt): el modelo estadístico es inmutable.
-    # Su única misión es dar la probabilidad del evento. El LRS NO debe
-    # contaminar la calibrated_prob; solo ajusta el kelly_multiplier (staking).
+    # ── 5. League Reliability Score ──────────────────────────────────────
     if league is not None:
         lrs = league.league_reliability_score if league.league_reliability_score > 0.0 else _compute_league_reliability_score(league)
     else:
-        lrs = 0.7  # sin datos de liga = confianza moderada
-
-    # Calcular EV con la probabilidad PURA (sin distorsión de LRS)
-    # El EV es informativo: (prob * odds) - 1. No se ajusta por LRS.
-    lrs_penalty = 0.0  # guardado para display, pero no afecta la prob
+        lrs = 0.7
+    lrs_penalty = 0.0
     p = calibrated_p / 100.0
 
+    # ── 6. Gobernanza de Segmento ────────────────────────────────────────
+    gov_status, gov_multiplier, gov_drift = _get_governance_multiplier(
+        segment_key=seg_key,
+        league=resolved_league_name,
+        family=mkt_family,   # usa familia canónica para lookup en segment_governance.json
+        side=mkt_side,
+        bucket=mkt_bucket,
+    )
 
-    # ─────────────────────────────────────────────────────────────
-
+    # ── 7. Rating ────────────────────────────────────────────────────────
     conf_tier = get_market_confidence_tier(sel)
     var_tier = get_market_variance_tier(sel)
     dq_score = get_data_quality_score(sel, h, a) if h and a else None
@@ -1538,10 +1758,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     elif ev > 0.02:  rating = "⚖️ MARGINAL"
     else:            rating = "❌ NO VALUE"
 
-    # ── Stake Manager: ajuste por LRS ──────────────────────────────────────
-    # El LRS afecta SOLO al kelly_multiplier, nunca a la probabilidad.
-    # Liga baja confianza (LRS < 0.5) → pasar de 1/4 Kelly a 1/8 Kelly.
-    # Liga muy baja confianza (LRS < 0.35) → 1/16 Kelly.
+    # ── 8. Stake Engine ──────────────────────────────────────────────────
     market_lrs_factor = 1.0
     if league is not None and league.market_hit_rates:
         market_rate = league.market_hit_rates.get(family)
@@ -1556,16 +1773,15 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             market_lrs_factor = 1.0 + max(-0.35, min(0.15, market_dev * 1.5))
 
     if lrs >= 0.65:
-        kelly_multiplier = 0.25          # 1/4 Kelly (confianza normal)
+        kelly_multiplier = 0.25
     elif lrs >= 0.50:
-        kelly_multiplier = 0.125         # 1/8 Kelly (liga baja confianza)
+        kelly_multiplier = 0.125
     elif lrs >= 0.35:
-        kelly_multiplier = 0.0625        # 1/16 Kelly (liga muy baja confianza)
+        kelly_multiplier = 0.0625
     else:
-        kelly_multiplier = 0.03125       # 1/32 Kelly (liga sin datos reales)
+        kelly_multiplier = 0.03125
     kelly_multiplier *= market_lrs_factor
 
-    # Aplicar límite adicional si la liga tiene rendimiento histórico pobre
     if league is not None and getattr(league, "historical_picks", 0) >= 5:
         hist_profit = getattr(league, "historical_profit", 0.0)
         hist_accuracy = getattr(league, "accuracy", 100.0)
@@ -1573,13 +1789,12 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             kelly_multiplier = min(kelly_multiplier, 0.03125)
 
     kelly_fraction = _calculate_kelly_fraction(
-        calibrated_prob=calibrated_p,   # probabilidad PURA, sin distorsión LRS
+        calibrated_prob=calibrated_p,
         odds=odds,
         kelly_multiplier=kelly_multiplier,
-        distribution=ret_dist,          # push = retorno 0, no pérdida
+        distribution=ret_dist,
     )
 
-    family = _market_family(sel)
     stake = _calculate_stake_units(
         edge_ev=ev,
         odds=odds or 1.0,
@@ -1587,15 +1802,32 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         market_family=family,
         lrs=lrs,
     )
+
+    # Aplicar governance_multiplier al stake (REDUCED→×0.5, BLOCKED→0, WATCH→×0.85)
+    if gov_multiplier < 1.0:
+        stake = round(stake * gov_multiplier, 1)
+        # Redondear a múltiplo de 0.5 respetando mínimo
+        stake = round(stake * 2) / 2
+
     if league_name:
         stake_mod = get_market_stake_modifier_for_league(league_name, sel)
         if stake_mod != 1.0:
-            stake = max(MIN_STAKE, round(stake * stake_mod))
-
+            stake = round(stake * stake_mod, 2)
 
     target_cal = get_calibrator_for_timestamp(pred_ts) if pred_ts is not None else get_calibrator()
     cal_ver = target_cal.version if target_cal.is_trained else "unverified"
 
+    # ── 9. Componentes de fiabilidad (para trazabilidad) ─────────────────
+    dq_factor = (dq_score / 100.0) if dq_score is not None else 0.7
+    reliability_score = round(lrs * dq_factor, 4)
+    reliability_comps = {
+        "lrs": round(lrs, 4),
+        "data_quality_factor": round(dq_factor, 4),
+        "governance_multiplier": round(gov_multiplier, 4),
+        "drift_score": round(gov_drift, 4),
+    }
+
+    # ── 10. Construir ValueIndicator ─────────────────────────────────────
     v = ValueIndicator(
         selection=sel,
         odds=odds,
@@ -1610,7 +1842,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         edge=round(edge_prob, 1),
         edge_ev=round(ev, 3),
         push_prob=round(push_p, 1),
-        is_value=ev >= 0.020 and stake >= 1.0 and odds <= 3.50,
+        is_value=ev >= 0.020 and stake > 0 and odds <= 3.50,
         rating=rating,
         data_quality_score=dq_score,
         market_confidence_tier=conf_tier,
@@ -1620,6 +1852,20 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         sample_size_weight=min(1.0, (h.matches_played + a.matches_played) / 30.0) if h and a else 0.5,
         league_reliability_score=round(lrs, 3),
         league_reliability_penalty=lrs_penalty,
+        # ── Nuevos campos de trazabilidad (Fase 13) ──
+        market_family=mkt_family,   # familia canónica (goals/corners/cards/...) para trazabilidad
+        market_side=mkt_side,
+        line_bucket=mkt_bucket,
+        segment_key=seg_key,
+        final_prob=round(final_prob_pct, 2),
+        p_market_no_vig=round(implied_no_vig, 2),
+        edge_raw=round(_edge_raw, 2),
+        edge_calibrated=round(_edge_calibrated, 2),
+        edge_final=round(_edge_final, 2),
+        segment_status=gov_status,
+        drift_score=round(gov_drift, 4),
+        governance_multiplier=round(gov_multiplier, 4),
+        reliability_components=reliability_comps,
     )
 
     if odds_obj:
@@ -1633,13 +1879,17 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         v.strategic_score = -1
     else:
         v.quality_score = score_pick_quality(v)
-        # `evaluate_pick_eligibility` fija is_publishable y, si hay bloqueo
-        # duro, fuerza quality_score = -1. Debe ir DESPUÉS de calcular la
-        # calidad para que el centinela no se sobrescriba.
         evaluate_pick_eligibility(v)
         v.is_value = is_value_pick(v) and v.is_publishable
         v.display_score = _calculate_display_score(v)
         v.is_underdog = is_underdog_pick(v)
+
+    # ── Gobernanza de segmento: bloqueo duro si BLOCKED ──────────────────
+    # Se aplica DESPUÉS de eligibility para que el bloqueo persista (irreversible).
+    if gov_status == "blocked" and not v.is_blacklisted:
+        block_pick(v, BlockReason.SEGMENT_GOVERNANCE_BLOCKED,
+                   detail=f"Segmento '{seg_key}' bloqueado por gobernanza (drift={gov_drift:.3f}).")
+        logger.debug("Gobernanza: pick '%s' bloqueado por segmento '%s'.", sel, seg_key)
 
     # ── Reglas estadísticas: bloqueo duro ────────────────────────────────
     if not v.is_blacklisted and h is not None and a is not None:
@@ -2594,6 +2844,25 @@ def _market_side(text: str) -> str:
     return "none"
 
 
+# No esta extrauendo correcta la linea, por ejemplo en MLS, over 0.5, 1.0, 1.5, etc
+def _market_line(text: str) -> float | None:
+    import re
+
+    s = _normalize_text(text or "")
+
+    pattern = (
+        r"(?:\bover\b|\bunder\b|más de|mas de|menos de)"
+        r"[^\d]*?([+-]?\d+(?:[.,]\d+)?)"
+    )
+
+    match = re.search(pattern, s)
+
+    if not match:
+        return None
+
+    return float(match.group(1).replace(",", "."))
+
+
 def is_pick_blocked_by_rules(selection: str, home: "FootballTeamStats", away: "FootballTeamStats", odds_obj: Any = None) -> bool:
     """
     Checks pick_rules.json using the unified pick_rules_engine.
@@ -2638,66 +2907,181 @@ def resolve_match_picks_correlation(
         max_total_stake=max_total_stake
     )
 
-def is_market_blacklisted_for_league(league_name: str, selection: str, category: str | None = None) -> bool:
+def is_market_blacklisted_for_league(
+    league_name: str,
+    selection: str,
+    category: str | None = None,
+    *,
+    line: float | str | None = None,
+) -> bool:
     """
-    Comprueba si una combinación de competición (nombre exacto) y selección/mercado
-    está en la blacklist de data/league_penalties.json.
-    Si la regla especifica una categoría, solo se aplica a esa categoría.
-    Si no especifica categoría, se aplica a todas.
+    Comprueba reglas de blacklist por:
+    liga, familia, lado, línea y categoría.
+
+    La línea explícita tiene prioridad sobre la extraída de selection.
+
+    Las reglas sin línea, con línea null o vacía se consideran generales.
+    Una regla con línea específica solo coincide con esa línea.
     """
+    import json
+    import logging
+    from decimal import Decimal, InvalidOperation
+
+    def normalize_line(value):
+        if value is None or isinstance(value, bool):
+            return None
+
+        text = str(value).strip().replace(",", ".")
+
+        if not text:
+            return None
+
+        try:
+            number = Decimal(text)
+        except (InvalidOperation, ValueError):
+            return None
+
+        if not number.is_finite():
+            return None
+
+        if number == 0:
+            return "0"
+
+        result = format(number, "f")
+
+        if "." in result:
+            result = result.rstrip("0").rstrip(".")
+
+        return result
+
+    def normalize_category(value):
+        if value is None:
+            return None
+
+        text = str(value).strip().lower()
+
+        if not text:
+            return None
+
+        if text in {"profesional", "publishable"}:
+            return "profesional"
+
+        return text
+
     try:
-        data_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
+        data_path = os.path.join(
+            os.path.dirname(__file__),
+            "..",
+            "..",
+            "..",
+            "data",
+            "league_penalties.json",
+        )
+
         if not os.path.exists(data_path):
             return False
-        import json
-        with open(data_path, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return False
-            penalties = json.loads(content)
+
+        with open(data_path, "r", encoding="utf-8") as file:
+            content = file.read().strip()
+
+        if not content:
+            return False
+
+        penalties = json.loads(content)
 
         if not isinstance(penalties, list):
             return False
 
-        family = _market_family(selection)
-        side = _market_side(selection)
+        family = str(
+            _market_family(selection) or ""
+        ).strip().lower().replace(" ", "_")
+
+        side = str(
+            _market_side(selection) or ""
+        ).strip().lower().replace(" ", "_")
+
+        pick_line = normalize_line(line)
+
+        if pick_line is None:
+            pick_line = normalize_line(_market_line(selection))
+
+        requested_league = str(league_name or "").strip()
+        requested_category = normalize_category(category)
 
         for rule in penalties:
-            rule_league = (rule.get("league") or "").strip()
-            # Coincidencia exacta de liga case-insensitive o coincidencia normalizada
-            if rule_league and (rule_league.lower() == (league_name or "").strip().lower() or _normalize_text(rule_league) == _normalize_text(league_name)):
-                rule_family = rule.get("market_family", "").strip().lower().replace(" ", "_")
-                rule_side = rule.get("market_side", "").strip().lower().replace(" ", "_")
+            if not isinstance(rule, dict):
+                continue
 
-                match_family = not rule_family or rule_family == family.lower()
-                match_side = not rule_side or rule_side == side.lower()
+            rule_league = str(rule.get("league") or "").strip()
 
-                if match_family and match_side:
-                    # Comprobar categoría
-                    rule_cat = rule.get("category")
-                    
-                    def normalize_cat(c: str | None) -> str | None:
-                        if not c:
-                            return None
-                        c_lower = c.strip().lower()
-                        if c_lower in {"profesional", "publishable"}:
-                            return "profesional"
-                        return c_lower
+            if not rule_league:
+                continue
 
-                    norm_rule_cat = normalize_cat(rule_cat)
-                    norm_requested_cat = normalize_cat(category)
+            match_league = (
+                rule_league.lower() == requested_league.lower()
+                or _normalize_text(rule_league)
+                == _normalize_text(requested_league)
+            )
 
-                    match_category = True
-                    if norm_rule_cat is not None:
-                        match_category = (norm_rule_cat == norm_requested_cat)
+            if not match_league:
+                continue
 
-                    if match_category:
-                        # Si tiene un flag blacklist=true o si esta especificado en el json
-                        if rule.get("blacklist", True) or rule.get("blacklist") is not False:
-                            return True
+            rule_family = str(
+                rule.get("market_family") or ""
+            ).strip().lower().replace(" ", "_")
+
+            rule_side = str(
+                rule.get("market_side") or ""
+            ).strip().lower().replace(" ", "_")
+
+            if rule_family and rule_family != family:
+                continue
+
+            if rule_side and rule_side != side:
+                continue
+
+            raw_rule_line = rule.get("line")
+
+            has_specific_line = (
+                raw_rule_line is not None
+                and str(raw_rule_line).strip() != ""
+            )
+
+            if has_specific_line:
+                normalized_rule_line = normalize_line(raw_rule_line)
+
+                # Una línea inválida no debe convertirse
+                # accidentalmente en una regla general.
+                if normalized_rule_line is None:
+                    continue
+
+                if (
+                    pick_line is None
+                    or normalized_rule_line != pick_line
+                ):
+                    continue
+
+            rule_category = normalize_category(rule.get("category"))
+
+            if (
+                rule_category is not None
+                and rule_category != requested_category
+            ):
+                continue
+
+            # Mantiene el comportamiento anterior:
+            # solo blacklist=false explícito desactiva el bloqueo.
+            if rule.get("blacklist") is not False:
+                return True
 
         return False
+
     except Exception:
+        logging.getLogger(__name__).exception(
+            "Error comprobando blacklist para liga=%r, selection=%r",
+            league_name,
+            selection,
+        )
         return False
 
 

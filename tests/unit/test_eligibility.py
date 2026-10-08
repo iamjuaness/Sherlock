@@ -140,14 +140,15 @@ def test_data_quality_floor():
 
 
 def test_stake_floor():
+    strict = PublicationThresholds(min_stake_units=1.0)
     assert BlockReason.STAKE_TOO_LOW in evaluate_soft_filters(
-        good_snapshot(stake_units=0.9)
+        good_snapshot(stake_units=0.9), strict
     )
 
 
 def test_zero_h2h_with_samples_blocks():
     assert BlockReason.H2H_ZERO_HIT_RATE in evaluate_soft_filters(
-        good_snapshot(h2h_hit_rate=0.0, h2h_samples=4)
+        good_snapshot(h2h_hit_rate=0.0, h2h_samples=8)
     )
 
 
@@ -163,7 +164,8 @@ def test_missing_prob_fails_closed():
 
 
 def test_multiple_failures_are_all_reported():
-    fails = evaluate_soft_filters(good_snapshot(odds=1.1, edge=0.5, stake_units=0.2))
+    strict = PublicationThresholds(min_stake_units=1.0)
+    fails = evaluate_soft_filters(good_snapshot(odds=1.1, edge=0.5, stake_units=0.2), strict)
     assert BlockReason.ODDS_TOO_LOW in fails
     assert BlockReason.EDGE_TOO_LOW in fails
     assert BlockReason.STAKE_TOO_LOW in fails
@@ -362,11 +364,12 @@ def test_all_flags_combine():
 
 # ═══════════════════ construcción del snapshot ═════════════════════════
 
-def test_snapshot_prefers_calibrated_prob():
+def test_snapshot_prefers_final_prob_and_calibrated_prob():
     """
-    Se decide con la probabilidad calibrada, la misma que se muestra. Decidir
-    con model_prob y mostrar calibrated_prob sería incoherente.
+    Se decide con la probabilidad final (final_prob) o calibrada (calibrated_prob).
     """
+    snap_final = PickSnapshot.from_pick({"final_prob": 58.0, "calibrated_prob": 55.0, "model_prob": 70.0})
+    assert snap_final.prob == pytest.approx(58.0)
     snap = PickSnapshot.from_pick({"calibrated_prob": 55.0, "model_prob": 70.0})
     assert snap.prob == pytest.approx(55.0)
 

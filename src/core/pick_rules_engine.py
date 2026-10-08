@@ -64,51 +64,25 @@ _OPERATORS: dict[str, Callable[[float, float], bool]] = {
 # centralizado aquí para que ambos flujos usen exactamente el mismo)
 # ─────────────────────────────────────────────────────────────
 
+from src.domain.market_taxonomy import (
+    normalize_market_family,
+    normalize_market_side,
+    line_bucket as canonical_line_bucket,
+    market_canonical_group_key,
+)
+
 def normalize_text(text: str) -> str:
     return " ".join((text or "").strip().lower().split())
 
 
 def market_family(text: str) -> str:
-    s = normalize_text(text)
-    if any(k in s for k in ["btts", "ambos marcan", "both teams to score"]):
-        return "btts"
-    if any(k in s for k in ["corner", "corners", "córner", "córners"]):
-        return "corners"
-    if any(k in s for k in ["tarjeta", "tarjetas", "cards", "yellow cards", "amarillas"]):
-        return "cards"
-    if any(k in s for k in ["foul", "fouls", "faltas"]):
-        return "fouls"
-    if any(k in s for k in ["pta", "a puerta", "target", "shots_target", "shot_target"]):
-        return "shots_target"
-    if any(k in s for k in ["shot", "shots", "tiros", "remates"]):
-        return "shots"
-    if any(k in s for k in ["goal", "goals", "goles"]):
-        return "goals"
-    if any(k in s for k in ["moneyline", "ml", "1x2", "ganador", "local", "visitante", "empate"]):
-        return "result"
-    if any(k in s for k in ["double chance", "doble oportunidad"]) or re.search(r"\b(1x|x2|12)\b", s):
-        return "double_chance"
-    return "generic"
+    """Wrapper para la taxonomía canónica."""
+    return normalize_market_family(text)
 
 
 def market_side(text: str) -> str:
-    s = normalize_text(text)
-    patterns = [
-        (r"\b(over|más\s+de|mas\s+de)\b", "over"),
-        (r"\b(under|menos\s+de)\b", "under"),
-        (r"\b(yes|sí|si)\b", "yes"),
-        (r"\bno\b", "no"),
-        (r"\b(local|home)\b", "home"),
-        (r"\b(visitante|away)\b", "away"),
-        (r"\b(empate|draw)\b", "draw"),
-        (r"\b(1x|home_draw)\b", "home_draw"),
-        (r"\b(x2|draw_away)\b", "draw_away"),
-        (r"\b(12|home_away)\b", "home_away"),
-    ]
-    for pattern, side in patterns:
-        if re.search(pattern, s):
-            return side
-    return "none"
+    """Wrapper para la taxonomía canónica."""
+    return normalize_market_side(text)
 
 
 def market_line(text: str) -> Optional[float]:
@@ -126,9 +100,6 @@ def market_line(text: str) -> Optional[float]:
     return None
 
 
-# Traduce los nombres de familia de este módulo a los nombres que usa
-# sherlock_picks_audit_notebook.ipynb, SOLO para construir la clave de
-# búsqueda en data/market_correlation.json. market_family() no cambia.
 _NOTEBOOK_FAMILY_ALIASES: dict[str, str] = {
     "double_chance": "doublechance",
     "shots_target": "shotstarget",
@@ -139,18 +110,13 @@ _NOTEBOOK_FAMILY_ALIASES: dict[str, str] = {
 def market_group(text: str) -> str:
     """
     Clave familia_lado usada para consultar data/market_correlation.json.
-
-    Debe producir EXACTAMENTE las mismas claves que `market_group_key()` del
-    notebook (ej. "goals_over", "btts_yes", "result_home",
-    "doublechance_home_draw") para que la búsqueda en la matriz encuentre el
-    rho medido en vez de caer siempre en "sin dato confiable".
     """
     fam = market_family(text)
-    fam = _NOTEBOOK_FAMILY_ALIASES.get(fam, fam)
+    fam_alias = _NOTEBOOK_FAMILY_ALIASES.get(fam, fam)
     side = market_side(text)
     if side and side != "none":
-        return f"{fam}_{side}"
-    return fam
+        return f"{fam_alias}_{side}"
+    return fam_alias
 
 
 # ─────────────────────────────────────────────────────────────
@@ -709,15 +675,7 @@ def evaluate_pick_rules(
                 if sel_text:
                     blocked, reason = evaluate_pick_rules(sel_text, stats, rules_list)
                     if blocked:
-                        if isinstance(pick, dict):
-                            pick["is_rule_blocked"] = True
-                            pick["is_publishable"] = False
-                            pick["is_value"] = False
-                            pick["rule_blocked_reason"] = reason
-                        else:
-                            pick.is_rule_blocked = True
-                            pick.is_publishable = False
-                            pick.is_value = False
+                        record_hard_block(pick, BlockReason.RULE_BLOCKED, detail=reason)
         # Aplicar resolución de correlaciones entre picks del partido
         return resolve_match_picks_correlation(selection, correlation_rules=correlation_rules)
 

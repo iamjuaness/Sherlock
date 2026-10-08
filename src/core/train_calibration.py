@@ -38,6 +38,13 @@ from pathlib import Path
 from typing import Any, Iterable, Sequence
 
 from src.domain.settlement import Outcome, outcome_from_legacy, outcome_hit_value
+from src.domain.market_taxonomy import (
+    CATEGORICAL_FAMILIES,
+    normalize_market_family,
+    normalize_market_side,
+    line_bucket_for,
+    extract_market_line,
+)
 from src.models.calibration import (
     DEFAULT_MIN_SAMPLES,
     DEFAULT_PRIOR_STRENGTH,
@@ -191,75 +198,12 @@ def _until_date_label(until_date: "datetime | str | None") -> str:
         return until_date.strftime("%Y-%m-%d")
     return "unknown"
 
-def _normalize_market_text(value: str | None) -> str:
-    return " ".join(str(value or "").lower().strip().split())
-
-
-def _extract_line_bucket(selection: str) -> str | None:
-    """
-    Convierte una línea textual a una línea numérica normalizada.
-
-    Ejemplos:
-      - Under 2.5 Goles -> "2.5"
-      - Over 10.5 Corners -> "10.5"
-      - Hándicap -0.25 -> "-0.25"
-    """
-    text = _normalize_market_text(selection).replace(",", ".")
-
-    match = re.search(r"(?<!\\d)(-?\\d+(?:\\.\\d+)?)", text)
-
-    if not match:
-        return None
-
-    try:
-        return f"{float(match.group(1)):.2f}".rstrip("0").rstrip(".")
-    except ValueError:
-        return None
-
-
-def _resolve_market_side(
-    selection: str,
-    market_family: str,
-) -> str:
-    """
-    Obtiene la dirección del pick sin mezclar polaridades incompatibles.
-    """
-    text = _normalize_market_text(selection)
-    family = _normalize_market_text(market_family)
-
-    if family == "double_chance":
-        if "1x" in text:
-            return "1x"
-        if "x2" in text:
-            return "x2"
-        if re.search(r"(?<!\\d)12(?!\\d)", text):
-            return "12"
-        return "generic"
-
-    if family in {"goals", "corners", "cards", "shots", "shots_target", "fouls"}:
-        if "under" in text or "menos" in text:
-            return "under"
-        if "over" in text or "más" in text or "mas" in text:
-            return "over"
-        return "generic"
-
-    if family == "result":
-        if "local" in text or "home" in text:
-            return "home"
-        if "visitante" in text or "away" in text:
-            return "away"
-        if "empate" in text or "draw" in text:
-            return "draw"
-        return "generic"
-
-    if family == "btts":
-        if "sí" in text or "si" in text or "yes" in text:
-            return "yes"
-        if "no" in text:
-            return "no"
-        return "generic"
-
-    return "generic"
+# -----------------------------------------------------------------------
+# NOTE: _extract_line_bucket, _resolve_market_side y market_family_fn
+# fueron reemplazados por la taxonomía canónica de src.domain.market_taxonomy.
+# No reutilizar las versiones locales: generaban inconsistencias entre el
+# entrenamiento de calibración, las reglas y la generación de picks.
+# -----------------------------------------------------------------------
 
 
 def extract_samples(
@@ -274,6 +218,10 @@ def extract_samples(
     La probabilidad usada siempre es raw/model_prob, nunca calibrated_prob.
     Se registra familia, dirección y línea para permitir pooling jerárquico
     sin mezclar Under con Over, X2 con 1X ni líneas incompatibles.
+
+    Usa exclusivamente la taxonomía canónica (market_taxonomy) para clasificar
+    familia, lado y banda de línea. El parámetro market_family_fn se ignora
+    para evitar inconsistencias entre entrenamiento y producción.
     """
     if resolver is None:
         from src.ui.api.main import _check_pick_success as resolver  # type: ignore
@@ -366,6 +314,9 @@ def extract_samples(
             # Preservar timestamp de predicción y fecha de resultado
             sample_ts = _coerce_datetime(pick.get("predicted_at_utc")) or timestamp
 
+            if resolver is None:
+                from src.ui.api.main import _check_pick_success as resolver  # type: ignore
+
             try:
                 legacy_outcome = resolver(pick, results)
             except Exception as exc:
@@ -395,22 +346,16 @@ def extract_samples(
                 or ""
             )
 
-            market_family = _normalize_market_text(
-                market_family_fn(selection)
-            )
-
-            side = _resolve_market_side(
-                selection=selection,
-                market_family=market_family,
-            )
-
-            line_bucket = _extract_line_bucket(selection)
+            market_fam = str(normalize_market_family(selection))
+            side = str(normalize_market_side(selection, family=market_fam))
+            line = None if market_fam in CATEGORICAL_FAMILIES else extract_market_line(selection)
+            line_bucket = line_bucket_for(market_fam, line)
 
             samples.append(
                 CalibrationSample(
                     prob=float(probability),
                     hit_value=float(hit_value),
-                    market_family=market_family,
+                    market_family=market_fam,
                     side=side,
                     line_bucket=line_bucket,
                     league=str(league).strip() if league else None,

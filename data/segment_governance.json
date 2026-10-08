@@ -1,0 +1,26 @@
+{
+  "segments": {
+    "league:brasileirão série b|family:shots|side:under|bucket:core": "reduced",
+    "league:brasileirão série b|family:shots|side:over|bucket:high": "reduced"
+  },
+  "segment_meta": {
+    "league:brasileirão série b|family:shots|side:under|bucket:core": {
+      "source": "manual_governance",
+      "market_name": "Under 24.5 Tiros",
+      "stake_multiplier": 0.5
+    },
+    "league:brasileirão série b|family:shots|side:over|bucket:high": {
+      "source": "manual_governance",
+      "market_name": "Over 27.5 Tiros",
+      "stake_multiplier": 0.5
+    }
+  },
+  "status_counts": {
+    "active": 0,
+    "watch": 0,
+    "reduced": 2,
+    "blocked": 0,
+    "experimental": 0
+  },
+  "total_segments": 2
+}

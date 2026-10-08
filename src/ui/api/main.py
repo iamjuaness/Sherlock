@@ -2673,65 +2673,256 @@ def get_analysis_by_id(
 @app.get("/api/v1/stats/leagues", tags=["Stats"])
 def get_leagues_stats(
     use_stake: bool = Query(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
 ):
     """
-    Groups AnalysisHistory by competition inside the JSON payload and calculates stats.
-    Also computes per-market hit rates and historical performance data for LRS computation.
+    Groups AnalysisHistory by competition and calculates stats.
+    Detailed markets are grouped by category, side and exact line.
     """
-    cache_key = f"leagues:{use_stake}"
+    import re
+    from decimal import Decimal, InvalidOperation
+    from sqlalchemy.orm import load_only
+
+    # Nueva versión para no devolver los agregados antiguos sin línea.
+    cache_key = f"leagues:market-lines-v1:{use_stake}"
+
     cached = _get_cache(cache_key)
     if cached:
         return cached
 
-    from sqlalchemy.orm import load_only
+    def normalize_line(value):
+        if value is None or isinstance(value, bool):
+            return None
+
+        text = str(value).strip().replace(",", ".")
+        if not text:
+            return None
+
+        try:
+            number = Decimal(text)
+        except (InvalidOperation, ValueError):
+            return None
+
+        if not number.is_finite():
+            return None
+
+        if number == 0:
+            return "0"
+
+        result = format(number, "f")
+
+        if "." in result:
+            result = result.rstrip("0").rstrip(".")
+
+        return result
+
+    def build_market_key(pick):
+        sel_text = str(pick.get("selection") or "").strip()
+        lower_sel = sel_text.lower()
+
+        category = ""
+
+        # Detección de Tiros a Puerta vs Tiros
+        is_shots_target = (
+            "shot_target" in lower_sel
+            or "shots_target" in lower_sel
+            or "shots_on_target" in lower_sel
+            or "tiro_a_puerta" in lower_sel
+            or "tiros a puerta" in lower_sel
+            or "tiro a puerta" in lower_sel
+            or "tiros al arco" in lower_sel
+            or "tiro al arco" in lower_sel
+            or "remates a puerta" in lower_sel
+            or "remates al arco" in lower_sel
+            or "shots on target" in lower_sel
+            or "tiros a pta" in lower_sel
+            or "tiro a pta" in lower_sel
+            or " a pta" in lower_sel
+            or bool(re.search(r"\b(sot)\b", lower_sel))
+        )
+
+        # 1. Familias independientes para 1X2: Local, Empate, Visitante
+        if lower_sel in ("empate", "draw") or re.search(r"\b(empate|draw)\b", lower_sel):
+            return "Empate"
+        elif (
+            lower_sel in ("local", "home", "victoria local", "1")
+            or lower_sel.startswith("local ")
+            or lower_sel.endswith(" local")
+            or re.search(r"\b(local|victoria local)\b", lower_sel)
+        ):
+            return "Local"
+        elif (
+            lower_sel in ("visitante", "away", "victoria visitante", "2")
+            or lower_sel.startswith("visitante ")
+            or lower_sel.endswith(" visitante")
+            or re.search(r"\b(visitante|victoria visitante)\b", lower_sel)
+        ):
+            return "Visitante"
+
+        # 2. Doble Oportunidad
+        elif (
+            "doble oportunidad" in lower_sel
+            or "double chance" in lower_sel
+            or re.search(r"\b(1x|x2|12)\b", lower_sel)
+        ):
+            category = "Doble Oportunidad"
+
+        # 3. Resto de familias
+        elif "corner" in lower_sel or "córner" in lower_sel:
+            category = "Córners"
+        elif (
+            "tarjeta" in lower_sel
+            or "card" in lower_sel
+            or "amarilla" in lower_sel
+        ):
+            category = "Tarjetas"
+        elif "foul" in lower_sel or "falta" in lower_sel:
+            category = "Faltas"
+        elif is_shots_target:
+            category = "Tiros a puerta"
+        elif "shot" in lower_sel or "tiro" in lower_sel or "remate" in lower_sel:
+            category = "Tiros"
+        elif (
+            "btts" in lower_sel
+            or "ambos marcan" in lower_sel
+            or "both teams to score" in lower_sel
+        ):
+            category = "BTTS"
+        elif (
+            "gol" in lower_sel
+            or "goal" in lower_sel
+            or "over" in lower_sel
+            or "under" in lower_sel
+        ):
+            category = "Goles"
+        else:
+            category = "Otros"
+
+        # Lado (Side)
+        side = ""
+        if category == "BTTS":
+            if (
+                "yes" in lower_sel
+                or "sí" in lower_sel
+                or lower_sel == "si"
+                or lower_sel.endswith(" si")
+            ):
+                side = "Sí"
+            elif "no" in lower_sel:
+                side = "No"
+        elif category == "Doble Oportunidad":
+            if (
+                "homedraw" in lower_sel
+                or "home draw" in lower_sel
+                or re.search(r"\b1x\b", lower_sel)
+            ):
+                side = "1X"
+            elif (
+                "homeaway" in lower_sel
+                or "home away" in lower_sel
+                or re.search(r"\b12\b", lower_sel)
+            ):
+                side = "12"
+            elif (
+                "drawaway" in lower_sel
+                or "draw away" in lower_sel
+                or re.search(r"\bx2\b", lower_sel)
+            ):
+                side = "X2"
+        else:
+            if (
+                "over" in lower_sel
+                or "más de" in lower_sel
+                or "mas de" in lower_sel
+            ):
+                side = "Over"
+            elif (
+                "under" in lower_sel
+                or "menos de" in lower_sel
+            ):
+                side = "Under"
+
+        line_val = pick.get("line")
+        normalized_line = normalize_line(line_val)
+
+        if normalized_line is None:
+            match = re.search(r"(\d+(?:\.\d+)?)", sel_text)
+            if match:
+                normalized_line = normalize_line(match.group(1))
+
+        if category in ("Doble Oportunidad", "BTTS"):
+            normalized_line = None
+
+        line_str = f" {normalized_line}" if normalized_line is not None else ""
+
+        if category in ("Doble Oportunidad", "BTTS"):
+            return f"{category} {side}".strip() if side else category
+
+        if side:
+            return f"{side}{line_str} {category}".strip()
+
+        return f"{category}{line_str}".strip()
+
+    result_fields = (
+        "final_score_home",
+        "final_score_away",
+        "final_corners_home",
+        "final_corners_away",
+        "final_yellow_cards_home",
+        "final_yellow_cards_away",
+        "final_red_cards_home",
+        "final_red_cards_away",
+        "final_shots_home",
+        "final_shots_away",
+        "final_shots_on_target_home",
+        "final_shots_on_target_away",
+        "final_fouls_home",
+        "final_fouls_away",
+        "final_offsides_home",
+        "final_offsides_away",
+    )
+
     history = (
         db.query(AnalysisHistory)
-        # .filter(AnalysisHistory.picks_calculados != None)
-        .options(load_only(
-            AnalysisHistory.id,
-            AnalysisHistory.competition,
-            AnalysisHistory.payload,
-            AnalysisHistory.match_date,
-            AnalysisHistory.date,
-            AnalysisHistory.picks_calculados,
-            AnalysisHistory.final_score_home,
-            AnalysisHistory.final_score_away,
-            AnalysisHistory.final_corners_home,
-            AnalysisHistory.final_corners_away,
-            AnalysisHistory.final_yellow_cards_home,
-            AnalysisHistory.final_yellow_cards_away,
-            AnalysisHistory.final_red_cards_home,
-            AnalysisHistory.final_red_cards_away,
-            AnalysisHistory.final_shots_home,
-            AnalysisHistory.final_shots_away,
-            AnalysisHistory.final_shots_on_target_home,
-            AnalysisHistory.final_shots_on_target_away,
-            AnalysisHistory.final_fouls_home,
-            AnalysisHistory.final_fouls_away,
-            AnalysisHistory.final_offsides_home,
-            AnalysisHistory.final_offsides_away,
-        ))
+        .options(
+            load_only(
+                AnalysisHistory.id,
+                AnalysisHistory.competition,
+                AnalysisHistory.payload,
+                AnalysisHistory.match_date,
+                AnalysisHistory.date,
+                AnalysisHistory.picks_calculados,
+                *(
+                    getattr(AnalysisHistory, field)
+                    for field in result_fields
+                ),
+            )
+        )
         .all()
     )
+
     leagues_data = {}
-    
+
     for h in history:
-        # Resolve competition name using index column first
         comp_name = h.competition
         p_data = None
+
         if getattr(h, "payload", None):
             try:
-                p_data = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-            except:
+                p_data = (
+                    json.loads(h.payload)
+                    if isinstance(h.payload, str)
+                    else h.payload
+                )
+            except Exception:
                 pass
 
-        if not comp_name and p_data and isinstance(p_data, dict):
+        if not comp_name and isinstance(p_data, dict):
             comp_name = p_data.get("competition") or "Desconocida"
 
         if not comp_name:
             comp_name = "Desconocida"
-                
+
         if comp_name not in leagues_data:
             leagues_data[comp_name] = {
                 "name": comp_name,
@@ -2746,201 +2937,263 @@ def get_leagues_stats(
                 "has_pending_matches": False,
                 "odds_sum": 0.0,
                 "odds_count": 0,
-                # Per-market tracking: {family: {"hits": 0, "total": 0}}
                 "_market_stats": {},
                 "_detailed_markets": {},
                 "_seasons": set(),
             }
-            
-        leagues_data[comp_name]["total_matches"] += 1
-        
-        # Extract season year for season filter
+
+        league = leagues_data[comp_name]
+        league["total_matches"] += 1
+
         s_year = None
-        if p_data and isinstance(p_data, dict):
+
+        if isinstance(p_data, dict):
             s_year = p_data.get("season_year") or p_data.get("season")
+
         if not s_year:
-            m_dt = getattr(h, "match_date", None) or getattr(h, "date", None)
+            m_dt = (
+                getattr(h, "match_date", None)
+                or getattr(h, "date", None)
+            )
+
             if m_dt:
                 try:
                     s_year = m_dt.year
-                except:
+                except Exception:
                     pass
+
         if s_year:
-            leagues_data[comp_name]["_seasons"].add(str(s_year))
-        
-        if h.picks_calculados:
-            try:
-                picks = json.loads(h.picks_calculados) if isinstance(h.picks_calculados, str) else h.picks_calculados
-                if isinstance(picks, list):
-                    res_dict = {
-                        "final_score_home": h.final_score_home,
-                        "final_score_away": h.final_score_away,
-                        "final_corners_home": h.final_corners_home,
-                        "final_corners_away": h.final_corners_away,
-                        "final_yellow_cards_home": h.final_yellow_cards_home,
-                        "final_yellow_cards_away": h.final_yellow_cards_away,
-                        "final_red_cards_home": h.final_red_cards_home,
-                        "final_red_cards_away": h.final_red_cards_away,
-                        "final_shots_home": h.final_shots_home,
-                        "final_shots_away": h.final_shots_away,
-                        "final_shots_on_target_home": h.final_shots_on_target_home,
-                        "final_shots_on_target_away": h.final_shots_on_target_away,
-                        "final_fouls_home": h.final_fouls_home,
-                        "final_fouls_away": h.final_fouls_away,
-                        "final_offsides_home": h.final_offsides_home,
-                        "final_offsides_away": h.final_offsides_away,
+            league["_seasons"].add(str(s_year))
+
+        if not h.picks_calculados:
+            continue
+
+        try:
+            picks = (
+                json.loads(h.picks_calculados)
+                if isinstance(h.picks_calculados, str)
+                else h.picks_calculados
+            )
+
+            if not isinstance(picks, list):
+                continue
+
+            res_dict = {
+                field: getattr(h, field)
+                for field in result_fields
+            }
+
+            has_result = h.final_score_home is not None
+
+            for pick in picks:
+                if pick.get("is_blacklisted") or pick.get("is_rule_blocked"):
+                    continue
+
+                is_pub = pick.get("is_publishable", False)
+                is_und = pick.get("is_underdog", False)
+
+                if not is_pub and not is_und:
+                    if pick.get("is_value", False):
+                        is_pub = True
+
+                if not (is_pub or is_und):
+                    continue
+
+                if not has_result:
+                    league["has_pending_matches"] = True
+                    sel_key = build_market_key(pick)
+                    det_map = league["_detailed_markets"]
+                    if sel_key not in det_map:
+                        det_map[sel_key] = {
+                            "name": sel_key,
+                            "totalPicks": 0,
+                            "ganados": 0,
+                            "perdidos": 0,
+                            "nulos": 0,
+                            "pendientes": 0,
+                            "profit": 0.0,
+                            "oddsSum": 0.0,
+                            "oddsCount": 0,
+                        }
+                    m_entry = det_map[sel_key]
+                    m_entry["totalPicks"] += 1
+                    m_entry["pendientes"] += 1
+                    odds_val = float(pick.get("odds", 0.0) or 0.0)
+                    if odds_val > 0:
+                        m_entry["oddsSum"] += odds_val
+                        m_entry["oddsCount"] += 1
+                    continue
+
+                success = _check_pick_success(pick, res_dict)
+
+                if success is None:
+                    continue
+
+                stake = (
+                    _resolve_stake_from_pick(pick)
+                    if use_stake
+                    else MIN_STAKE
+                )
+
+                pick_profit = (
+                    _calculate_pick_profit(
+                        success,
+                        pick.get("odds", 0.0),
+                    )
+                    * stake
+                )
+
+                league["total_profit"] += pick_profit
+
+                # Conserva el criterio de tu función original.
+                if success == "void":
+                    continue
+
+                league["total_picks"] += 1
+                league["total_staked"] += stake
+
+                odds_val = float(pick.get("odds", 0.0) or 0.0)
+
+                if odds_val > 0:
+                    league["odds_sum"] += odds_val
+                    league["odds_count"] += 1
+
+                is_hit = _is_pick_hit(success)
+
+                if is_hit:
+                    league["total_hits"] += 1
+
+                sel_text = pick.get("selection", "")
+
+                try:
+                    family = _market_family(sel_text)
+                except Exception:
+                    family = "generic"
+
+                # Mantener las métricas por familia para LRS.
+                mkt = league["_market_stats"]
+
+                if family not in mkt:
+                    mkt[family] = {"hits": 0, "total": 0}
+
+                mkt[family]["total"] += 1
+
+                if is_hit:
+                    mkt[family]["hits"] += 1
+
+                # Cambio principal: agrupar por lado + categoría + línea.
+                sel_key = build_market_key(pick)
+
+                det_map = league["_detailed_markets"]
+
+                if sel_key not in det_map:
+                    det_map[sel_key] = {
+                        "name": sel_key,
+                        "totalPicks": 0,
+                        "ganados": 0,
+                        "perdidos": 0,
+                        "nulos": 0,
+                        "pendientes": 0,
+                        "profit": 0.0,
+                        "oddsSum": 0.0,
+                        "oddsCount": 0,
                     }
-                    
-                    has_result = h.final_score_home is not None
-                    
-                    for pick in picks:
-                        if pick.get("is_blacklisted") or pick.get("is_rule_blocked"):
-                            continue
-                        is_pub = pick.get("is_publishable", False)
-                        is_und = pick.get("is_underdog", False)
-                        
-                        if not is_pub and not is_und:
-                            if pick.get("is_value", False):
-                                is_pub = True
-                                
-                        if not (is_pub or is_und):
-                            continue
-                        
-                        # If resolving success
-                        if has_result:
-                            success = _check_pick_success(pick, res_dict)
-                            if success is not None:
-                                if use_stake:
-                                    stake = _resolve_stake_from_pick(pick)
-                                else:
-                                    stake = MIN_STAKE
-                                pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
-                                leagues_data[comp_name]["total_profit"] += pick_profit
-                                if success != "void":
-                                    leagues_data[comp_name]["total_picks"] += 1
-                                    leagues_data[comp_name]["total_staked"] += stake
-                                    odds_val = float(pick.get("odds", 0.0) or 0.0)
-                                    if odds_val > 0:
-                                        leagues_data[comp_name]["odds_sum"] += odds_val
-                                        leagues_data[comp_name]["odds_count"] += 1
-                                    is_hit = _is_pick_hit(success)
-                                    if is_hit:
-                                        leagues_data[comp_name]["total_hits"] += 1
-                                    
-                                    # Track per-market stats and detailed breakdown
-                                    sel_text = pick.get("selection", "")
-                                    try:
-                                        family = _market_family(sel_text)
-                                    except Exception:
-                                        family = "generic"
-                                    
-                                    # Normalizar selKey para mercados (Over Córners, Under Tarjetas, etc)
-                                    lower_sel = sel_text.strip().lower()
-                                    category = ""
-                                    if "corner" in lower_sel or "córner" in lower_sel:
-                                        category = "Córners"
-                                    elif "tarjeta" in lower_sel or "card" in lower_sel or "amarilla" in lower_sel:
-                                        category = "Tarjetas"
-                                    elif "foul" in lower_sel or "falta" in lower_sel:
-                                        category = "Faltas"
-                                    elif "shot_target" in lower_sel or "tiro_a_puerta" in lower_sel or "shots_target" in lower_sel or "pta" in lower_sel:
-                                        category = "Tiros a puerta"
-                                    elif "shot" in lower_sel or "tiro" in lower_sel or "remate" in lower_sel:
-                                        category = "Tiros"
-                                    elif "goal" in lower_sel or "gol" in lower_sel:
-                                        category = "Goles"
-                                    
-                                    sel_key = sel_text.strip()
-                                    if category:
-                                        if "over" in lower_sel or "más de" in lower_sel or "mas de" in lower_sel:
-                                            sel_key = f"Over {category}"
-                                        elif "under" in lower_sel or "menos de" in lower_sel:
-                                            sel_key = f"Under {category}"
-                                            
-                                    mkt = leagues_data[comp_name]["_market_stats"]
-                                    if family not in mkt:
-                                        mkt[family] = {"hits": 0, "total": 0}
-                                    mkt[family]["total"] += 1
-                                    if is_hit:
-                                        mkt[family]["hits"] += 1
 
-                                    # Detailed market map by sel_key
-                                    det_map = leagues_data[comp_name]["_detailed_markets"]
-                                    if sel_key not in det_map:
-                                        det_map[sel_key] = {
-                                            "name": sel_key,
-                                            "totalPicks": 0,
-                                            "ganados": 0,
-                                            "perdidos": 0,
-                                            "nulos": 0,
-                                            "profit": 0.0,
-                                            "oddsSum": 0.0,
-                                            "oddsCount": 0,
-                                        }
-                                    m_entry = det_map[sel_key]
-                                    m_entry["totalPicks"] += 1
-                                    odds_val = float(pick.get("odds", 0.0) or 0.0)
-                                    if odds_val > 0:
-                                        m_entry["oddsSum"] += odds_val
-                                        m_entry["oddsCount"] += 1
-                                    
-                                    if success is True:
-                                        m_entry["ganados"] += 1
-                                        m_entry["profit"] += pick_profit
-                                    elif success is False:
-                                        m_entry["perdidos"] += 1
-                                        m_entry["profit"] += pick_profit # pick_profit es negativo
-                                    elif success == "void":
-                                        m_entry["nulos"] += 1
-                        else:
-                            leagues_data[comp_name]["has_pending_matches"] = True
-            except:
-                pass
+                m_entry = det_map[sel_key]
+                m_entry["totalPicks"] += 1
 
-    # Calculate final accuracies, round profits, compute market_hit_rates and LRS
+                if odds_val > 0:
+                    m_entry["oddsSum"] += odds_val
+                    m_entry["oddsCount"] += 1
+
+                if success is True:
+                    m_entry["ganados"] += 1
+                    m_entry["profit"] += pick_profit
+                elif success is False:
+                    m_entry["perdidos"] += 1
+                    m_entry["profit"] += pick_profit
+                elif success == "void":
+                    m_entry["nulos"] += 1
+
+        except Exception:
+            pass
+
     results = []
+
     for league in leagues_data.values():
         picks_cnt = league["total_picks"]
-        league["accuracy"] = round((league["total_hits"] / picks_cnt * 100), 1) if picks_cnt > 0 else 0.0
-        league["total_profit"] = round(league["total_profit"], 2)
-        
+
+        league["accuracy"] = (
+            round(league["total_hits"] / picks_cnt * 100, 1)
+            if picks_cnt > 0
+            else 0.0
+        )
+
+        league["total_profit"] = round(
+            league["total_profit"],
+            2,
+        )
+
         staked_amt = league.pop("total_staked", 0.0)
-        roi_val = (league["total_profit"] / staked_amt * 100) if staked_amt > 0 else ((league["total_profit"] / picks_cnt * 100) if picks_cnt > 0 else 0.0)
+
+        roi_val = (
+            league["total_profit"] / staked_amt * 100
+            if staked_amt > 0
+            else (
+                league["total_profit"] / picks_cnt * 100
+                if picks_cnt > 0
+                else 0.0
+            )
+        )
+
         league["roi"] = round(roi_val, 1)
-        
+
         odds_cnt = league.pop("odds_count", 0)
         odds_s = league.pop("odds_sum", 0.0)
-        avg_odds = round(odds_s / odds_cnt, 2) if odds_cnt > 0 else 0.0
-        league["avg_odds"] = avg_odds
-        league["break_even_pct"] = round((1.0 / avg_odds * 100.0), 1) if avg_odds > 0 else 0.0
 
-        # Build market_hit_rates dict: {family: rate}
+        avg_odds = (
+            round(odds_s / odds_cnt, 2)
+            if odds_cnt > 0
+            else 0.0
+        )
+
+        league["avg_odds"] = avg_odds
+
+        league["break_even_pct"] = (
+            round(1.0 / avg_odds * 100.0, 1)
+            if avg_odds > 0
+            else 0.0
+        )
+
         raw_mkt = league.pop("_market_stats", {})
-        market_hit_rates = {}
-        for family, stats in raw_mkt.items():
-            if stats["total"] >= 3:  # mínimo 3 picks para considerar la tasa
-                market_hit_rates[family] = round(stats["hits"] / stats["total"], 3)
-        league["market_hit_rates"] = market_hit_rates
-        
-        # Detailed markets list
+
+        league["market_hit_rates"] = {
+            family: round(stats["hits"] / stats["total"], 3)
+            for family, stats in raw_mkt.items()
+            if stats["total"] >= 3
+        }
+
         det_markets_map = league.pop("_detailed_markets", {})
         detailed_markets = list(det_markets_map.values())
-        detailed_markets.sort(key=lambda x: x["totalPicks"], reverse=True)
+
+        detailed_markets.sort(
+            key=lambda market: market["totalPicks"],
+            reverse=True,
+        )
+
         league["markets"] = detailed_markets
 
-        # Seasons list sorted descending
         raw_seasons = league.pop("_seasons", set())
-        league["seasons"] = sorted(list(raw_seasons), reverse=True)
+        league["seasons"] = sorted(raw_seasons, reverse=True)
 
-        # Historical data for LRS
         league["historical_matches"] = league["total_matches"]
         league["historical_picks"] = picks_cnt
         league["historical_hits"] = league["total_hits"]
         league["historical_profit"] = league["total_profit"]
         league["historical_roi"] = league["roi"]
-        
+
         results.append(league)
-        
+
     _set_cache(cache_key, results)
     return results
 
@@ -3032,9 +3285,12 @@ def get_league_markets(
 ):
     """
     Obtiene las estadísticas agregadas de mercados (desglose por tipo)
-    para una única competición directamente filtrada en BD.
+    para una única competición directamente filtrada en BD, incluyendo
+    mercados resueltos y pendientes.
     """
+    import re
     from sqlalchemy.orm import load_only
+
     history = (
         db.query(AnalysisHistory)
         .filter(AnalysisHistory.competition == league_name)
@@ -3105,61 +3361,85 @@ def get_league_markets(
                 if not (is_pub or is_und):
                     continue
 
-                if has_result:
-                    success = _check_pick_success(pick, res_dict)
-                    if success is not None:
-                        stake = _resolve_stake_from_pick(pick) if use_stake else MIN_STAKE
-                        pick_profit = _calculate_pick_profit(success, pick.get("odds", 0.0)) * stake
+                # ── Resolución de categoría y nombre canónico de mercado ──
+                sel_text = pick.get("selection", "")
+                lower_sel = sel_text.strip().lower()
+                category = ""
+                if "corner" in lower_sel or "córner" in lower_sel:
+                    category = "Córners"
+                elif "tarjeta" in lower_sel or "card" in lower_sel or "amarilla" in lower_sel:
+                    category = "Tarjetas"
+                elif "foul" in lower_sel or "falta" in lower_sel:
+                    category = "Faltas"
+                elif "shot_target" in lower_sel or "tiro_a_puerta" in lower_sel or "shots_target" in lower_sel or "pta" in lower_sel:
+                    category = "Tiros a puerta"
+                elif "shot" in lower_sel or "tiro" in lower_sel or "remate" in lower_sel:
+                    category = "Tiros"
+                elif "goal" in lower_sel or "gol" in lower_sel:
+                    category = "Goles"
 
-                        sel_text = pick.get("selection", "")
-                        lower_sel = sel_text.strip().lower()
-                        category = ""
-                        if "corner" in lower_sel or "córner" in lower_sel:
-                            category = "Córners"
-                        elif "tarjeta" in lower_sel or "card" in lower_sel or "amarilla" in lower_sel:
-                            category = "Tarjetas"
-                        elif "foul" in lower_sel or "falta" in lower_sel:
-                            category = "Faltas"
-                        elif "shot_target" in lower_sel or "tiro_a_puerta" in lower_sel or "shots_target" in lower_sel or "pta" in lower_sel:
-                            category = "Tiros a puerta"
-                        elif "shot" in lower_sel or "tiro" in lower_sel or "remate" in lower_sel:
-                            category = "Tiros"
-                        elif "goal" in lower_sel or "gol" in lower_sel:
-                            category = "Goles"
+                line_val = pick.get("line")
+                line_bucket = pick.get("line_bucket")
+                if line_val is None:
+                    num_match = re.search(r"(\d+(?:\.\d+)?)", sel_text)
+                    if num_match:
+                        try:
+                            line_val = float(num_match.group(1))
+                        except ValueError:
+                            pass
 
-                        sel_key = sel_text.strip()
-                        if category:
-                            if "over" in lower_sel or "más de" in lower_sel or "mas de" in lower_sel:
-                                sel_key = f"Over {category}"
-                            elif "under" in lower_sel or "menos de" in lower_sel:
-                                sel_key = f"Under {category}"
+                bucket_str = f" ({line_bucket})" if line_bucket and line_bucket != "no_line" else ""
+                line_str = f" {line_val}" if line_val is not None else ""
 
-                        if sel_key not in det_map:
-                            det_map[sel_key] = {
-                                "name": sel_key,
-                                "totalPicks": 0,
-                                "ganados": 0,
-                                "perdidos": 0,
-                                "nulos": 0,
-                                "profit": 0.0,
-                                "oddsSum": 0.0,
-                                "oddsCount": 0,
-                            }
-                        m_entry = det_map[sel_key]
-                        m_entry["totalPicks"] += 1
-                        odds_val = float(pick.get("odds", 0.0) or 0.0)
-                        if odds_val > 0:
-                            m_entry["oddsSum"] += odds_val
-                            m_entry["oddsCount"] += 1
+                sel_key = sel_text.strip()
+                if category:
+                    if "over" in lower_sel or "más de" in lower_sel or "mas de" in lower_sel:
+                        sel_key = f"Over {category}{line_str}{bucket_str}"
+                    elif "under" in lower_sel or "menos de" in lower_sel:
+                        sel_key = f"Under {category}{line_str}{bucket_str}"
+                    else:
+                        sel_key = f"{category}{line_str}{bucket_str}"
 
-                        if success is True:
-                            m_entry["ganados"] += 1
-                            m_entry["profit"] += pick_profit
-                        elif success is False:
-                            m_entry["perdidos"] += 1
-                            m_entry["profit"] += pick_profit
-                        elif success == "void":
-                            m_entry["nulos"] += 1
+                if sel_key not in det_map:
+                    det_map[sel_key] = {
+                        "name": sel_key,
+                        "totalPicks": 0,
+                        "pendientes": 0,
+                        "ganados": 0,
+                        "perdidos": 0,
+                        "nulos": 0,
+                        "profit": 0.0,
+                        "oddsSum": 0.0,
+                        "oddsCount": 0,
+                    }
+
+                m_entry = det_map[sel_key]
+                m_entry["totalPicks"] += 1
+
+                odds_val = float(pick.get("odds", 0.0) or 0.0)
+                if odds_val > 0:
+                    m_entry["oddsSum"] += odds_val
+                    m_entry["oddsCount"] += 1
+
+                # ── Si no tiene resultado aún, se contabiliza como pendiente ──
+                if not has_result:
+                    m_entry["pendientes"] += 1
+                    continue
+
+                # ── Si ya tiene resultado, se evalúa éxito/fracaso/profit ──
+                success = _check_pick_success(pick, res_dict)
+                if success is not None:
+                    stake = _resolve_stake_from_pick(pick) if use_stake else MIN_STAKE
+                    pick_profit = _calculate_pick_profit(success, odds_val) * stake
+
+                    if success is True:
+                        m_entry["ganados"] += 1
+                        m_entry["profit"] += pick_profit
+                    elif success is False:
+                        m_entry["perdidos"] += 1
+                        m_entry["profit"] += pick_profit
+                    elif success == "void":
+                        m_entry["nulos"] += 1
         except Exception:
             pass
 
@@ -3763,11 +4043,16 @@ def apply_blacklist(db: Session = Depends(get_db)):
             changed = False
             for pick in picks:
                 sel = pick.get("selection")
+                line = pick.get("line")
                 if not sel:
                     continue
 
                 # Comprobar si está en la blacklist
-                should_be_blacklisted = is_market_blacklisted_for_league(league_name, sel)
+                should_be_blacklisted = is_market_blacklisted_for_league(
+                    league_name,
+                    sel,
+                    line=line,
+                )
                 current_blacklisted = pick.get("is_blacklisted", False)
 
                 if should_be_blacklisted != current_blacklisted:
@@ -3973,6 +4258,8 @@ def update_league_profitability(
     }
 
 
+from typing import List, Optional
+
 class BlacklistMarketRequest(BaseModel):
     league: str
     market_name: str
@@ -3980,82 +4267,348 @@ class BlacklistMarketRequest(BaseModel):
 
 class BlacklistMarketsBatchRequest(BaseModel):
     league: str
-    markets: list[str]
+    markets: List[str]
 
 
-@app.post("/api/v1/leagues/blacklist-markets", tags=["Leagues"])
-def blacklist_markets_batch(req: BlacklistMarketsBatchRequest, db: Session = Depends(get_db)):
-    """
-    Agrega varios mercados de una liga específica a data/league_penalties.json
-    y vuelve a aplicar la blacklist a todo el historial en una sola operación.
-    """
-    from src.ui.api.compare import _market_family, _market_side
-    penalties_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
+class SegmentGovernanceActionRequest(BaseModel):
+    league: str
+    market_name: str
+    action: str  # "block", "reduce", "reset"
+    stake_multiplier: Optional[float] = None
+
+
+class SegmentGovernanceBatchActionRequest(BaseModel):
+    league: str
+    markets: List[str]
+    action: str  # "block", "reduce", "reset"
+    stake_multiplier: Optional[float] = None
+
+
+def _update_segment_governance_file(league: str, market_name: str, action: str, stake_multiplier: Optional[float] = None) -> str:
+    """Actualiza data/segment_governance.json para un mercado o segmento determinado."""
+    from src.domain.market_taxonomy import parse_market
+    from src.ui.api.compare import reset_governance_cache
+    gov_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "segment_governance.json")
+    
+    parsed = parse_market(market_name)
+    clean_league = league.strip().lower()
+    
+    # Claves candidatas a registrar en segment_governance
+    keys_to_update = []
+    if parsed.line_bucket and parsed.line_bucket != "no_line":
+        keys_to_update.append(f"league:{clean_league}|family:{parsed.family}|side:{parsed.side}|bucket:{parsed.line_bucket}")
+    if parsed.side and parsed.side != "generic":
+        keys_to_update.append(f"league:{clean_league}|family:{parsed.family}|side:{parsed.side}")
+    keys_to_update.append(f"league:{clean_league}|family:{parsed.family}")
+
+    # Elegimos la clave más específica
+    target_key = keys_to_update[0]
+
+    data = {}
+    if os.path.exists(gov_path):
+        try:
+            with open(gov_path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            data = {}
+
+    if "segments" not in data or not isinstance(data["segments"], dict):
+        data["segments"] = {}
+    if "segment_meta" not in data or not isinstance(data["segment_meta"], dict):
+        data["segment_meta"] = {}
+
+    action_lower = action.lower()
+    if action_lower in ["block", "blocked"]:
+        data["segments"][target_key] = "blocked"
+        data["segment_meta"][target_key] = {
+            "source": "manual_governance",
+            "market_name": market_name
+        }
+    elif action_lower in ["reduce", "reduced"]:
+        data["segments"][target_key] = "reduced"
+        data["segment_meta"][target_key] = {
+            "source": "manual_governance",
+            "market_name": market_name,
+            "stake_multiplier": stake_multiplier if stake_multiplier is not None else 0.5
+        }
+    elif action_lower in ["reset", "active"]:
+        data["segments"].pop(target_key, None)
+        data["segment_meta"].pop(target_key, None)
+
+    # Actualizar conteos
+    counts = {"active": 0, "watch": 0, "reduced": 0, "blocked": 0, "experimental": 0}
+    for st in data["segments"].values():
+        st_low = str(st).lower()
+        if st_low in counts:
+            counts[st_low] += 1
+    data["status_counts"] = counts
+    data["total_segments"] = len(data["segments"])
+
+    os.makedirs(os.path.dirname(gov_path), exist_ok=True)
+    with open(gov_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+    reset_governance_cache()
+    return target_key
+
+
+@app.post("/api/v1/leagues/governance/action", tags=["Leagues Governance"])
+def segment_governance_action(req: SegmentGovernanceActionRequest, db: Session = Depends(get_db)):
+    """Aplica una acción de gobernanza (block, reduce, reset) a un mercado de una liga sin recalcular historial."""
     try:
-        penalties = []
-        if os.path.exists(penalties_path):
-            try:
-                with open(penalties_path, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        penalties = json.loads(content)
-                        if not isinstance(penalties, list):
-                            penalties = []
-            except Exception:
-                penalties = []
-
-        added_count = 0
-        for m_name in req.markets:
-            if not m_name:
-                continue
-            family = _market_family(m_name)
-            side = _market_side(m_name)
-
-            exists = False
-            for rule in penalties:
-                if (rule.get("league", "").strip().lower() == req.league.strip().lower() and
-                    rule.get("market_family", "").strip().lower() == family.lower() and
-                    rule.get("market_side", "").strip().lower() == side.lower()):
-                    exists = True
-                    break
-
-            if not exists:
-                penalties.append({
-                    "league": req.league.strip(),
-                    "market_family": family,
-                    "market_side": side
-                })
-                added_count += 1
-
-        if added_count > 0:
-            os.makedirs(os.path.dirname(penalties_path), exist_ok=True)
-            with open(penalties_path, "w", encoding="utf-8") as f:
-                json.dump(penalties, f, ensure_ascii=False, indent=2)
-
-        res = apply_blacklist(db=db)
+        key = _update_segment_governance_file(req.league, req.market_name, req.action, req.stake_multiplier)
         return {
             "status": "ok",
-            "message": f"Se añadieron {added_count} mercado(s) a blacklist para '{req.league}'. {res.get('message', '')}",
-            "apply_blacklist_result": res
+            "target_key": key,
+            "message": f"Acción '{req.action}' registrada en segment_governance para '{key}' de '{req.league}'."
         }
     except Exception as e:
         import traceback
         traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error al agregar mercados a blacklist: {e}")
+        raise HTTPException(status_code=500, detail=f"Error en gobernanza de segmento: {e}")
+
+
+@app.post("/api/v1/leagues/governance/batch-action", tags=["Leagues Governance"])
+def segment_governance_batch_action(req: SegmentGovernanceBatchActionRequest, db: Session = Depends(get_db)):
+    """Aplica una acción de gobernanza en lote a varios mercados de una liga sin recalcular historial."""
+    try:
+        updated_keys = []
+        for m_name in req.markets:
+            if m_name:
+                k = _update_segment_governance_file(req.league, m_name, req.action, req.stake_multiplier)
+                updated_keys.append(k)
+        return {
+            "status": "ok",
+            "updated_keys": updated_keys,
+            "message": f"Acción '{req.action}' registrada en segment_governance para {len(updated_keys)} mercados de '{req.league}'."
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Error en gobernanza de segmento en lote: {e}")
+
+def _normalize_blacklist_line(value):
+    """
+    Devuelve una cadena numérica canónica o None si no hay línea.
+
+    Ejemplos:
+    11.5    -> "11.5"
+    "11.50" -> "11.5"
+    "11,5"  -> "11.5"
+    0       -> "0"
+    None    -> None
+    ""      -> None
+    """
+    from decimal import Decimal, InvalidOperation
+
+    if value is None:
+        return None
+
+    if isinstance(value, bool):
+        raise ValueError("La línea no puede ser un booleano.")
+
+    text = str(value).strip().replace(",", ".")
+
+    if not text:
+        return None
+
+    try:
+        number = Decimal(text)
+    except InvalidOperation as exc:
+        raise ValueError(
+            f"Línea de mercado inválida: {value!r}"
+        ) from exc
+
+    if not number.is_finite():
+        raise ValueError(
+            f"Línea de mercado inválida: {value!r}"
+        )
+
+    if number == 0:
+        return "0"
+
+    normalized = format(number, "f")
+
+    if "." in normalized:
+        normalized = normalized.rstrip("0").rstrip(".")
+
+    return normalized
+
+@app.post("/api/v1/leagues/blacklist-markets", tags=["Leagues"])
+def blacklist_markets_batch(
+    req: BlacklistMarketsBatchRequest,
+    db: Session = Depends(get_db),
+):
+    """
+    Agrega mercados a la blacklist con la estructura canónica original (lista de dicts):
+    [
+      {
+        "league": "...",
+        "market_family": "result",
+        "market_side": "away", # o "home", "draw", "over", "under"
+        "line": null           # o float para mercados con línea
+      }
+    ]
+    Garantiza compatibilidad total con is_market_blacklisted_for_league y apply_blacklist.
+    """
+    import json
+    import os
+    import re
+    import traceback
+    from fastapi import HTTPException
+
+    from src.ui.api.compare import (
+        _market_family,
+        _market_side,
+        _market_line,
+    )
+
+    penalties_path = os.path.join(
+        os.path.dirname(__file__),
+        "..",
+        "..",
+        "..",
+        "data",
+        "league_penalties.json",
+    )
+
+    try:
+        entries: list = []
+        if os.path.exists(penalties_path):
+            try:
+                with open(penalties_path, "r", encoding="utf-8") as f:
+                    raw_content = f.read().strip()
+                    if raw_content:
+                        loaded = json.loads(raw_content)
+                        if isinstance(loaded, list):
+                            entries = loaded
+            except Exception:
+                entries = []
+
+        added_count = 0
+
+        for market_str in req.markets:
+            clean_market = str(market_str).strip()
+            lower_mkt = clean_market.lower()
+
+            family = None
+            side = None
+            line = None
+
+            # 1. Tratamiento canónico de Resultado Final: Local, Empate, Visitante
+            if lower_mkt in ("local", "home", "victoria local", "1") or re.search(r"\b(local|victoria local)\b", lower_mkt):
+                family = "result"
+                side = "home"
+                line = None
+            elif lower_mkt in ("empate", "draw", "x") or re.search(r"\b(empate|draw)\b", lower_mkt):
+                family = "result"
+                side = "draw"
+                line = None
+            elif lower_mkt in ("visitante", "away", "victoria visitante", "2") or re.search(r"\b(visitante|victoria visitante)\b", lower_mkt):
+                family = "result"
+                side = "away"
+                line = None
+            else:
+                # 2. Tiros a puerta vs Tiros generales
+                is_shots_target = (
+                    "shot_target" in lower_mkt
+                    or "shots_target" in lower_mkt
+                    or "shots_on_target" in lower_mkt
+                    or "tiros a puerta" in lower_mkt
+                    or "tiro a puerta" in lower_mkt
+                    or "tiro_a_puerta" in lower_mkt
+                    or "tiros al arco" in lower_mkt
+                    or "tiro al arco" in lower_mkt
+                    or "remates a puerta" in lower_mkt
+                    or "remates al arco" in lower_mkt
+                    or "shots on target" in lower_mkt
+                    or "tiros a pta" in lower_mkt
+                    or "tiro a pta" in lower_mkt
+                    or " a pta" in lower_mkt
+                    or bool(re.search(r"\b(sot)\b", lower_mkt))
+                )
+
+                if is_shots_target:
+                    family = "shots_target"
+                else:
+                    family = _market_family(clean_market)
+                    if not family or family == "generic":
+                        if "tiro" in lower_mkt or "shot" in lower_mkt or "remate" in lower_mkt:
+                            family = "shots"
+
+                side = _market_side(clean_market)
+                line = _market_line(clean_market)
+
+            canonical_side = side.lower() if side and side.lower() != "generic" else None
+
+            new_rule = {
+                "league": req.league.strip(),
+                "market_family": family,
+                "market_side": canonical_side,
+                "line": float(line) if line is not None else None,
+            }
+
+            # Evitar reglas duplicadas
+            already_exists = any(
+                r.get("league") == new_rule["league"]
+                and r.get("market_family") == new_rule["market_family"]
+                and r.get("market_side") == new_rule["market_side"]
+                and r.get("line") == new_rule["line"]
+                for r in entries
+                if isinstance(r, dict)
+            )
+
+            if not already_exists:
+                entries.append(new_rule)
+                added_count += 1
+
+        os.makedirs(os.path.dirname(penalties_path), exist_ok=True)
+        with open(penalties_path, "w", encoding="utf-8") as f:
+            json.dump(entries, f, indent=2, ensure_ascii=False)
+
+        # Aplicar blacklist automáticamente al historial
+        res = apply_blacklist(db=db)
+
+        return {
+            "status": "ok",
+            "message": (
+                f"{added_count} mercados agregados a la blacklist de '{req.league}'. "
+                f"{res.get('message', '')}"
+            ),
+            "apply_blacklist_result": res,
+        }
+
+    except HTTPException:
+        raise
+
+    except Exception as exc:
+        traceback.print_exc()
+
+        raise HTTPException(
+            status_code=500,
+            detail=(
+                "Error al agregar mercados a la blacklist: "
+                f"{exc}"
+            ),
+        )
 
 
 @app.post("/api/v1/leagues/blacklist-market", tags=["Leagues"])
-def blacklist_market(req: BlacklistMarketRequest, db: Session = Depends(get_db)):
+def blacklist_market(
+    req: BlacklistMarketRequest,
+    db: Session = Depends(get_db),
+):
     """
-    Agrega un mercado de una liga específica a data/league_penalties.json
-    y vuelve a aplicar la blacklist a todo el historial.
+    Agrega un mercado con línea opcional a la blacklist
+    y vuelve a aplicarla al historial.
     """
     return blacklist_markets_batch(
-        req=BlacklistMarketsBatchRequest(league=req.league, markets=[req.market_name]),
-        db=db
+        req=BlacklistMarketsBatchRequest(
+            league=req.league,
+            markets=[req.market_name],
+        ),
+        db=db,
     )
-
-
 
 class ReduceStakeMarketRequest(BaseModel):
     league: str
@@ -4065,62 +4618,12 @@ class ReduceStakeMarketRequest(BaseModel):
 
 @app.post("/api/v1/leagues/reduce-stake-market", tags=["Leagues"])
 def reduce_stake_market(req: ReduceStakeMarketRequest, db: Session = Depends(get_db)):
-    """
-    Agrega o actualiza una regla de reducción de stake para un mercado en data/league_penalties.json
-    y vuelve a aplicar el recálculo al historial de análisis.
-    """
-    from src.ui.api.compare import _market_family, _market_side
-    penalties_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
-    try:
-        penalties = []
-        if os.path.exists(penalties_path):
-            try:
-                with open(penalties_path, "r", encoding="utf-8") as f:
-                    content = f.read().strip()
-                    if content:
-                        penalties = json.loads(content)
-                        if not isinstance(penalties, list):
-                            penalties = []
-            except Exception:
-                penalties = []
-
-        family = _market_family(req.market_name)
-        side = _market_side(req.market_name)
-
-        found = False
-        for rule in penalties:
-            if (rule.get("league", "").strip().lower() == req.league.strip().lower() and
-                rule.get("market_family", "").strip().lower() == family.lower() and
-                rule.get("market_side", "").strip().lower() == side.lower()):
-                rule["stake_modifier"] = req.stake_modifier
-                # Asegurarse de que no esté en blacklist si solo queremos reducir stake
-                rule["blacklist"] = False
-                found = True
-                break
-
-        if not found:
-            penalties.append({
-                "league": req.league.strip(),
-                "market_family": family,
-                "market_side": side,
-                "stake_modifier": req.stake_modifier,
-                "blacklist": False
-            })
-
-        os.makedirs(os.path.dirname(penalties_path), exist_ok=True)
-        with open(penalties_path, "w", encoding="utf-8") as f:
-            json.dump(penalties, f, ensure_ascii=False, indent=2)
-
-        res = apply_blacklist(db=db)
-        return {
-            "status": "ok",
-            "message": f"Stake reducido al {int(req.stake_modifier*100)}% para '{req.market_name}' en '{req.league}'. {res.get('message', '')}",
-            "apply_blacklist_result": res
-        }
-    except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=f"Error al reducir stake de mercado: {e}")
+    return segment_governance_action(
+        req=SegmentGovernanceActionRequest(
+            league=req.league, market_name=req.market_name, action="reduce", stake_multiplier=req.stake_modifier
+        ),
+        db=db
+    )
 
 
 
