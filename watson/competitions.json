@@ -1,0 +1,135 @@
+[
+  { "name": "2. Bundesliga", "id": 44, "season": 97406, "active": true },
+  {
+    "name": "Campeonato Brasileiro Série A",
+    "id": 325,
+    "season": 87678,
+    "active": true
+  },
+  { "name": "Brasileirão Série B", "id": 390, "season": 89840, "active": true },
+  { "name": "Bundesliga", "id": 35, "season": 97464, "active": true },
+  {
+    "name": "Canadian Premier League",
+    "id": 13470,
+    "season": 89676,
+    "active": true
+  },
+  {
+    "name": "Chinese Super League",
+    "id": 649,
+    "season": 90049,
+    "active": true
+  },
+  {
+    "name": "CONMEBOL Libertadores",
+    "id": 384,
+    "season": 87760,
+    "active": true
+  },
+  {
+    "name": "CONMEBOL Sudamericana",
+    "id": 480,
+    "season": 87770,
+    "active": true
+  },
+  {
+    "name": "UEFA Champions League",
+    "id": 7,
+    "season": 96518,
+    "active": true
+  },
+  { "name": "Copa América", "id": 133, "active": false },
+  { "name": "Copa del Rey", "id": 329, "active": false },
+  { "name": "Coppa Italia", "id": 328, "season": 97028, "active": true },
+  { "name": "Coupe de France", "id": 335, "active": false },
+  { "name": "Czech First League", "id": 172, "season": 96966, "active": true },
+  { "name": "DFB Pokal", "id": 217, "season": 95860, "active": true },
+  {
+    "name": "División Profesional",
+    "id": 16736,
+    "season": 92509,
+    "active": true
+  },
+  { "name": "Ekstraklasa", "id": 202, "season": 96144, "active": true },
+  { "name": "EURO", "id": 1, "active": false },
+  { "name": "FA Cup", "id": 19, "active": false },
+  { "name": "FIFA Club World Cup", "id": 357, "active": false },
+  { "name": "FIFA World Cup", "id": 16, "active": false },
+  { "name": "HNL", "id": 170, "season": 95727, "active": true },
+  { "name": "K League 1", "id": 410, "season": 88606, "active": true },
+  { "name": "LaLiga", "id": 8, "season": 97268, "active": true },
+  { "name": "LaLiga 2", "id": 54, "season": 97280, "active": true },
+  { "name": "Liga 1 Te Apuesto", "id": 406, "season": 88529, "active": true },
+  { "name": "Liga de Primera", "id": 11653, "season": 88493, "active": true },
+  { "name": "Liga MX, Apertura", "id": 11621, "season": 96191, "active": true },
+  { "name": "Liga MX, Clausura", "id": 11620, "active": false },
+  {
+    "name": "Liga Portugal Betclic",
+    "id": 238,
+    "season": 97436,
+    "active": true
+  },
+  {
+    "name": "Liga Profesional de Fútbol",
+    "id": 155,
+    "season": 87913,
+    "active": true
+  },
+  { "name": "LigaPro Serie A", "id": 240, "season": 89674, "active": true },
+  { "name": "Ligue 1", "id": 34, "season": 96127, "active": true },
+  { "name": "MLS", "id": 242, "season": 86668, "active": true },
+  { "name": "Premier League", "id": 17, "season": 96668, "active": true },
+  { "name": "Primera A", "id": 11539, "season": 88503, "active": true },
+  { "name": "Pro League", "id": 38, "season": 96616, "active": true },
+  { "name": "Saudi Pro League", "id": 955, "season": 99275, "active": true },
+  { "name": "Scottish Premiership", "id": 36, "season": 96658, "active": true },
+  { "name": "Serie A", "id": 23, "season": 95836, "active": true },
+  {
+    "name": "VriendenLoterij Eredivisie",
+    "id": 37,
+    "season": 96143,
+    "active": true
+  },
+  {
+    "name": "Danish Superliga",
+    "id": 39,
+    "season": 95785,
+    "active": true
+  },
+  {
+    "name": "Primera División",
+    "id": 11541,
+    "season": 87613,
+    "active": true
+  },
+  {
+    "name": "Egyptian Premier League",
+    "id": 808,
+    "season": 100148,
+    "active": true
+  },
+  {
+    "name": "3. Liga",
+    "id": 491,
+    "season": 98012,
+    "active": true
+  },
+  {
+    "name": "Primera Nacional",
+    "id": 703,
+    "season": 87940,
+    "active": true
+  },
+  {
+    "name": "Trendyol Süper Lig",
+    "id": 52,
+    "season": 98080,
+    "active": true
+  },
+  {
+    "name": "UEFA Europa League",
+    "id": 679,
+    "season": 96522,
+    "active": true
+  }
+]

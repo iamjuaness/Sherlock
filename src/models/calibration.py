@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -757,6 +758,7 @@ class HierarchicalCalibrator:
                 "n_samples": total_weight,
                 "n_segments": len(curves),
                 "format_version": CALIBRATION_FORMAT_VERSION,
+                "model_version": getattr(cls, "MODEL_VERSION", "v2"),
                 "half_life_days": calibration_half_life_days,
             },
         )
@@ -810,7 +812,17 @@ class HierarchicalCalibrator:
     def save(self, path: str | Path) -> Path:
         target = Path(path)
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+        # Issue #39: Escritura atómica a ruta candidata y renombrado
+        candidate = target.parent / f".tmp_{target.name}_{os.getpid()}"
+        try:
+            candidate.write_text(json.dumps(self.to_dict(), indent=2, ensure_ascii=False, sort_keys=True), encoding="utf-8")
+            os.replace(candidate, target)
+        finally:
+            if candidate.exists():
+                try:
+                    candidate.unlink()
+                except OSError:
+                    pass
         return target
 
     @classmethod

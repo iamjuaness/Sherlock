@@ -102,7 +102,12 @@ def market_line(text: str) -> Optional[float]:
 
 _NOTEBOOK_FAMILY_ALIASES: dict[str, str] = {
     "double_chance": "doublechance",
+    # Issue #60: shots_target → shotstarget (sin guión bajo) para coincidir con
+    # las claves medidas por el notebook en data/market_correlation.json.
+    # IMPORTANTE: la clave de fallback_exclusive_groups sigue usando
+    # la familia gruesa (shots / shots_target) — NO el alias.
     "shots_target": "shotstarget",
+    # fouls y offsides se dejan sin alias; sus claves en el JSON son idénticas.
     "generic": "otro",
 }
 
@@ -244,10 +249,10 @@ class StatSource:
             return float(val) if val is not None else None
 
         # Dynamic line odds: <market>_<over|under>_<line>
-        # Supported markets: goals, corners, cards, shots, shots_target
+        # Supported markets: goals, corners, cards, shots, shots_target, fouls, offsides
         _LINE_MARKETS = [
             "shots_target",  # must come before "shots" to avoid prefix collision
-            "goals", "corners", "cards", "shots",
+            "goals", "corners", "cards", "shots", "fouls", "offsides",
         ]
         for market in _LINE_MARKETS:
             for direction in ("over", "under"):
@@ -298,6 +303,7 @@ class StatSource:
 DEFAULT_FALLBACK_EXCLUSIVE_GROUPS: list[list[str]] = [
     ["goals", "btts"],
     ["shots", "shots_target"],
+    ["fouls", "cards"],
 ]
 
 DEFAULT_CORRELATION_RULES: dict[str, Any] = {
@@ -417,15 +423,9 @@ def classify_correlation_severity(
         if family_a in group and family_b in group and family_a != family_b:
             return "block", None
 
-    return "ok", None
-
-    # Sin dato confiable a nivel fino: cae en la lista de familias aún no
-    # confirmadas/descartadas con datos (evaluada a nivel de familia gruesa).
-    for group in fallback_exclusive_groups:
-        if family_a in group and family_b in group and family_a != family_b:
-            return "block", None
 
     return "ok", None
+
 
 
 def load_pick_rules_data(rules_path: Optional[str] = None) -> tuple[list[dict], dict]:
@@ -469,9 +469,12 @@ def _risk_imports():
 def resolve_match_picks_correlation(
     candidates: list[Any],
     correlation_rules: Optional[dict] = None,
-    max_picks_per_match: Optional[int] = None,
-    max_total_stake: Optional[float] = None,
 ) -> list[Any]:
+    """
+    Filtra picks correlacionados en un mismo evento resolviendo conflictos por correlación.
+    Nota: max_picks_per_match y max_total_stake fueron eliminados por completo (Issue #72 / #55);
+    la exposición se limita exclusivamente a través de la matriz y reglas de correlación entre picks.
+    """
     if not candidates:
         return candidates
 
@@ -531,12 +534,12 @@ def resolve_match_picks_correlation(
         return candidates
 
     def pick_merit_score(x: Any) -> tuple[float, float, float, float, str]:
-        ds = get_attr(x, "display_score") or 0.0
         ev = get_attr(x, "edge_ev") or 0.0
         edge = get_attr(x, "edge") or 0.0
+        ds = get_attr(x, "display_score") or 0.0
         qs = get_attr(x, "quality_score") or 0.0
         sel = str(get_attr(x, "selection", ""))
-        return (float(ds), float(ev), float(edge), float(qs), sel)
+        return (float(ev), float(edge), float(ds), float(qs), sel)
 
     valid_picks.sort(key=pick_merit_score, reverse=True)
 
@@ -619,14 +622,24 @@ def resolve_match_picks_correlation(
             continue
 
         if applied_penalty:
-            penalized_stake = round(stake * penalty_stake_factor, 4)
+            # #58: Ajuste proporcional en lugar de recorte fijo.
+            # Escala lineal entre penalize_above_abs_rho (factor ~ 1.0) y block_above_abs_rho (factor ~ penalty_stake_factor).
+            if worst_penalize_rho is not None and block_above_abs_rho > penalize_above_abs_rho:
+                ratio = (abs(worst_penalize_rho) - penalize_above_abs_rho) / (block_above_abs_rho - penalize_above_abs_rho)
+                ratio = max(0.0, min(1.0, ratio))
+                # Interpolar suavemente entre 1.0 y penalty_stake_factor (piso mínimo)
+                effective_factor = 1.0 - ratio * (1.0 - penalty_stake_factor)
+            else:
+                effective_factor = penalty_stake_factor
+
+            penalized_stake = round(stake * effective_factor, 4)
             set_attr(pick, "stake_units", penalized_stake)
             set_attr(pick, "correlation_penalty_applied", True)
             set_attr(
                 pick,
                 "correlation_penalty_reason",
                 f"Correlación moderada con '{worst_penalize_group}' "
-                f"(rho={worst_penalize_rho:.2f})" if worst_penalize_rho is not None else
+                f"(rho={worst_penalize_rho:.2f}, factor={effective_factor:.2f})" if worst_penalize_rho is not None else
                 "Correlación moderada detectada",
             )
             stake = penalized_stake
@@ -668,12 +681,17 @@ def evaluate_pick_rules(
 
     # Caso 1: Se proporciona una lista completa de picks del partido
     if isinstance(selection, list):
+        BlockReason, is_hard_blocked, record_hard_block, _ = _risk_imports()
         if stats is not None:
             # Evaluar reglas estadísticas a nivel individual
             for pick in selection:
                 sel_text = getattr(pick, "selection", None) if not isinstance(pick, dict) else pick.get("selection")
                 if sel_text:
-                    blocked, reason = evaluate_pick_rules(sel_text, stats, rules_list)
+                    try:
+                        blocked, reason = evaluate_pick_rules(sel_text, stats, rules_list)
+                    except Exception as err:
+                        logger.error("pick_rules: error evaluando pick '%s': %s (fail-closed)", sel_text, err)
+                        blocked, reason = True, f"Error evaluando reglas: {err}"
                     if blocked:
                         record_hard_block(pick, BlockReason.RULE_BLOCKED, detail=reason)
         # Aplicar resolución de correlaciones entre picks del partido
@@ -683,59 +701,78 @@ def evaluate_pick_rules(
     if not isinstance(rules_list, list) or not stats:
         return False, None
 
-    family = market_family(selection)
-    side = market_side(selection)
+    try:
+        family = market_family(selection)
+        side = market_side(selection)
 
-    for rule in rules_list:
-        if not rule.get("enabled", False):
-            continue
+        for rule in rules_list:
+            if not rule.get("enabled", False):
+                continue
 
-        rule_family = rule.get("market_family", "")
-        rule_side = rule.get("market_side", "")
+            rule_family = rule.get("market_family", "")
+            rule_side = rule.get("market_side", "")
 
-        if rule_family and rule_family != family:
-            continue
-        if rule_side and rule_side != side:
-            continue
+            if rule_family and rule_family != family:
+                continue
+            if rule_side and rule_side != side:
+                continue
 
-        for cond in rule.get("conditions", []):
-            stat_key = cond.get("stat")
-            operator = cond.get("operator")
-            expected = cond.get("value")
+            for cond in rule.get("conditions", []):
+                stat_key = cond.get("stat")
+                operator = cond.get("operator")
+                expected = cond.get("value")
 
-            if operator not in _OPERATORS:
-                logger.error(
-                    "pick_rules: operador inválido '%s' en regla '%s' — bloqueando por seguridad",
-                    operator, rule.get("id"),
-                )
-                return True, f"Regla '{rule.get('name')}': operador inválido '{operator}'"
+                if not stat_key:
+                    logger.warning("pick_rules: condición sin clave 'stat' en regla '%s' — ignorada", rule.get("id"))
+                    continue
 
-            actual = stats.get(stat_key)
+                if operator not in _OPERATORS:
+                    logger.error(
+                        "pick_rules: operador inválido '%s' en regla '%s' — bloqueando por seguridad",
+                        operator, rule.get("id"),
+                    )
+                    return True, f"Regla '{rule.get('name')}': operador inválido '{operator}'"
 
-            if actual is None:
-                logger.warning(
-                    "pick_rules: no se pudo resolver '%s' para selección '%s' (regla '%s') — "
-                    "bloqueando pick por datos insuficientes",
-                    stat_key, selection, rule.get("id"),
-                )
-                return True, f"Regla '{rule.get('name')}': falta stat '{stat_key}'"
+                actual = stats.get(stat_key)
 
-            try:
-                condition_met = _OPERATORS[operator](actual, expected)
-            except TypeError as exc:
-                logger.error(
-                    "pick_rules: error comparando '%s' %s %s (regla '%s'): %s",
-                    stat_key, operator, expected, rule.get("id"), exc,
-                )
-                return True, f"Regla '{rule.get('name')}': error evaluando '{stat_key}'"
+                if actual is None:
+                    # Si la clave es totalmente desconocida (no soportada por StatSource), no bloqueamos todo el universo indiscriminadamente
+                    # sino que se ignora la condición no mapeada. Si es una stat válida pero faltan datos en el partido, se bloquea por fail-closed.
+                    is_known = (
+                        stat_key.startswith("home_") or stat_key.startswith("away_")
+                        or stat_key.startswith("odds_") or stat_key == "xg_xga_diff_max"
+                    )
+                    if not is_known:
+                        logger.warning("pick_rules: stat_key desconocida '%s' — omitiendo condición", stat_key)
+                        continue
 
-            if not condition_met:
-                reason = cond.get("label") or f"{stat_key} {operator} {expected}"
-                logger.info(
-                    "pick_rules: pick '%s' BLOQUEADO por regla '%s' — condición no cumplida: %s "
-                    "(valor real=%s)",
-                    selection, rule.get("id"), reason, actual,
-                )
-                return True, f"Regla '{rule.get('name')}': {reason} (valor real: {actual})"
+                    logger.warning(
+                        "pick_rules: no se pudo resolver '%s' para selección '%s' (regla '%s') — "
+                        "bloqueando pick por datos insuficientes",
+                        stat_key, selection, rule.get("id"),
+                    )
+                    return True, f"Regla '{rule.get('name')}': falta stat '{stat_key}'"
 
-    return False, None
+                try:
+                    condition_met = _OPERATORS[operator](actual, expected)
+                except (TypeError, ValueError) as exc:
+                    logger.error(
+                        "pick_rules: error comparando '%s' %s %s (regla '%s'): %s",
+                        stat_key, operator, expected, rule.get("id"), exc,
+                    )
+                    return True, f"Regla '{rule.get('name')}': error evaluando '{stat_key}'"
+
+                if not condition_met:
+                    reason = cond.get("label") or f"{stat_key} {operator} {expected}"
+                    logger.info(
+                        "pick_rules: pick '%s' BLOQUEADO por regla '%s' — condición no cumplida: %s "
+                        "(valor real=%s)",
+                        selection, rule.get("id"), reason, actual,
+                    )
+                    return True, f"Regla '{rule.get('name')}': {reason} (valor real: {actual})"
+
+        return False, None
+    except Exception as exc:
+        logger.error("pick_rules: excepción inesperada evaluando '%s': %s — fail-closed", selection, exc)
+        return True, f"Error inesperado en motor de reglas: {exc}"
+

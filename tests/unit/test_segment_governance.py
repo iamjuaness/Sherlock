@@ -25,3 +25,20 @@ def test_governance_multipliers():
 
     m_red = get_governance_multipliers(SegmentStatus.REDUCED)
     assert m_red["stake_multiplier"] == 0.25
+
+
+def test_segment_governance_clv_sample_floor():
+    # Issue #56: CLV negativo con clv_n insuficiente (< 20) no debe penalizar por ruido
+    st_noise = evaluate_segment_status(
+        "Desconocida", "fouls", "over", "high_3_5",
+        effective_n=40, calibration_gap_abs=0.01, recent_clv=-0.08, clv_n=5
+    )
+    assert st_noise == SegmentStatus.ACTIVE
+
+    # Con muestra real (clv_n >= 20), CLV negativo sí penaliza a WATCH / REDUCED / BLOCKED
+    st_sig = evaluate_segment_status(
+        "Desconocida", "fouls", "over", "high_3_5",
+        effective_n=40, calibration_gap_abs=0.01, recent_clv=-0.08, clv_n=25
+    )
+    assert st_sig == SegmentStatus.REDUCED
+

@@ -329,11 +329,16 @@ def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
             line = _extract_line(sel, "under")
             return _resolve_ou_outcome(total_c, line, "under")
 
-    h_y = res.get("final_yellow_cards_home") or 0
-    a_y = res.get("final_yellow_cards_away") or 0
-    h_r = res.get("final_red_cards_home") or 0
-    a_r = res.get("final_red_cards_away") or 0
-    total_cards = (h_y + a_y) + ((h_r + a_r) * 2)
+    h_y_raw = res.get("final_yellow_cards_home")
+    a_y_raw = res.get("final_yellow_cards_away")
+    h_r_raw = res.get("final_red_cards_home")
+    a_r_raw = res.get("final_red_cards_away")
+    has_card_data = any(x is not None for x in (h_y_raw, a_y_raw, h_r_raw, a_r_raw))
+    h_y = h_y_raw or 0
+    a_y = a_y_raw or 0
+    h_r = h_r_raw or 0
+    a_r = a_r_raw or 0
+    total_cards = (h_y + a_y) + ((h_r + a_r) * 2) if has_card_data else None
     if "tarjetas" in sel or "cards" in sel:
         if "over" in sel:
             line = _extract_line(sel, "over")
@@ -395,6 +400,7 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
     """
     matches = chunk_data.get("matches", [])
     shared_historical_records = chunk_data.get("shared_historical_records", [])
+    shared_league_stats = chunk_data.get("shared_league_stats", {})
     use_general_stats = chunk_data.get("use_general_stats", False)
     threshold_dt_iso = chunk_data.get("threshold_dt_iso")
     enabled_rules = chunk_data.get("enabled_rules", [])
@@ -485,6 +491,7 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
                     current_match_date=m_date,
                     precomputed_historical_records=shared_historical_records,
                     precomputed_team_index=team_index,
+                    precomputed_league_stats=shared_league_stats,
                 )
             )
 
@@ -497,7 +504,8 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
                 if enabled_rules:
                     home_stats = local_payload.get("home", {})
                     away_stats = local_payload.get("away", {})
-                    stat_src = StatSource.from_payload(home_stats, away_stats)
+                    odds_stats = local_payload.get("odds", {})
+                    stat_src = StatSource.from_payload(home_stats, away_stats, odds_stats)
                     for pick in picks:
                         sel = pick.get("selection", "")
                         should_block, _ = evaluate_pick_rules(sel, stat_src, enabled_rules)

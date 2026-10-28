@@ -40,7 +40,6 @@ from src.domain.stake_engine import (
     compute_edge,
     compute_stake_final,
     compute_risk_decision,
-    kelly_fractional,
 )
 from src.domain.traceability import PickTrace
 from src.domain.market_taxonomy import (
@@ -50,6 +49,8 @@ from src.domain.market_taxonomy import (
     normalize_market_side,
     normalize_market_family,
 )
+# ── Portfolio: control de sobreexposición simultánea por jornada ──
+from src.domain.portfolio import apply_portfolio_exposure_cap
 
 load_dotenv()
 
@@ -71,12 +72,13 @@ class FootballTeamStats(BaseModel):
     name: str = Field(..., description="Nombre del equipo")
 
     # Generales
-    matches_home:   int = Field(1,  description="Partidos jugados como local")
-    matches_away:   int = Field(1,  description="Partidos jugados como visitante")
-    matches_played: int = Field(1,  description="Partidos totales")
+    matches_home:   int = Field(0,  description="Partidos jugados como local")
+    matches_away:   int = Field(0,  description="Partidos jugados como visitante")
+    matches_played: int = Field(0,  description="Partidos totales")
     wins:           int = Field(0,  description="Ganados")
     draws:          int = Field(0,  description="Empates")
     losses:         int = Field(0,  description="Perdidos")
+    has_stats:      bool = Field(True, description="Indica si el equipo tiene datos reales cargados")
 
     # Goles
     goals_per_game:          float = Field(0.0, description="Goles por juego")
@@ -114,14 +116,14 @@ class FootballTeamStats(BaseModel):
     throw_ins:                    float = Field(0.0, description="Saques de banda por juego")
 
     # Posesión / Pases
-    possession_pct:         float = Field(50.0, description="Posesión %")
+    possession_pct:         Optional[float] = Field(None, description="Posesión % (None si ausente)")
     passes_completed:       float = Field(0,   description="Pases acertados")
     pass_accuracy:          float = Field(0,   description="Precisión pases %")
     passes_opp_half:        float = Field(0,   description="Pases acertados campo rival")
     pass_accuracy_opp_half: float = Field(0,   description="Precisión pases campo rival %")
     crosses_per_game:       float = Field(0,   description="Centros completos por juego")
     cross_accuracy:         float = Field(0,   description="Precisión de centros %")
-    corners_per_game:       float = Field(4.5, description="Corners por juego")
+    corners_per_game:       float = Field(0.0, description="Corners por juego")
 
     # Posesión Avanzada (NUEVO)
     possession_lost:        float = Field(0.0, description="Pérdidas de posesión por juego")
@@ -164,13 +166,14 @@ class FootballTeamStats(BaseModel):
     errors_leading_to_shot: float = Field(0.0, description="Errores que llevan a tiro por juego")
 
     # Extra Advanced
-    corners_conceded_per_game:    float = Field(5.0, description="Corners concedidos por juego")
-    xg_per_game:                  float = Field(1.5, description="Expected Goals por juego")
-    xga_per_game:                 float = Field(1.5, description="Expected Goals Against por juego")
+    corners_conceded_per_game:    float = Field(0.0, description="Corners concedidos por juego")
+    xg_per_game:                  Optional[float] = Field(None, description="Expected Goals por juego")
+    xga_per_game:                 Optional[float] = Field(None, description="Expected Goals Against por juego")
+    xg_is_imputed:                bool = Field(False, description="True si xG no es oficial y fue estimado o imputado")
     # Pases / Centros (Totales vs Acertados)
-    passes_total_per_game:          float = Field(500.0, description="Pases totales intentados por juego")
-    passes_opp_half_total_per_game: float = Field(200.0, description="Pases totales intentados en campo rival")
-    crosses_total_per_game:         float = Field(20.0,  description="Centros totales intentados por juego")
+    passes_total_per_game:          float = Field(0.0, description="Pases totales intentados por juego")
+    passes_opp_half_total_per_game: float = Field(0.0, description="Pases totales intentados en campo rival")
+    crosses_total_per_game:         float = Field(0.0,  description="Centros totales intentados por juego")
 
     # Portero Avanzado (NUEVO)
     save_pct:                       float = Field(0.0, description="Paradas %")
@@ -181,7 +184,7 @@ class FootballTeamStats(BaseModel):
     number_of_sprints:              float = Field(0.0, description="Sprints por juego")
 
     # Rating (NUEVO)
-    avg_rating:                     float = Field(0.0, description="Rating promedio del equipo")
+    avg_rating:                     Optional[float] = Field(None, description="Rating promedio del equipo")
 
     # Nuevas variables (Fase de ampliación de stats)
     goals_scored: float = Field(0.0, description="Goles anotados totales")
@@ -518,10 +521,11 @@ def _sanitize_and_fill_team_stats(team: FootballTeamStats) -> FootballTeamStats:
     if t.goal_conversion_pct <= 0.0 and t.goals_per_game > 0.0 and t.shots_per_game > 0.0:
         t.goal_conversion_pct = (t.goals_per_game / t.shots_per_game) * 100.0
 
-    # 10. Correcciones menores de xg / xga si están ausentes
-    if t.xg_per_game <= 0.0:
+    # 10. Correcciones menores de xg / xga si están ausentes (Issue #4)
+    if t.xg_per_game is None or t.xg_per_game <= 0.0:
         t.xg_per_game = max(t.goals_per_game, 0.1)
-    if t.xga_per_game <= 0.0:
+        t.xg_is_imputed = True
+    if t.xga_per_game is None or t.xga_per_game <= 0.0:
         t.xga_per_game = max(t.goals_conceded_per_game, 0.1)
 
     return t
@@ -643,6 +647,7 @@ class ValueIndicator(BaseModel):
     segment_status:       Optional[str]   = None   # active | watch | reduced | blocked | experimental
     drift_score:          Optional[float] = None   # score de drift del segmento (0-1)
     governance_multiplier: Optional[float] = None  # factor aplicado al stake por gobernanza [0-1]
+    min_edge_add:         Optional[float] = None   # incremento mínimo de edge requerido por gobernanza (en pp)
 
     # Componentes de fiabilidad
     reliability_components: Dict[str, float] = Field(default_factory=dict)
@@ -651,8 +656,8 @@ class ValueIndicator(BaseModel):
 class StatComparison(BaseModel):
     label:      str
     key:        str
-    home_value: float
-    away_value: float
+    home_value: Optional[float] = None
+    away_value: Optional[float] = None
     advantage:  str   # "home" | "away" | "even"
 
 class ProjectedLine(BaseModel):
@@ -693,9 +698,15 @@ def _implied_probability(odds: float | None) -> float:
     return (1.0 / odds) * 100.0
 
 
-def _stat_comparison(label: str, key: str, hv: float, av: float,
+def _stat_comparison(label: str, key: str, hv: Optional[float], av: Optional[float],
                      higher_is_better: bool = True) -> StatComparison:
-    if abs(hv - av) < 0.01:
+    if hv is None and av is None:
+        adv = "even"
+    elif hv is None:
+        adv = "away" if higher_is_better else "home"
+    elif av is None:
+        adv = "home" if higher_is_better else "away"
+    elif abs(hv - av) < 0.01:
         adv = "even"
     elif higher_is_better:
         adv = "home" if hv > av else "away"
@@ -740,41 +751,58 @@ def _estimate_league_variance(competition_name: str, metric: str, mean_val: floa
         "offsides": 1.30,
     }
     fallback_fano = fano_factors.get(metric, 1.20)
-    
-    if db is not None:
+
+    # ── Issue #25: Estimar varianza real desde AnalysisHistory en lugar de tablas legacy ──
+    if db is not None and competition_name and competition_name not in ("Desconocida", "General", ""):
         try:
-            from src.core.domain import Competition, Match, StatLineTeam
-            comp = db.query(Competition).filter(Competition.name == competition_name).first()
-            if comp:
-                stats = db.query(StatLineTeam).join(Match).filter(Match.competition_id == comp.id).all()
-                if len(stats) >= 10:
-                    vals = []
+            from src.core.domain import AnalysisHistory
+            rows = (
+                db.query(AnalysisHistory)
+                .filter(
+                    AnalysisHistory.competition == competition_name,
+                    AnalysisHistory.final_score_home.isnot(None),
+                    AnalysisHistory.final_score_away.isnot(None),
+                )
+                .order_by(AnalysisHistory.date.desc())
+                .limit(100)
+                .all()
+            )
+
+            if len(rows) >= 8:
+                vals: list[float] = []
+                for r in rows:
                     if metric == "goals":
-                        matches = db.query(Match).filter(Match.competition_id == comp.id, Match.status == "finished").all()
-                        for m in matches:
-                            if m.home_score is not None: vals.append(m.home_score)
-                            if m.away_score is not None: vals.append(m.away_score)
+                        if r.final_score_home is not None: vals.append(float(r.final_score_home))
+                        if r.final_score_away is not None: vals.append(float(r.final_score_away))
                     elif metric == "corners":
-                        vals = [s.corners for s in stats if s.corners is not None]
+                        if r.final_corners_home is not None: vals.append(float(r.final_corners_home))
+                        if r.final_corners_away is not None: vals.append(float(r.final_corners_away))
                     elif metric == "cards":
-                        vals = [(s.yellow_cards or 0) + (s.red_cards or 0) * 2.0 for s in stats if s.yellow_cards is not None or s.red_cards is not None]
+                        if r.final_yellow_cards_home is not None or r.final_red_cards_home is not None:
+                            vals.append(float((r.final_yellow_cards_home or 0) + (r.final_red_cards_home or 0) * 2.0))
+                        if r.final_yellow_cards_away is not None or r.final_red_cards_away is not None:
+                            vals.append(float((r.final_yellow_cards_away or 0) + (r.final_red_cards_away or 0) * 2.0))
                     elif metric == "shots":
-                        vals = [s.shots for s in stats if s.shots is not None]
+                        if r.final_shots_home is not None: vals.append(float(r.final_shots_home))
+                        if r.final_shots_away is not None: vals.append(float(r.final_shots_away))
                     elif metric == "shots_target":
-                        vals = [s.shots_on_target for s in stats if s.shots_on_target is not None]
+                        if r.final_shots_on_target_home is not None: vals.append(float(r.final_shots_on_target_home))
+                        if r.final_shots_on_target_away is not None: vals.append(float(r.final_shots_on_target_away))
                     elif metric == "fouls":
-                        vals = [s.fouls for s in stats if s.fouls is not None]
+                        if r.final_fouls_home is not None: vals.append(float(r.final_fouls_home))
+                        if r.final_fouls_away is not None: vals.append(float(r.final_fouls_away))
                     elif metric == "offsides":
-                        vals = [s.offsides for s in stats if s.offsides is not None]
-                        
-                    if len(vals) >= 10:
-                        avg = sum(vals) / len(vals)
-                        var = sum((x - avg) ** 2 for x in vals) / (len(vals) - 1)
-                        if var > 0.05:
-                            return var
-        except Exception as e:
+                        if r.final_offsides_home is not None: vals.append(float(r.final_offsides_home))
+                        if r.final_offsides_away is not None: vals.append(float(r.final_offsides_away))
+
+                if len(vals) >= 8:
+                    avg = sum(vals) / len(vals)
+                    var = sum((x - avg) ** 2 for x in vals) / (len(vals) - 1)
+                    if var > 0.05:
+                        return var
+        except Exception:
             pass
-            
+
     return mean_val * fallback_fano
 
 
@@ -853,17 +881,34 @@ def _fair_probabilities_from_odds(*odds_list: float | None) -> list[float]:
 
 def _compute_league_reliability_score(league: "LeagueStats") -> float:
     """
-    Calcula un score de confiabilidad de la liga en rango [0.25, 1.0].
+    Calcula un score de confiabilidad de la liga en rango [0.15, 1.0].
 
-    Combina dos fuentes:
+    Combina dos fuentes ponderadas por el tamaño de muestra de partidos:
     A) Coherencia estadística interna (rangos razonables de goles, corners, tarjetas)
-    B) Rendimiento histórico real (acierto + beneficio), con peso Bayesiano proporcional
-       al número de partidos/picks analizados. Con pocos datos (<10 picks), el peso
-       histórico se reduce drásticamente para evitar que 1 partido = 100% confianza.
+    B) Rendimiento histórico real (acierto + beneficio)
 
-    Un score bajo (<0.6) penaliza el EV efectivo de los picks.
+    IMPORTANTE: Si la liga no tiene partidos registrados (historical_matches <= 0)
+    o tiene una muestra ínfima, NO puede obtener un score alto únicamente por
+    tener valores por defecto "coherentes". Se aplica un shrinkage estricto por muestra.
     """
-    # ── A. Coherencia estadística (igual que antes) ──────────────
+    # ── Muestra de partidos y penalización por falta de datos ──
+    matches = int(getattr(league, "historical_matches", 0) or 0)
+    picks = int(getattr(league, "historical_picks", 0) or 0)
+
+    # Factor de confianza por muestra de partidos [0.20, 1.0]
+    # Una liga es "buena" si tiene 600+ partidos y 60+ picks.
+    # Con 0 partidos:   0.20 (penalización máxima, liga no probada)
+    # Con 150 partidos: ~0.40
+    # Con 300 partidos: ~0.60
+    # Con 600+ partidos: 1.0 (muestra suficiente para plena confianza)
+    _MATCH_REF = 600.0  # partidos necesarios para saturar a 1.0
+    if matches <= 0 and picks <= 0:
+        match_confidence = 0.20
+    else:
+        effective_n = max(matches, int(picks * 10.0))  # picks × 10 ≈ partidos equivalentes
+        match_confidence = min(1.0, 0.20 + (effective_n / _MATCH_REF) * 0.80)
+
+    # ── A. Coherencia estadística ─────────────────────────────────
     stat_score = 1.0
 
     pct_sum = league.home_win_pct + league.draw_pct + league.away_win_pct
@@ -892,51 +937,73 @@ def _compute_league_reliability_score(league: "LeagueStats") -> float:
         if ratio > 0.15:
             stat_score -= 0.05
 
-    stat_score = max(0.25, min(1.0, stat_score))
+    stat_score = max(0.20, min(1.0, stat_score))
 
     # ── B. Rendimiento histórico real ────────────────────────────
-    # Solo se activa si hay suficientes picks resueltos.
-    # Peso Bayesiano: el histórico va ganando influencia conforme crece el nº de picks.
-    # Con N_MIN picks se tiene 50% de influencia histórica; con el doble, ~75%, etc.
-    hist_picks = league.historical_picks  # picks resueltos (no pendientes)
-    if hist_picks <= 0:
-        # Sin historial: solo usamos la coherencia estadística
-        return round(stat_score, 3)
+    if picks <= 0:
+        # Sin historial de picks: el score depende de la coherencia estadística
+        # escalada estrictamente por la muestra de partidos evaluados.
+        final_score = stat_score * match_confidence
+        # Si tiene gran muestra de partidos (ej. 600+ o 1000+), asegura confianza de liga establecida
+        if matches >= 1000:
+            final_score = max(final_score, 0.70)
+        elif matches >= 600:
+            final_score = max(final_score, 0.60)
+        return round(max(0.15, min(1.0, final_score)), 3)
 
-    N_MIN = 20.0  # número de picks para 50% de peso histórico
-    hist_weight = hist_picks / (hist_picks + N_MIN)   # ∈ [0, 1)
+    N_MIN = 60.0  # número de picks para 50% de peso histórico (liga "buena" = 60+ picks)
+    hist_weight = picks / (picks + N_MIN)   # ∈ [0, 1)
     stat_weight = 1.0 - hist_weight
 
-    # Componente de acierto: acierto esperado en apuestas value ≈ 55%.
-    # Normalizar alrededor de 0.55 → score 1.0 si acierto ≥ 0.60, 0.5 si = 0.45, etc.
-    accuracy_rate = league.historical_hits / hist_picks
-    ACC_REF = 0.50          # mínimo aceptable
-    ACC_IDEAL = 0.62        # nivel excelente
+    # Componente de acierto:
+    # ACC_REF = 0.42 (realista: la mayoría de picks de valor ronda el 42-55%)
+    accuracy_rate = league.historical_hits / picks
+    ACC_REF  = 0.42          # mínimo aceptable
+    ACC_IDEAL = 0.58         # nivel sobresaliente para value betting
     acc_score = (accuracy_rate - ACC_REF) / max(ACC_IDEAL - ACC_REF, 0.01)
     acc_score = max(0.0, min(1.0, acc_score))  # [0, 1]
 
     # Componente de beneficio: normalizado a picks (ROI por pick).
-    # +0.15u/pick = excelente (score 1.0); -0.15u/pick = malo (score 0.0).
-    roi_per_pick = league.historical_profit / hist_picks
-    PROFIT_LOW  = -0.15
-    PROFIT_HIGH =  0.20
+    roi_per_pick = league.historical_profit / picks
+    PROFIT_LOW  = -0.20
+    PROFIT_HIGH =  0.25
     profit_score = (roi_per_pick - PROFIT_LOW) / max(PROFIT_HIGH - PROFIT_LOW, 0.01)
     profit_score = max(0.0, min(1.0, profit_score))
 
-    # Muestra suficiente: bonus si hay ≥ 30 partidos analizados
-    sample_bonus = 0.0
-    if league.historical_matches >= 30:
-        sample_bonus = 0.05
-    elif league.historical_matches >= 15:
-        sample_bonus = 0.02
-
     # Score histórico combinado (50% acierto, 50% beneficio)
-    hist_score = acc_score * 0.50 + profit_score * 0.50 + sample_bonus
+    hist_score = acc_score * 0.50 + profit_score * 0.50
     hist_score = max(0.0, min(1.0, hist_score))
 
-    # ── Combinar A + B ────────────────────────────────────────────
-    final_score = stat_score * stat_weight + hist_score * hist_weight
-    return round(max(0.25, min(1.0, final_score)), 3)
+    # ── Combinar A + B con shrinkage hacia prior estadístico ──────────────
+    # match_confidence actúa como peso del historial vs el prior estadístico.
+    # Con muestra baja → más peso al stat_score; con muestra alta → más peso al hist.
+    # Fórmula: blended = stat * (1 - conf_hist) + hist * conf_hist
+    #   donde conf_hist satura a 1.0 con 600+ partidos.
+    conf_hist = match_confidence  # ya es [0.20, 1.0]
+    blended = stat_score * (1.0 - conf_hist * hist_weight) + hist_score * (conf_hist * hist_weight)
+    # Piso mínimo: la coherencia estadística siempre aporta algo
+    blended = max(stat_score * 0.30, blended)
+    final_score = min(1.0, max(0.15, blended))
+
+    # ── Respaldo de muestra alta (evitar LRS injustamente bajo con 1000+ partidos y 60+ picks) ──
+    if matches >= 1000 and picks >= 60:
+        if accuracy_rate >= 0.42:
+            final_score = max(final_score, 0.75 + min(0.25, (accuracy_rate - 0.42) * 1.5))
+        else:
+            final_score = max(final_score, 0.55)
+    elif matches >= 600 and accuracy_rate >= 0.42:
+        if picks >= 60:
+            final_score = max(final_score, 0.68 + min(0.30, (accuracy_rate - 0.42) * 1.5))
+        else:
+            final_score = max(final_score, 0.58)
+    elif matches >= 200 and accuracy_rate >= 0.42:
+        # Liga con muestra media y acierto decente: piso razonable
+        final_score = max(final_score, 0.45)
+    elif matches >= 100 and picks >= 20 and accuracy_rate >= 0.40:
+        # Liga emergente con algo de historial positivo
+        final_score = max(final_score, 0.38)
+
+    return round(max(0.15, min(1.0, final_score)), 3)
 
 
 MIN_PICKS_FOR_EMPIRICAL = 10
@@ -964,11 +1031,11 @@ GOVERNANCE_PATH = os.getenv("SHERLOCK_GOVERNANCE_PATH", "data/segment_governance
 
 _governance_cache: "dict[str, Any]" = {"mtime": None, "data": None}
 
-# Factores de stake por status de gobernanza
+# Factores de stake por status de gobernanza (unificados con src.models.segment_governance)
 _STATUS_MULTIPLIERS: "dict[str, float]" = {
     "blocked":      0.0,   # bloqueo duro: stake cero -> SEGMENT_GOVERNANCE_BLOCKED
-    "reduced":      0.5,   # stake reducido al 50 %
-    "watch":        0.85,  # stake ligeramente reducido -- en vigilancia
+    "reduced":      0.25,  # stake reducido a 25% (unificado con get_governance_multipliers)
+    "watch":        0.50,  # stake en vigilancia al 50%
     "experimental": 0.30,  # segmento nuevo con muy poca muestra
     "active":       1.0,   # sin restriccion
 }
@@ -1018,7 +1085,7 @@ def _get_governance_multiplier(
     family: "str | None" = None,
     side: "str | None" = None,
     bucket: "str | None" = None,
-) -> "tuple[str, float, float]":
+) -> "tuple[str, float, float, float]":
     """
     Resuelve el status de gobernanza y el multiplicador de stake para un segmento.
 
@@ -1081,13 +1148,27 @@ def _get_governance_multiplier(
                 elif drift > 0:
                     multiplier = max(0.2, min(0.8, round(1.0 - drift, 2)))
                 else:
-                    multiplier = _STATUS_MULTIPLIERS.get("reduced", 0.5)
+                    multiplier = _STATUS_MULTIPLIERS.get("reduced", 0.25)
             else:
                 multiplier = _STATUS_MULTIPLIERS.get(status_str, 1.0)
 
-            return status_str, multiplier, drift
+            # Extraer min_edge_add canónico de segment_governance
+            min_edge_add = 0.0
+            if "min_edge_add" in meta and meta["min_edge_add"] is not None:
+                min_edge_add = float(meta["min_edge_add"])
+            else:
+                try:
+                    from src.models.segment_governance import SegmentStatus, get_governance_multipliers
+                    gov_dict = get_governance_multipliers(SegmentStatus(status_str))
+                    # min_edge_add viene en porcentaje si el edge se mide en % (ej. 4.0% para 0.04) o en puntos
+                    # get_governance_multipliers da 0.04 para REDUCED, 0.02 para WATCH -> 4.0pp y 2.0pp
+                    min_edge_add = float(gov_dict.get("min_edge_add", 0.0)) * 100.0
+                except Exception:
+                    pass
 
-    return "active", 1.0, 0.0
+            return status_str, multiplier, drift, min_edge_add
+
+    return "active", 1.0, 0.0, 0.0
 
 
 def reset_governance_cache() -> None:
@@ -1295,12 +1376,11 @@ def apply_calibration(
         )
 
     resolved_selection = selection or market_family
-    resolved_family = _market_family(resolved_selection)
-    resolved_side = _calibration_side(
-        selection=resolved_selection,
-        market_family=resolved_family,
-    )
-    resolved_line = _calibration_line_bucket(resolved_selection)
+    # Issue #31: Usar la taxonomía canónica (parse_market) idéntica a train_calibration.py
+    mk = parse_market(resolved_selection, resolved_selection)
+    resolved_family = str(mk.family)
+    resolved_side = str(mk.side)
+    resolved_line = mk.line_bucket
 
     try:
         calibrator = get_calibrator_for_timestamp(predicted_at_utc) if predicted_at_utc is not None else get_calibrator()
@@ -1342,32 +1422,91 @@ def get_market_variance_tier(selection: str) -> str:
     return "high"
 
 def get_data_quality_score(selection: str, h: FootballTeamStats, a: FootballTeamStats) -> float:
-    if not h or not a or h.matches_played <= 0 or a.matches_played <= 0:
+    """
+    Calcula el score de Confianza de Datos (0 a 100).
+
+    Evalúa 3 pilares indispensables:
+    1. Cobertura de Muestra (40 pts): Partidos jugados por ambos equipos.
+       - Muestra n < 3: castigo severo (no hay significancia).
+       - Muestra n >= 15: máxima puntuación.
+    2. Integridad de Métricas Clave y Avanzadas (35 pts):
+       - Presencia de xG/xGA real (no valores dummy).
+       - Tiros a puerta, faltas, córners y posesión reales.
+       - Ratings de rendimiento de jugadores/equipos.
+    3. Estabilidad del Tipo de Mercado (25 pts):
+       - Mercados de baja varianza (1X2, goles, btts): base 25 pts.
+       - Córners (varianza media): base 18 pts.
+       - Mercados volátiles (tarjetas, tiros, faltas): base 12 pts.
+    """
+    if not h or not a:
         return 0.0
 
-    tier = get_market_confidence_tier(selection)
-    if tier == "segmented":   base = 92.0
-    elif tier == "hybrid":    base = 70.0
-    else:                     base = 62.0  # subido de 45 → 62 para shots/cards/fouls
-
     min_m = min(h.matches_played, a.matches_played)
-    if min_m < 8:
-        sample_penalty = (10 - min_m) * 3.5  # reducido de 6 → 3.5
-    elif min_m < 15:
-        sample_penalty = (15 - min_m) * 1.5  # reducido de 2 → 1.5
+    if min_m <= 0:
+        return 0.0
+
+    # ── 1. Cobertura de Muestra (hasta 40 puntos) ─────────────────
+    if min_m >= 15:
+        sample_pts = 40.0
+    elif min_m >= 10:
+        sample_pts = 30.0 + (min_m - 10) * 2.0  # 30 a 40
+    elif min_m >= 5:
+        sample_pts = 18.0 + (min_m - 5) * 2.4   # 18 a 30
+    elif min_m >= 3:
+        sample_pts = 10.0 + (min_m - 3) * 4.0   # 10 a 18
     else:
-        sample_penalty = 0
+        sample_pts = min_m * 3.0                 # 0 a 9 (muestra crítica)
+
+    # ── 2. Integridad y Riqueza de Métricas (hasta 35 puntos) ──────
+    # Chequear disponibilidad de métricas estadísticas fundamentales
+    metrics_pts = 0.0
+
+    # Presencia de xG/xGA diferenciado y real (Issue #4: xg imputado no puntúa como real)
+    has_xg_h = not getattr(h, "xg_is_imputed", False) and h.xg_per_game is not None and h.xg_per_game > 0.1
+    has_xg_a = not getattr(a, "xg_is_imputed", False) and a.xg_per_game is not None and a.xg_per_game > 0.1
+    if has_xg_h and has_xg_a:
+        metrics_pts += 12.0
+    elif has_xg_h or has_xg_a:
+        metrics_pts += 6.0
+
+    # Tiros y tiros a puerta registrados
+    has_shots = (h.shots_per_game > 0 and a.shots_per_game > 0)
+    has_sot = (h.shots_on_target_per_game > 0 and a.shots_on_target_per_game > 0)
+    if has_shots and has_sot:
+        metrics_pts += 8.0
+    elif has_shots:
+        metrics_pts += 4.0
+
+    # Córners y faltas registradas
+    if h.corners_per_game > 0 and a.corners_per_game > 0:
+        metrics_pts += 5.0
+    if h.fouls_per_game > 0 and a.fouls_per_game > 0:
+        metrics_pts += 5.0
+
+    # Presencia de rating o métricas avanzadas de pase
+    if (h.avg_rating or 0.0) > 0.1 and (a.avg_rating or 0.0) > 0.1:
+        metrics_pts += 5.0
+    elif h.pass_accuracy > 10.0 and a.pass_accuracy > 10.0:
+        metrics_pts += 3.0
+
+    # ── 3. Estabilidad del Tipo de Mercado (hasta 25 puntos) ───────
+    tier = get_market_confidence_tier(selection)
+    if tier == "segmented":
+        market_tier_pts = 25.0
+    elif tier == "hybrid":
+        market_tier_pts = 18.0
+    else:
+        market_tier_pts = 12.0
 
     family = _market_family(selection)
-    if family in {"cards", "corners", "shots"}:
-        if h.xg_per_game < 0.4 or a.xg_per_game < 0.4:
-            base -= 6  # reducido de 8 → 6
+    # Si el mercado depende de métricas de conteo (tiros, tarjetas) y faltan esas métricas, penalizar
+    if family in {"shots", "shots_target"} and not (has_shots and has_sot):
+        metrics_pts = max(0.0, metrics_pts - 10.0)
+    if family == "cards" and (h.yellow_cards_per_game <= 0 or a.yellow_cards_per_game <= 0):
+        metrics_pts = max(0.0, metrics_pts - 8.0)
 
-    # Penalización si no hay datos avanzados (rating = 0 indica data pobre)
-    if h.avg_rating < 0.1 or a.avg_rating < 0.1:
-        base -= 4  # reducido de 5 → 4
-
-    return max(5.0, base - sample_penalty)
+    total_dq = sample_pts + metrics_pts + market_tier_pts
+    return round(max(5.0, min(100.0, total_dq)), 1)
 
 def _calculate_display_score(v: ValueIndicator) -> float:
     if v.calibrated_prob is None or v.edge_ev is None:
@@ -1483,16 +1622,75 @@ def is_publishable_pick(v: ValueIndicator) -> bool:
     return evaluate_pick_eligibility(v).publishable
 
 
-def score_pick_quality(v: ValueIndicator) -> int:
-    if not v.edge_ev: return 0
+def score_pick_quality(v: Any) -> int:
+    """
+    Score de Calidad Multidimensional (0 a 100) para clasificar y filtrar picks.
 
-    ev_score = min(v.edge_ev * 200, 60)
+    Evalúa 5 pilares fundamentales:
+      1. Edge EV real (hasta 30 pts): Valor matemático medible sobre el mercado.
+      2. Calidad de Datos del evento (hasta 25 pts): Cobertura estadística y muestra.
+      3. Confiabilidad de Liga / LRS (hasta 20 pts): Estabilidad y muestra real de la liga.
+      4. Respaldo Empírico / H2H (hasta 15 pts): Coherencia entre modelo y realidad histórica.
+      5. Consistencia de Probabilidad (hasta 10 pts): Solidez de la probabilidad estimada.
+    """
+    if isinstance(v, dict):
+        ev = _safe_num(v.get("edge_ev"), 0.0)
+        cal_p = _safe_num(v.get("calibrated_prob") or v.get("model_prob"), 0.0)
+        dq = _safe_num(v.get("data_quality_score"), 50.0)
+        lrs = _safe_num(v.get("league_reliability_score"), 0.50)
+        emp_hr = _safe_num(v.get("empirical_hit_rate"), None)
+        emp_samples = int(_safe_num(v.get("hit_rate_samples"), 0) or 0)
+        h2h_hr = _safe_num(v.get("h2h_hit_rate") or v.get("h2h_raw_hit_rate"), None)
+        h2h_samples = int(_safe_num(v.get("h2h_samples"), 0) or 0)
+    else:
+        ev = _safe_num(getattr(v, "edge_ev", 0.0), 0.0)
+        cal_p = _safe_num(getattr(v, "calibrated_prob", None) or getattr(v, "model_prob", 0.0), 0.0)
+        dq = _safe_num(getattr(v, "data_quality_score", None), 50.0)
+        lrs = _safe_num(getattr(v, "league_reliability_score", None), 0.50)
+        emp_hr = _safe_num(getattr(v, "empirical_hit_rate", None), None)
+        emp_samples = int(_safe_num(getattr(v, "hit_rate_samples", None), 0) or 0)
+        h2h_hr = _safe_num(getattr(v, "h2h_hit_rate", None) or getattr(v, "h2h_raw_hit_rate", None), None)
+        h2h_samples = int(_safe_num(getattr(v, "h2h_samples", None), 0) or 0)
 
-    prob_score = (v.calibrated_prob or v.model_prob) / 5.0
+    if ev <= 0.005:
+        return 0
 
-    dq_score = (v.data_quality_score or 50) / 5.0
+    # 1. Edge EV (hasta 30 pts)
+    ev_score = min(ev * 200.0, 30.0)
 
-    total = int(ev_score + prob_score + dq_score)
+    # 2. Calidad de Datos (hasta 25 pts)
+    dq_score = min(max(dq, 0.0) * 0.25, 25.0)
+
+    # 3. Confiabilidad de Liga / LRS (hasta 20 pts)
+    lrs_score = min(max(lrs, 0.0) * 20.0, 20.0)
+
+    # 4. Respaldo Empírico y H2H (hasta 15 pts)
+    emp_score = 7.5  # base neutral si no hay muestra
+    if emp_hr is not None and emp_samples >= 3:
+        # Relación entre tasa de acierto real y probabilidad proyectada
+        gap = cal_p - emp_hr
+        if gap <= 0:
+            emp_score = 15.0  # El equipo acierta incluso más que el modelo
+        elif gap <= 10.0:
+            emp_score = 12.0
+        elif gap <= 20.0:
+            emp_score = 8.0
+        elif gap <= 30.0:
+            emp_score = 4.0
+        else:
+            emp_score = 0.0  # Enorme discrepancia (modelo 65% vs real 25%)
+
+    # Ajuste por H2H si hay partidos directos previos (#46: n >= 8 para significancia)
+    if h2h_hr is not None and h2h_samples >= 8:
+        if h2h_hr == 0.0:
+            emp_score = max(0.0, emp_score - 5.0)
+        elif h2h_hr >= 50.0:
+            emp_score = min(15.0, emp_score + 2.0)
+
+    # 5. Probabilidad / Estabilidad (hasta 10 pts)
+    prob_score = min(max(cal_p, 0.0) / 10.0, 10.0)
+
+    total = int(round(ev_score + dq_score + lrs_score + emp_score + prob_score))
     return min(max(total, 0), 100)
 
 
@@ -1501,13 +1699,13 @@ def is_value_pick(v: Any) -> bool:
     is_blk_rule = v.get("is_rule_blocked", False) if isinstance(v, dict) else getattr(v, "is_rule_blocked", False)
     if is_blk or is_blk_rule:
         return False
-    # Filtro Crítico H2H: Solo se bloquea si hay partidos H2H evaluados (h2h_samples > 0) Y el hit rate fue 0.0%.
-    # Los picks sin enfrentamientos H2H previos (h2h_samples == 0) NO se bloquean.
+    # Filtro Crítico H2H: Solo se bloquea si hay >= 8 partidos H2H evaluados Y el hit rate fue 0.0%.
+    # Con menos de 8 muestras el dato es ruido, no evidencia (#46).
     h2h_samp = (v.get("h2h_samples", 0) or 0) if isinstance(v, dict) else (getattr(v, "h2h_samples", 0) or 0)
     h2h_hr = v.get("h2h_hit_rate") if isinstance(v, dict) else getattr(v, "h2h_hit_rate", None)
     if h2h_hr is None:
         h2h_hr = v.get("h2h_raw_hit_rate") if isinstance(v, dict) else getattr(v, "h2h_raw_hit_rate", None)
-    if h2h_samp > 0 and h2h_hr is not None and h2h_hr == 0.0:
+    if h2h_samp >= 8 and h2h_hr is not None and h2h_hr == 0.0:
         return False
 
     odds = v.get("odds") if isinstance(v, dict) else getattr(v, "odds", None)
@@ -1526,8 +1724,9 @@ def is_value_pick(v: Any) -> bool:
     if fam in {"double_chance", "corners"} and edge_val < 10.0:
         return False
 
-    # Umbral EV 0.020 para estabilidad entre recálculos
-    return ev_val >= 0.020 and stake_val >= 1.0
+    # Umbral EV 0.020 para estabilidad entre recálculos.
+    # stake > 0 (no 1.0) porque #52 permite stakes fraccionados (0.25u mínimo).
+    return ev_val >= 0.020 and stake_val > 0.0
 
 
 def is_underdog_pick(v: Any) -> bool:
@@ -1550,8 +1749,17 @@ def is_underdog_pick(v: Any) -> bool:
             h2h_hr = getattr(v, "h2h_raw_hit_rate", None)
         h2h_samp = getattr(v, "h2h_samples", 0) or 0
 
-    # Filtro Crítico H2H: Solo se bloquea si hay partidos H2H evaluados (h2h_samples > 0) Y el hit rate fue 0.0%.
-    if h2h_samp > 0 and h2h_hr is not None and h2h_hr == 0.0:
+    # Filtro Crítico H2H: Solo se bloquea si hay >= 8 partidos H2H evaluados Y el hit rate fue 0.0%.
+    # Con menos de 8 muestras el dato es ruido, no evidencia (#46).
+    if h2h_samp >= 8 and h2h_hr is not None and h2h_hr == 0.0:
+        return False
+
+    # Filtro de Calidad por Hit Rate Empírico de Temporada (Underdog):
+    # Incluso para un underdog, si hay muestra representativa (>= 5 partidos) y su hit rate empírico es < 20%,
+    # no tiene sustento real para ser un pick de calidad.
+    emp_hr = v.get("empirical_hit_rate") if isinstance(v, dict) else getattr(v, "empirical_hit_rate", None)
+    emp_samp = (v.get("hit_rate_samples", 0) or 0) if isinstance(v, dict) else (getattr(v, "hit_rate_samples", 0) or 0)
+    if emp_hr is not None and emp_samp >= 5 and emp_hr < 20.0:
         return False
 
     if odds is None or odds <= 2.50 or odds > 4.50:
@@ -1577,7 +1785,10 @@ def _calculate_stake_units(
 ) -> float:
     """
     Stake puro basado en Kelly fraccional con caps de seguridad.
-    Devuelve unidades de 0.5 a 3.0. 0.0 = no jugable.
+    Devuelve unidades de 1.0 a 3.0. 0.0 = no jugable.
+
+    La penalización de LRS se aplica sobre el hard_max (no sobre kelly_fraction),
+    para no colapsar la escala de unidades.
     """
     if edge_ev < 0.025 or kelly_fraction <= 0:
         return 0.0
@@ -1585,19 +1796,29 @@ def _calculate_stake_units(
     # Kelly fraccional directo: 0.25 Kelly -> 1u por cada 4% del bankroll
     raw_stake = kelly_fraction * 100.0
 
-    # Cap según calidad de la liga
-    hard_max = 3.0
-    if (lrs or 0.5) < 0.50:
+    # Cap máximo según calidad de la liga (penaliza el techo, no la base)
+    _lrs = lrs or 0.50
+    if _lrs >= 0.65:
+        hard_max = 3.0
+    elif _lrs >= 0.50:
+        hard_max = 2.5
+    elif _lrs >= 0.35:
         hard_max = 2.0
-    # NOTA (planning.txt punto 4): Se elimina la penalización artificial a underdogs (odds >= 3.0)
-    # para permitir que los picks underdog de alto edge reciban su sizing óptimo según Kelly.
+    else:
+        hard_max = 1.5  # liga muy poco probada: máximo 1.5u
+
     if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         hard_max = min(hard_max, 2.5)
 
-    # Redondeo inteligente: múltiplos de 0.5
-    stake = round(max(0.5, min(hard_max, raw_stake)) * 2) / 2
-
-    return stake if stake >= 1.0 else 0.0
+    # #52: Eliminación del piso artificial forzado de 1.0u.
+    # Si la banca/Kelly sugiere 0.25u o 0.5u, no se infla a 1.0u.
+    # Redondeo en incrementos de 0.25u o 0.5u con mínimo de 0.25u si raw_stake > 0.
+    raw_clamped = max(0.0, min(hard_max, raw_stake))
+    if raw_clamped <= 0:
+        return 0.0
+    # Redondeo a cuartos (0.25, 0.5, 0.75, 1.0, 1.25, ...)
+    stake = round(raw_clamped * 4) / 4
+    return max(0.25, stake)
 
 def _calculate_kelly_fraction(
     calibrated_prob: float,
@@ -1647,7 +1868,12 @@ def _calculate_kelly_fraction(
         return 0.0
 
 
-def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0, league: "LeagueStats | None" = None, league_name: str | None = None, odds_obj: Any = None, match_date: datetime | str | None = None):
+def _value_indicator(
+    sel, odds, modelp, h=None, a=None, overround=100.0, push_p=0.0,
+    league: "LeagueStats | None" = None, league_name: str | None = None,
+    odds_obj: Any = None, match_date: datetime | str | None = None,
+    market_novig_pct: float | None = None,
+):
     """
     Construye un ValueIndicator con la nueva arquitectura completa:
       1. Calibración jerárquica de 9 niveles
@@ -1694,8 +1920,11 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             calibrated_p *= 0.82
 
     raw_implied = (1.0 / odds) * 100.0
-    margin_factor = (overround / 100.0) if overround > 100 else 1.05
-    implied_no_vig = raw_implied / margin_factor
+    if market_novig_pct is not None and market_novig_pct > 0.0:
+        implied_no_vig = market_novig_pct
+    else:
+        margin_factor = (overround / 100.0) if overround > 100 else 1.05
+        implied_no_vig = raw_implied / margin_factor
 
     # ── 3. Edge desglosado (raw → calibrado → final) ────────────────────
     # edge_raw: usando prob. Poisson cruda (sin calibrar)
@@ -1724,23 +1953,24 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
     # Prob final en % para el resto del pipeline
     final_prob_pct = _p_final_01 * 100.0
 
-    # ── 4. EV y Edge de display ─────────────────────────────────────────
+    # ── 4. EV y Edge de display (#42: Una sola probabilidad coherente: final_prob) ──
     ret_dist = ReturnDistribution.simple(
-        odds=odds, p_win=calibrated_p, p_push=push_p or 0.0
+        odds=odds, p_win=final_prob_pct, p_push=push_p or 0.0
     )
     ev = ret_dist.expected_value
     edge_prob = (ret_dist.p_win_effective * 100.0) - raw_implied
 
     # ── 5. League Reliability Score ──────────────────────────────────────
     if league is not None:
-        lrs = league.league_reliability_score if league.league_reliability_score > 0.0 else _compute_league_reliability_score(league)
+        # Siempre recalcular con la fórmula actualizada; el valor de BD puede estar obsoleto
+        lrs = _compute_league_reliability_score(league)
     else:
         lrs = 0.7
     lrs_penalty = 0.0
     p = calibrated_p / 100.0
 
     # ── 6. Gobernanza de Segmento ────────────────────────────────────────
-    gov_status, gov_multiplier, gov_drift = _get_governance_multiplier(
+    gov_status, gov_multiplier, gov_drift, gov_min_edge_add = _get_governance_multiplier(
         segment_key=seg_key,
         league=resolved_league_name,
         family=mkt_family,   # usa familia canónica para lookup en segment_governance.json
@@ -1773,20 +2003,23 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
             market_lrs_factor = 1.0 + max(-0.35, min(0.15, market_dev * 1.5))
 
     if lrs >= 0.65:
-        kelly_multiplier = 0.25
+        kelly_multiplier = 0.25   # liga consolidada: Kelly completo fraccionado
     elif lrs >= 0.50:
-        kelly_multiplier = 0.125
+        kelly_multiplier = 0.25   # liga suficiente: mismo multiplier, techo en _calculate_stake_units
     elif lrs >= 0.35:
-        kelly_multiplier = 0.0625
+        kelly_multiplier = 0.20   # liga con poca muestra: Kelly ligeramente reducido
     else:
-        kelly_multiplier = 0.03125
+        kelly_multiplier = 0.15   # liga muy poco probada: Kelly conservador
     kelly_multiplier *= market_lrs_factor
 
-    if league is not None and getattr(league, "historical_picks", 0) >= 5:
+    # #53: Mínimo de muestra (picks >= 20) para juzgar el rendimiento de la liga en Kelly.
+    # Evitar castigar prematuramente con solo 5 picks de muestra ruidosa.
+    if league is not None and getattr(league, "historical_picks", 0) >= 20:
         hist_profit = getattr(league, "historical_profit", 0.0)
         hist_accuracy = getattr(league, "accuracy", 100.0)
-        if hist_profit < 0.0 or hist_accuracy < 40.0:
-            kelly_multiplier = min(kelly_multiplier, 0.03125)
+        # 40% es buen acierto para cuotas 2.50+; solo penalizar si hay pérdida neta y acierto bajo
+        if hist_profit < 0.0 and hist_accuracy < 42.0:
+            kelly_multiplier = min(kelly_multiplier, 0.12)
 
     kelly_fraction = _calculate_kelly_fraction(
         calibrated_prob=calibrated_p,
@@ -1803,11 +2036,11 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         lrs=lrs,
     )
 
-    # Aplicar governance_multiplier al stake (REDUCED→×0.5, BLOCKED→0, WATCH→×0.85)
+    # Aplicar governance_multiplier al stake (REDUCED→×0.25, BLOCKED→0, WATCH→×0.50)
     if gov_multiplier < 1.0:
-        stake = round(stake * gov_multiplier, 1)
-        # Redondear a múltiplo de 0.5 respetando mínimo
-        stake = round(stake * 2) / 2
+        stake = round(stake * gov_multiplier, 2)
+        # Redondear a múltiplo de 0.25 respetando mínimo
+        stake = round(stake * 4) / 4
 
     if league_name:
         stake_mod = get_market_stake_modifier_for_league(league_name, sel)
@@ -1848,7 +2081,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         market_confidence_tier=conf_tier,
         market_variance_tier=var_tier,
         kelly_fraction=round(kelly_fraction, 4),
-        stake_units=stake,
+        stake_units=stake if stake > 0.0 else None,
         sample_size_weight=min(1.0, (h.matches_played + a.matches_played) / 30.0) if h and a else 0.5,
         league_reliability_score=round(lrs, 3),
         league_reliability_penalty=lrs_penalty,
@@ -1865,6 +2098,7 @@ def _value_indicator(sel, odds, modelp, h=None, a=None, overround=100.0, push_p=
         segment_status=gov_status,
         drift_score=round(gov_drift, 4),
         governance_multiplier=round(gov_multiplier, 4),
+        min_edge_add=round(gov_min_edge_add, 2) if gov_min_edge_add else 0.0,
         reliability_components=reliability_comps,
     )
 
@@ -1957,30 +2191,42 @@ def _compute_team_goals_lambda(
     # Dynamic prior_n estimation using Empirical Bayes
     goals_mean = league.avg_goals_per_game
     goals_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "goals", goals_mean, db=db)
-    beta_prior = estimate_empirical_bayes_prior_n(goals_var, goals_mean, baseline_prior_n=5.0)
+    fano = goals_var / max(goals_mean, 0.1)
 
-    # ── 2. Fuerza de Ataque Bayesiana ──
-    S_att = actual_att_g * att_n
-    alpha_att = prior_att_xg * beta_prior
-    att_g_bayesian = (alpha_att + S_att) / (beta_prior + att_n)
-    att_str = att_g_bayesian / max(avg_team_goals, 0.1)
+    # ── Issue #20: Ponderación de goles y xG por varianza observada ──
+    # En muestras pequeñas el xG predice mejor que los goles reales (menor varianza);
+    # conforme aumentan los partidos, los goles reales ganan peso según la varianza.
+    w_xg = 1.0 / (1.0 + (att_n / max(5.0 * fano, 1.0)))
+    if prior_att_xg is not None and prior_att_xg > 0:
+        att_rate = (1.0 - w_xg) * actual_att_g + w_xg * prior_att_xg
+    else:
+        att_rate = actual_att_g
 
-    # ── 3. Debilidad Defensiva Rival Bayesiana ──
-    S_def = actual_def_g * def_n
-    alpha_def = prior_def_xga * beta_prior
-    def_g_bayesian = (alpha_def + S_def) / (beta_prior + def_n)
-    def_weakness = def_g_bayesian / max(avg_team_goals, 0.1)
+    w_xga = 1.0 / (1.0 + (def_n / max(5.0 * fano, 1.0)))
+    if prior_def_xga is not None and prior_def_xga > 0:
+        def_rate = (1.0 - w_xga) * actual_def_g + w_xga * prior_def_xga
+    else:
+        def_rate = actual_def_g
 
-    # ── 4. Lambda Base ──
-    lam_base = att_str * def_weakness * avg_team_goals
+    # ── Issue #20: Un solo shrinkage Bayesiano hacia la media de liga ──
+    total_sample_n = min(att_n, def_n)
+    prior_n = estimate_empirical_bayes_prior_n(goals_var, goals_mean, baseline_prior_n=5.0)
+    shrink_w = prior_n / (prior_n + total_sample_n)
 
-    # ── 5. Ajuste por forma reciente (ventanas 5 / 10 / 15) ──
-    # Si el attacker tiene stats de forma reciente, las usamos para ajustar
-    # el factor de ataque; de lo contrario caemos a 1.0 (sin ajuste extra).
+    att_str = (att_rate / max(avg_team_goals, 0.1)) * (1.0 - shrink_w) + 1.0 * shrink_w
+    def_weakness = (def_rate / max(avg_team_goals, 0.1)) * (1.0 - shrink_w) + 1.0 * shrink_w
+
+    # ── Issue #18: Factor de localía derivado de la liga incorporado directamente al lambda ──
+    home_factor = league.home_advantage_factor if is_home else league.away_disadvantage_factor
+
+    # ── Lambda Base ──
+    lam_base = att_str * def_weakness * avg_team_goals * home_factor
+
+    # ── 5. Ajuste por forma reciente (ventanas 5 / 10 / 15) — Issue #21 ──
     form_factor_att = 1.0
     form_factor_def = 1.0
 
-    att_recent = getattr(attacker, "recent_form", None)
+    att_recent = getattr(attacker, "recent_form", None) or getattr(attacker, "recent_form_stats", None)
     if att_recent and isinstance(att_recent, dict):
         w5  = att_recent.get("last_5",  {}).get("goals_scored", avg_team_goals)
         w10 = att_recent.get("last_10", {}).get("goals_scored", avg_team_goals)
@@ -1989,7 +2235,7 @@ def _compute_team_goals_lambda(
         form_factor_att = form_avg_att / max(avg_team_goals, 0.10)
         form_factor_att = max(0.70, min(1.30, form_factor_att))
 
-    def_recent = getattr(defender, "recent_form", None)
+    def_recent = getattr(defender, "recent_form", None) or getattr(defender, "recent_form_stats", None)
     if def_recent and isinstance(def_recent, dict):
         w5  = def_recent.get("last_5",  {}).get("goals_conceded", avg_team_goals)
         w10 = def_recent.get("last_10", {}).get("goals_conceded", avg_team_goals)
@@ -1998,15 +2244,7 @@ def _compute_team_goals_lambda(
         form_factor_def = form_avg_def / max(avg_team_goals, 0.10)
         form_factor_def = max(0.70, min(1.30, form_factor_def))
 
-    lam_adjusted = lam_base * form_factor_att * form_factor_def
-
-    # ── 6. Shrinkage Global a la Liga ──
-    total_n = min(att_n, def_n)
-    prior_league_n = max(1.0, 4.0 - (total_n / 8.0))
-    shrink_w = prior_league_n / (prior_league_n + total_n)
-
-    lam_final = lam_adjusted * (1.0 - shrink_w) + avg_team_goals * shrink_w
-
+    lam_final = lam_base * form_factor_att * form_factor_def
     return max(lam_final, 0.10)
 
 
@@ -2066,11 +2304,17 @@ def _compute_team_corners_lambda(
     n = max(m_count, 1)
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_corners * shrink_w
+
+    # ── Issue #28: Factor de localía por métrica de corners ──
+    # local genera más corners que visitante (~+10-15% de promedio de liga)
+    home_corner_factor = league.home_advantage_factor if is_home else league.away_disadvantage_factor
+    lam = lam * home_corner_factor
     mu = max(lam, 0.5)
 
-    # ── Parámetro de dispersión r (Binomial Negativa) por equipo ──
-    team_var = corners_var / 4.0
-    r = get_dispersion_r(mu, max(team_var, corners_mean / 2.0 + 0.01))
+    # ── Issue #23: Varianza por equipo = Fano × mu (no var/4) ──
+    fano_corners = corners_var / max(corners_mean, 0.1)
+    team_var = fano_corners * mu
+    r = get_dispersion_r(mu, max(team_var, mu * 1.05))
 
     return mu, r
 
@@ -2150,9 +2394,16 @@ def _compute_team_cards_lambda(
     shrink_w = prior_n / (prior_n + actual_matches)
     lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
 
+    # ── Issue #28: Factor de localía para tarjetas (visitante recibe más amarillas) ──
+    # El equipo visitante suele cometer más faltas y recibir más tarjetas (~+8%)
+    card_home_factor = 0.95 if is_home else 1.05
+    lam = lam * card_home_factor
+
     mu = max(lam, 0.4)
-    team_var = cards_var / 4.0
-    r = get_dispersion_r(mu, max(team_var, cards_mean / 2.0 + 0.01))
+    # ── Issue #23: Varianza por equipo = Fano × mu ──
+    fano_cards = cards_var / max(cards_mean, 0.1)
+    team_var = fano_cards * mu
+    r = get_dispersion_r(mu, max(team_var, mu * 1.05))
     return mu, r
 
 
@@ -2214,8 +2465,10 @@ def _compute_team_shots_lambda(
     lam = lam * (1.0 - shrink_w) + avg_team_shots * shrink_w
     mu = max(lam, 1.0)
 
-    team_var = shots_var / 4.0
-    r = get_dispersion_r(mu, max(team_var, shots_mean / 2.0 + 0.01))
+    # ── Issue #23: Varianza por equipo = Fano × mu ──
+    fano_shots = shots_var / max(shots_mean, 0.1)
+    team_var = fano_shots * mu
+    r = get_dispersion_r(mu, max(team_var, mu * 1.05))
 
     return mu, r
 
@@ -2269,8 +2522,10 @@ def _compute_team_shots_target_lambda(
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_sot * shrink_w
     mu = max(lam, 0.5)
-    team_var = sot_var / 4.0
-    r = get_dispersion_r(mu, max(team_var, sot_mean / 2.0 + 0.01))
+    # ── Issue #23: Varianza por equipo = Fano × mu ──
+    fano_sot = sot_var / max(sot_mean, 0.1)
+    team_var = fano_sot * mu
+    r = get_dispersion_r(mu, max(team_var, mu * 1.05))
     return mu, r
 
 
@@ -2666,6 +2921,37 @@ def _compute_offsides_lambda(h: FootballTeamStats, a: FootballTeamStats, league:
 
 
 
+def _matrix_over_under(matrix: list[list[float]], line: float) -> tuple[float, float, float]:
+    """
+    Issue #19: Deriva Over, Push y Under de goles directamente de la matriz Dixon-Coles
+    en lugar de un Poisson independiente no correlacionado.
+    Soporta líneas estándar y líneas asiáticas divididas (ej. 2.25 -> 2.0 y 2.5).
+    """
+    def _single_line(l: float):
+        p_u, p_p, p_o = 0.0, 0.0, 0.0
+        max_i = len(matrix)
+        for i in range(max_i):
+            max_j = len(matrix[i])
+            for j in range(max_j):
+                tot = i + j
+                p = matrix[i][j]
+                if tot < l:
+                    p_u += p
+                elif tot > l:
+                    p_o += p
+                else:
+                    p_p += p
+        return p_o, p_p, p_u
+
+    lines = split_asian_line(line)
+    results = [_single_line(l) for l in lines]
+    avg_over = sum(r[0] for r in results) / len(results)
+    avg_push = sum(r[1] for r in results) / len(results)
+    avg_under = sum(r[2] for r in results) / len(results)
+
+    return avg_over * 100.0, avg_push * 100.0, avg_under * 100.0
+
+
 def _poisson_over_under(lam: float, line: float, max_k: int = 40) -> tuple[float, float, float]:
     def _get_single_line_probs(l: float):
         p_u, p_p, p_o = 0.0, 0.0, 0.0
@@ -2793,29 +3079,12 @@ def _calibration_side(selection: str, market_family: str) -> str:
     return "generic"
 
 def _market_family(text: str) -> str:
-    s = _normalize_text(text)
+    """Clasificación canónica de familia de mercado.
 
-    if any(k in s for k in ["btts", "ambos marcan", "both teams to score"]):
-        return "btts"
-    if any(k in s for k in ["corner", "corners", "córner", "córners"]):
-        return "corners"
-    if any(k in s for k in ["tarjeta", "tarjetas", "cards", "yellow cards", "amarillas"]):
-        return "cards"
-    if any(k in s for k in ["foul", "fouls", "faltas"]):
-        return "fouls"
-    # shots_target DEBE ir antes que shots (tiro/shot es subconjunto)
-    if any(k in s for k in ["pta", "a puerta", "target", "shots_target", "shot_target"]):
-        return "shots_target"
-    if any(k in s for k in ["shot", "shots", "tiros", "remates"]):
-        return "shots"
-    if any(k in s for k in ["goal", "goals", "goles"]):
-        return "goals"
-    if any(k in s for k in ["double chance", "doble oportunidad", "1x", "x2", "12"]):
-        return "double_chance"
-    if any(k in s for k in ["moneyline", "ml", "1x2", "ganador", "local", "visitante", "empate"]):
-        return "result"
-
-    return "generic"
+    Issue #71: única fuente de clasificación de familia — siempre delega a
+    `normalize_market_family` de `market_taxonomy.py`. No duplicar lógica aquí.
+    """
+    return str(normalize_market_family(text))
 
 
 import re
@@ -2887,14 +3156,13 @@ def is_pick_blocked_by_rules(selection: str, home: "FootballTeamStats", away: "F
 
 def resolve_match_picks_correlation(
     candidates: list[ValueIndicator],
-    max_picks_per_match: Optional[int] = None,
-    max_total_stake: Optional[float] = None,
     correlation_rules: Optional[dict] = None
 ) -> list[ValueIndicator]:
     """
     Filtra picks correlacionados en un mismo evento garantizando
     la máxima expectativa matemática sin sobreexposición de varianza.
     Utiliza el motor de reglas centralizado pick_rules_engine.
+    Nota: max_picks_per_match y max_total_stake fueron removidos por completo (#72).
     """
     if correlation_rules is None:
         rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "pick_rules.json")
@@ -2902,9 +3170,7 @@ def resolve_match_picks_correlation(
 
     return engine_resolve_match_picks_correlation(
         candidates,
-        correlation_rules=correlation_rules,
-        max_picks_per_match=max_picks_per_match,
-        max_total_stake=max_total_stake
+        correlation_rules=correlation_rules
     )
 
 def is_market_blacklisted_for_league(
@@ -3398,7 +3664,7 @@ def _support_btts_yes(h, a, proj: list, vi=None) -> tuple[float, float]:
 
 def _support_btts_no(h, a, proj: list, vi=None) -> tuple[float, float]:
     stat_yes, proj_yes = _support_btts_yes(h, a, proj, vi)
-    return _clip_0_100(110 - stat_yes), _clip_0_100(110 - proj_yes)
+    return _clip_0_100(100.0 - stat_yes), _clip_0_100(100.0 - proj_yes)
 
 
 def _support_home_win(h, a, proj: list, vi=None) -> tuple[float, float]:
@@ -3575,7 +3841,7 @@ def _support_under_shots(line: float, h, a, proj: list, vi=None) -> tuple[float,
 
 def _support_over_shots(line: float, h, a, proj: list, vi=None) -> tuple[float, float]:
     stat_u, proj_u = _support_under_shots(line, h, a, proj, vi)
-    return _clip_0_100(110 - stat_u), _clip_0_100(110 - proj_u)
+    return _clip_0_100(100.0 - stat_u), _clip_0_100(100.0 - proj_u)
 
 
 # ── Support Cards — Determinista ──
@@ -4259,6 +4525,7 @@ async def compare_football(
     current_match_date: Optional[Any] = None,
     precomputed_historical_records: Optional[list] = None,
     precomputed_team_index: Optional[dict] = None,
+    precomputed_league_stats: Optional[dict] = None,
 ) -> CompareResponse:
     """
     NOTA DE FIX:
@@ -4272,22 +4539,132 @@ async def compare_football(
     current_match_date=history.match_date), se garantiza que el propio partido
     quede excluido del hit rate y del H2H, evitando el data leakage.
     """
-    # Enriquecer league_stats con estadísticas históricas de la BD
+    # Enriquecer league_stats con estadísticas históricas de la BD o precomputadas
+    db_created = False
+    db_session = None
     try:
         from src.core.database import SessionLocal
-        from src.core.domain import AnalysisHistory
+        from src.core.domain import AnalysisHistory, Sport
         from src.ui.api.main import _check_pick_success, _calculate_pick_profit, _is_pick_hit
-        import json
+        import json as _json
 
-        db_created = False
-        if db is not None:
-            db_session = db
-        else:
-            db_session = SessionLocal()
-            db_created = True
+        comp_key = (req.competition or "").strip().lower()
+        if precomputed_league_stats and comp_key in precomputed_league_stats and req.league_stats.historical_picks <= 0:
+            ls_data = precomputed_league_stats[comp_key]
+            req = req.model_copy(update={
+                "league_stats": req.league_stats.model_copy(update={
+                    "historical_matches": ls_data.get("historical_matches", 0),
+                    "historical_picks":   ls_data.get("historical_picks", 0),
+                    "historical_hits":    ls_data.get("historical_hits", 0),
+                    "historical_profit":  round(ls_data.get("historical_profit", 0.0), 4),
+                })
+            })
+        elif req.league_stats.historical_picks <= 0 and req.competition and req.competition not in ("", "Desconocida", "General"):
+            db_session = db if db is not None else SessionLocal()
+            db_created = (db is None)
+            league_rows = (
+                db_session.query(AnalysisHistory)
+                .filter(
+                    AnalysisHistory.competition == req.competition,
+                    AnalysisHistory.sport == Sport.FOOTBALL,
+                    AnalysisHistory.picks_calculados.isnot(None),
+                )
+                .all()
+            )
+
+            total_matches  = len(league_rows)
+            total_picks    = 0
+            total_hits     = 0
+            total_profit   = 0.0
+
+            for row in league_rows:
+                # Resultado del partido (necesario para calcular hits)
+                res_dict = {
+                    "final_score_home":  row.final_score_home,
+                    "final_score_away":  row.final_score_away,
+                    "final_corners_home": row.final_corners_home,
+                    "final_corners_away": row.final_corners_away,
+                    "final_yellow_cards_home": row.final_yellow_cards_home,
+                    "final_yellow_cards_away": row.final_yellow_cards_away,
+                    "final_red_cards_home": row.final_red_cards_home,
+                    "final_red_cards_away": row.final_red_cards_away,
+                    "final_shots_home": row.final_shots_home,
+                    "final_shots_away": row.final_shots_away,
+                    "final_shots_on_target_home": row.final_shots_on_target_home,
+                    "final_shots_on_target_away": row.final_shots_on_target_away,
+                }
+                # Solo contar picks si el partido tiene resultado real
+                has_result = (
+                    res_dict["final_score_home"] is not None
+                    and res_dict["final_score_away"] is not None
+                )
+
+                try:
+                    picks_raw = _json.loads(row.picks_calculados) if row.picks_calculados else []
+                except Exception:
+                    picks_raw = []
+
+                for pick in picks_raw:
+                    if not isinstance(pick, dict):
+                        continue
+                    stake = float(pick.get("stake", pick.get("stake_units", 0)) or 0)
+                    if stake <= 0:
+                        continue  # solo contar picks publicados
+                    total_picks += 1
+                    if has_result:
+                        outcome = _check_pick_success(pick, res_dict)
+                        if _is_pick_hit(outcome):
+                            total_hits += 1
+                        odds_val = float(pick.get("odds", 1.0) or 1.0)
+                        total_profit += _calculate_pick_profit(outcome, odds_val)
+
+            if total_matches > 0 or total_picks > 0:
+                req = req.model_copy(update={
+                    "league_stats": req.league_stats.model_copy(update={
+                        "historical_matches": total_matches,
+                        "historical_picks":   total_picks,
+                        "historical_hits":    total_hits,
+                        "historical_profit":  round(total_profit, 4),
+                    })
+                })
+                logger.debug(
+                    "League %s enriched: matches=%d picks=%d hits=%d profit=%.2f",
+                    req.competition, total_matches, total_picks, total_hits, total_profit,
+                )
+
+        # ── Issue #63: Calcular avg_corners_per_game desde la BD si Sofascore no lo envía ──
+        # Si el valor es el default (9.5), intentar calcularlo desde los resultados históricos.
+        _DEFAULT_CORNERS_PER_GAME = 9.5
+        if abs(req.league_stats.avg_corners_per_game - _DEFAULT_CORNERS_PER_GAME) < 0.01 and req.competition and req.competition not in ("", "Desconocida", "General"):
+            try:
+                if db_session is None:
+                    db_session = db if db is not None else SessionLocal()
+                    db_created = db is None
+
+                from src.ui.api.main import _compute_league_season_corners
+                season_val = getattr(req, "season", None) or getattr(req.league_stats, "season", None)
+                computed_avg = _compute_league_season_corners(req.competition, season_val, db_session=db_session)
+                if computed_avg is not None and 5.0 <= computed_avg <= 16.0:
+                    req = req.model_copy(update={
+                        "league_stats": req.league_stats.model_copy(update={
+                            "avg_corners_per_game": round(computed_avg, 2),
+                        })
+                    })
+                    logger.info(
+                        "League %s avg_corners_per_game calculado desde BD: %.2f",
+                        req.competition, computed_avg,
+                    )
+            except Exception as ex_corners:
+                logger.warning("Error calculando avg_corners desde BD para %s: %s", req.competition, ex_corners)
 
     except Exception as ex:
-        print(f"Error enriching league stats: {ex}")
+        logger.warning("Error enriching league stats from DB: %s", ex)
+    finally:
+        if db_created and db_session is not None:
+            try:
+                db_session.close()
+            except Exception:
+                pass
 
     h = _sanitize_and_fill_team_stats(req.home)
     a = _sanitize_and_fill_team_stats(req.away)
@@ -4382,7 +4759,50 @@ async def compare_football(
     h_shots_target_lam, _h_shots_target_r = _compute_team_shots_target_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
     a_shots_target_lam, _a_shots_target_r = _compute_team_shots_target_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
 
-    matrix, _ = _dc_score_matrix(h_lam, a_lam)
+    # ── Issue #22: Ajustar rho desde verosimilitud conjunta sobre historial de la liga ──
+    # Si hay DB disponible, extraemos partidos históricos de AnalysisHistory y ajustamos rho
+    # por máxima verosimilitud (búsqueda en grilla). Si no hay datos suficientes, cae en
+    # la heurística original (_default_dc_rho), que es peor pero nunca explota.
+    fitted_rho: float | None = None
+    if db is not None and req.competition and req.competition not in ("", "Desconocida", "General"):
+        try:
+            from src.core.domain import AnalysisHistory
+            hist_rows = (
+                db.query(AnalysisHistory)
+                .filter(
+                    AnalysisHistory.competition == req.competition,
+                    AnalysisHistory.final_score_home.isnot(None),
+                    AnalysisHistory.final_score_away.isnot(None),
+                )
+                .order_by(AnalysisHistory.date.desc())
+                .limit(200)
+                .all()
+            )
+            # Build match tuples (home_goals, away_goals, h_lambda, a_lambda)
+            # We use the league average lambdas as approximation since we don't store
+            # the original lambdas — the key signal is the score distribution shape.
+            avg_lambda = req.league_stats.avg_goals_per_game / 2.0
+            match_tuples: list[tuple[int, int, float, float]] = []
+            for row in hist_rows:
+                hg = row.final_score_home
+                ag = row.final_score_away
+                if hg is None or ag is None:
+                    continue
+                try:
+                    match_tuples.append((int(hg), int(ag), h_lam, a_lam))
+                except (ValueError, TypeError):
+                    continue
+            if len(match_tuples) >= 100:
+                fitted_rho = fit_dixon_coles_rho(match_tuples)
+                logger.debug(
+                    "Liga %s: rho ajustado por MV = %.4f (n=%d partidos).",
+                    req.competition, fitted_rho, len(match_tuples),
+                )
+        except Exception as _rho_err:
+            logger.debug("Error ajustando rho para %s: %s", req.competition, _rho_err)
+            fitted_rho = None
+
+    matrix, _ = _dc_score_matrix(h_lam, a_lam, rho=fitted_rho)
     markets = _sum_score_matrix_1x2_and_markets(matrix)
 
     h_prob_raw = markets["home_win_pct"] / 100.0
@@ -4391,23 +4811,9 @@ async def compare_football(
     p_btts_yes = markets["btts_yes_pct"] / 100.0
     p_btts_no  = markets["btts_no_pct"]  / 100.0
 
-    _BLEND_W    = 0.70
-    _DC_BLEND_W = 0.90
-
-    _prior_sum = req.league_stats.home_win_pct + req.league_stats.draw_pct + req.league_stats.away_win_pct
-
-    _ph, _pd, _pa = h_prob_raw, d_prob_raw, a_prob_raw
     h_prob = h_prob_raw
     d_prob = d_prob_raw
     a_prob = a_prob_raw
-
-    if _prior_sum > 0:
-        _ph = req.league_stats.home_win_pct / _prior_sum
-        _pd = req.league_stats.draw_pct     / _prior_sum
-        _pa = req.league_stats.away_win_pct / _prior_sum
-        h_prob = h_prob_raw * _BLEND_W + _ph * (1.0 - _BLEND_W)
-        d_prob = d_prob_raw * _BLEND_W + _pd * (1.0 - _BLEND_W)
-        a_prob = a_prob_raw * _BLEND_W + _pa * (1.0 - _BLEND_W)
 
     def _overround(*odds_list: float | None) -> float:
         raw = [1.0 / o for o in odds_list if o and o > 1.0]
@@ -4415,34 +4821,46 @@ async def compare_football(
 
     m_date_eval = current_match_date or getattr(req, "match_date", None) or getattr(req, "date", None)
 
-    def _vi(sel: str, odds: float | None, modelp: float, overround: float = 100.0, push_p: float = 0.0) -> ValueIndicator:
+    def _vi(sel: str, odds: float | None, modelp: float, overround: float = 100.0, push_p: float = 0.0, market_novig_pct: float | None = None) -> ValueIndicator:
         return _value_indicator(
             sel, odds, modelp, h=h, a=a, overround=overround, push_p=push_p,
             league=req.league_stats, league_name=req.competition, odds_obj=req.odds,
-            match_date=m_date_eval,
+            match_date=m_date_eval, market_novig_pct=market_novig_pct,
         )
 
     _or_1x2  = _overround(req.odds.home, req.odds.draw, req.odds.away)
     _or_btts = _overround(req.odds.btts_yes, req.odds.btts_no)
 
-    p_dc_1x = ((h_prob_raw + d_prob_raw) * _DC_BLEND_W + (_ph + _pd) * (1.0 - _DC_BLEND_W)) * 100
-    p_dc_x2 = ((d_prob_raw + a_prob_raw) * _DC_BLEND_W + (_pd + _pa) * (1.0 - _DC_BLEND_W)) * 100
-    p_dc_12 = ((h_prob_raw + a_prob_raw) * _DC_BLEND_W + (_ph + _pa) * (1.0 - _DC_BLEND_W)) * 100
+    # ── Issue #19: Derivar Doble Oportunidad exactamente de la matriz Dixon-Coles ──
+    p_dc_1x = (h_prob_raw + d_prob_raw) * 100.0
+    p_dc_x2 = (d_prob_raw + a_prob_raw) * 100.0
+    p_dc_12 = (h_prob_raw + a_prob_raw) * 100.0
 
     _or_dc_raw = _overround(req.odds.dc_1x, req.odds.dc_x2, req.odds.dc_12)
     _or_dc = _or_dc_raw if _or_dc_raw > 100.5 else _or_1x2
 
-    market_configs: list[tuple[str, float | None, float, float, float]] = [
-        ("Local",     req.odds.home,     h_prob     * 100, _or_1x2, 0.0),
-        ("Empate",    req.odds.draw,     d_prob     * 100, _or_1x2, 0.0),
-        ("Visitante", req.odds.away,     a_prob     * 100, _or_1x2, 0.0),
-        ("BTTS Sí",   req.odds.btts_yes, p_btts_yes * 100, _or_btts, 0.0),
-        ("BTTS No",   req.odds.btts_no,  p_btts_no  * 100, _or_btts, 0.0),
+    # Issue #44: No-vig de Doble Oportunidad por método de potencia
+    from src.models.market_probability import remove_vig_power
+    _dc_odds_list = [req.odds.dc_1x, req.odds.dc_x2, req.odds.dc_12]
+    _dc_novig_probs = remove_vig_power(_dc_odds_list) if all(o and o > 1.0 for o in _dc_odds_list) else []
+    _dc_novig_1x = (_dc_novig_probs[0] * 100.0) if len(_dc_novig_probs) == 3 else None
+    _dc_novig_x2 = (_dc_novig_probs[1] * 100.0) if len(_dc_novig_probs) == 3 else None
+    _dc_novig_12 = (_dc_novig_probs[2] * 100.0) if len(_dc_novig_probs) == 3 else None
 
-        ("Doble Oportunidad 1X", req.odds.dc_1x, p_dc_1x, _or_dc, 0.0),
-        ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_dc, 0.0),
-        ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_dc, 0.0),
+    market_configs: list[tuple[str, float | None, float, float, float, float | None]] = [
+        ("Local",     req.odds.home,     h_prob     * 100, _or_1x2, 0.0, None),
+        ("Empate",    req.odds.draw,     d_prob     * 100, _or_1x2, 0.0, None),
+        ("Visitante", req.odds.away,     a_prob     * 100, _or_1x2, 0.0, None),
+        ("BTTS Sí",   req.odds.btts_yes, p_btts_yes * 100, _or_btts, 0.0, None),
+        ("BTTS No",   req.odds.btts_no,  p_btts_no  * 100, _or_btts, 0.0, None),
+
+        ("Doble Oportunidad 1X", req.odds.dc_1x, p_dc_1x, _or_dc, 0.0, _dc_novig_1x),
+        ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_dc, 0.0, _dc_novig_x2),
+        ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_dc, 0.0, _dc_novig_12),
     ]
+    # Issue #34: Track Over/Under complementary pairs for post-calibration renormalization.
+    # Each entry is (over_index, under_index, push_prob_pct) in market_configs.
+    _ou_pairs: list[tuple[int, int, float]] = []
 
     projected_lines: list[ProjectedLine] = []
     projected_total_goals = h_lam + a_lam
@@ -4468,14 +4886,15 @@ async def compare_football(
         type="btts",  prob=round(p_btts_yes * 100, 1)
     ))
 
-    # ── Over/Under GOLES ─────────────────────
+    # ── Over/Under GOLES: Issue #19 derivado directamente de la matriz Dixon-Coles ─────
     for line in req.odds.goals_lines:
-        p_over, p_push, p_under = _poisson_over_under(projected_total_goals, line)
+        p_over, p_push, p_under = _matrix_over_under(matrix, line)
         key       = str(line)
         overOdds  = req.odds.goals_over_odds.get(key)
         underOdds = req.odds.goals_under_odds.get(key)
         _or_goals = _overround(overOdds, underOdds)
 
+        _ou_pairs.append((len(market_configs), len(market_configs) + 1, p_push))
         market_configs.append((f"Over {line} Goles",  overOdds,  p_over,  _or_goals, p_push))
         market_configs.append((f"Under {line} Goles", underOdds, p_under, _or_goals, p_push))
 
@@ -4496,6 +4915,7 @@ async def compare_football(
         under_odds = req.odds.corners_under_odds.get(key)
         _or_corn   = _overround(over_odds, under_odds)
 
+        _ou_pairs.append((len(market_configs), len(market_configs) + 1, p_push))
         market_configs.append((f"Over {line} Corners",  over_odds,  p_over,  _or_corn, p_push))
         market_configs.append((f"Under {line} Corners", under_odds, p_under, _or_corn, p_push))
 
@@ -4511,6 +4931,7 @@ async def compare_football(
         under_odds = req.odds.cards_under_odds.get(key)
         _or_cards  = _overround(over_odds, under_odds)
 
+        _ou_pairs.append((len(market_configs), len(market_configs) + 1, p_push))
         market_configs.append((f"Over {line} Tarjetas",  over_odds,  p_over,  _or_cards, p_push))
         market_configs.append((f"Under {line} Tarjetas", under_odds, p_under, _or_cards, p_push))
 
@@ -4526,6 +4947,7 @@ async def compare_football(
         under_odds = req.odds.shots_under_odds.get(key)
         _or_shots  = _overround(over_odds, under_odds)
 
+        _ou_pairs.append((len(market_configs), len(market_configs) + 1, p_push))
         market_configs.append((f"Over {line} Tiros",  over_odds,  p_over,  _or_shots, p_push))
         market_configs.append((f"Under {line} Tiros", under_odds, p_under, _or_shots, p_push))
 
@@ -4541,11 +4963,45 @@ async def compare_football(
         under_odds = req.odds.shots_target_under_odds.get(key)
         _or_shots_t  = _overround(over_odds, under_odds)
 
+        _ou_pairs.append((len(market_configs), len(market_configs) + 1, p_push))
         market_configs.append((f"Over {line} Tiros a Pta",  over_odds,  p_over,  _or_shots_t, p_push))
         market_configs.append((f"Under {line} Tiros a Pta", under_odds, p_under, _or_shots_t, p_push))
 
     # ── Values: Cálculo masivo ─────────────
-    values = [_vi(sel, odds, mp, ornd, pushp) for sel, odds, mp, ornd, pushp in market_configs]
+    values = [
+        _vi(cfg[0], cfg[1], cfg[2], cfg[3], cfg[4], cfg[5] if len(cfg) > 5 else None)
+        for cfg in market_configs
+    ]
+
+    # ── Issue #34: Renormalizar pares Over/Under tras calibración independiente ──
+    # La calibración jerárquica se aplica por separado a Over y Under, lo que puede
+    # romper la condición P(over) + P(push) + P(under) = 100%. Renormalizamos el par
+    # calibrado conservando la ratio over/under del modelo crudo cuando hay push,
+    # o derivando un lado del otro (under = 100 - push - over) cuando no hay push.
+    for _oi, _ui, _push_pct in _ou_pairs:
+        if _oi >= len(values) or _ui >= len(values):
+            continue
+        vo, vu = values[_oi], values[_ui]
+        cal_o = vo.calibrated_prob
+        cal_u = vu.calibrated_prob
+        if cal_o is None or cal_u is None:
+            continue
+        available = max(0.0, 100.0 - _push_pct)  # probability budget excluding push
+        raw_sum = cal_o + cal_u
+        if raw_sum > 0.01 and abs(raw_sum - available) > 0.5:  # only fix if out of balance
+            scale = available / raw_sum
+            new_cal_o = round(max(0.0, min(available, cal_o * scale)), 1)
+            new_cal_u = round(max(0.0, min(available, available - new_cal_o)), 1)
+            vo.calibrated_prob = new_cal_o
+            vu.calibrated_prob = new_cal_u
+            # Also normalize model_prob to be consistent
+            mp_o = vo.model_prob or 0.0
+            mp_u = vu.model_prob or 0.0
+            mp_sum = mp_o + mp_u
+            if mp_sum > 0.01 and abs(mp_sum - available) > 0.5:
+                mp_scale = available / mp_sum
+                vo.model_prob = round(max(0.0, min(available, mp_o * mp_scale)), 1)
+                vu.model_prob = round(max(0.0, min(available, available - vo.model_prob)), 1)
 
     # ── Deduplicación de picks correlacionados ──────────────────
     # Se elimina redundancia dentro del mismo mercado (p.ej. Over 1.5 + Over 2.5 Goles)
@@ -4971,19 +5427,32 @@ async def compare_football(
                 else:
                     v.empirical_hit_rate = None
 
-        # Regla de veto post-calibración por brecha (planning.txt punto 1):
-        # En mercados Over/Under de conteo (Tiros, Corners, Tiros a Puerta), si abs(model_prob - empirical_hit_rate) > 15%,
-        # veto estructural del pick por brecha irreconciliable entre el modelo y la evidencia empírica.
+        # #50: Veto por hit rate solo con muestra real y suficiente (emp_n >= 15).
+        # Evitar falsos positivos por muestras cortas de 5-10 partidos con alta varianza.
         fam_v = _market_family(v.selection)
-        if fam_v in {"shots", "corners", "shots_target"} and v.empirical_hit_rate is not None and v.model_prob is not None:
-            if abs(v.model_prob - v.empirical_hit_rate) > 15.0:
+        emp_n = getattr(v, "hit_rate_samples", 0) or 0
+        if v.empirical_hit_rate is not None and v.model_prob is not None and emp_n >= 15:
+            gap = abs(v.model_prob - v.empirical_hit_rate)
+            if fam_v in {"shots", "corners", "shots_target"} and gap > 20.0:
                 block_pick(
                     v,
                     BlockReason.RULE_BLOCKED,
-                    detail=f"Veto por brecha Prob Modelo ({v.model_prob}%) vs Hit Rate Total ({v.empirical_hit_rate}%) > 15 pts"
+                    detail=f"Veto por brecha Prob Modelo ({v.model_prob}%) vs Hit Rate Total ({v.empirical_hit_rate}% en {emp_n} partidos) > 20 pts"
+                )
+            elif gap > 30.0 or (v.empirical_hit_rate < 15.0 and v.model_prob >= 50.0):
+                block_pick(
+                    v,
+                    BlockReason.RULE_BLOCKED,
+                    detail=f"Veto por inconsistencia empírica: Prob Modelo ({v.model_prob}%) vs Hit Rate Real ({v.empirical_hit_rate}% en {emp_n} partidos)"
                 )
 
         q_score, s_support, p_support, strat_score = _rate_pick_quality(v, h, a, projected_lines)
+        # Para underdogs (cuota > 2.50), _rate_pick_quality puede devolver -1 por sus
+        # filtros de prob rígidos (< 56%) que no aplican a esta categoría. En ese caso
+        # usamos score_pick_quality que evalúa la calidad sin esos filtros de prob estándar.
+        is_potential_underdog = v.odds is not None and v.odds > 2.50
+        if is_potential_underdog and q_score < 0:
+            q_score = score_pick_quality(v)
         v.quality_score   = q_score
         v.strategic_score = strat_score
         v.stat_support    = round(s_support, 1)
@@ -5003,6 +5472,18 @@ async def compare_football(
 
     # ── Descorrelación de picks del mismo partido (reglas estructurales) ──
     values = resolve_match_picks_correlation(values)
+
+    # ── Control de sobreexposición simultánea (Simultaneous Kelly Scaling) ──
+    # Aplica el portfolio cap definido en RiskPolicy sobre todos los picks
+    # publicables del análisis. Si la suma de kelly_fractions supera max_total_exposure,
+    # todos se escalan proporcionalmente; picks que quedan bajo MIN_STAKE se
+    # bloquean de forma irreversible con trazabilidad en eligibility_hard_blocks.
+    _policy = RiskPolicy.from_json()
+    values = apply_portfolio_exposure_cap(
+        value_indicators=values,
+        max_total_exposure=_policy.max_total_exposure,
+        min_stake_threshold=float(MIN_STAKE),  # unidades absolutas (no fracción bankroll)
+    )
 
     h_adv = sum(1 for c in comparisons if c.advantage == "home")
     a_adv = sum(1 for c in comparisons if c.advantage == "away")

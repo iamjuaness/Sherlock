@@ -31,6 +31,7 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import random
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -51,6 +52,7 @@ from src.models.calibration import (
     CalibrationSample,
     HierarchicalCalibrator,
     WalkForwardResult,
+    evaluate,
     walk_forward_calibrate,
 )
 
@@ -211,6 +213,8 @@ def extract_samples(
     resolver=None,
     market_family_fn=None,
     require_timestamp: bool = True,
+    weight_by_match: bool = False,
+    decision_region_only: bool = False,
 ) -> tuple[list[CalibrationSample], ExtractionStats]:
     """
     Convierte el histórico liquidado en muestras para calibración.
@@ -222,6 +226,11 @@ def extract_samples(
     Usa exclusivamente la taxonomía canónica (market_taxonomy) para clasificar
     familia, lado y banda de línea. El parámetro market_family_fn se ignora
     para evitar inconsistencias entre entrenamiento y producción.
+
+    - weight_by_match: Si es True, pondera cada pick por 1 / N_picks_del_partido
+      para evitar que partidos con muchos picks dominen la calibración (Issue #35).
+    - decision_region_only: Si es True, entrena únicamente sobre picks elegibles/jugables
+      en la región de decisión real (Issue #41).
     """
     if resolver is None:
         from src.ui.api.main import _check_pick_success as resolver  # type: ignore
@@ -295,11 +304,21 @@ def extract_samples(
             or row.get("league_name")
         )
 
+        # Issue #35: Contar picks válidos en el partido para ponderar por partido si está activo
+        row_accepted_samples: list[CalibrationSample] = []
+
         for pick in raw_picks:
             if not isinstance(pick, dict):
                 continue
 
             stats.picks_seen += 1
+
+            # Issue #41: Evaluar en la región de decisión si se solicita
+            if decision_region_only:
+                # Región de decisión: picks que fueron elegibles, recomendados o con edge positivo
+                is_candidate = pick.get("is_value") or pick.get("is_publishable") or (float(pick.get("edge_ev") or 0.0) > 0.0)
+                if not is_candidate:
+                    continue
 
             probability = _pick_probability(pick)
 
@@ -351,7 +370,7 @@ def extract_samples(
             line = None if market_fam in CATEGORICAL_FAMILIES else extract_market_line(selection)
             line_bucket = line_bucket_for(market_fam, line)
 
-            samples.append(
+            row_accepted_samples.append(
                 CalibrationSample(
                     prob=float(probability),
                     hit_value=float(hit_value),
@@ -360,10 +379,29 @@ def extract_samples(
                     line_bucket=line_bucket,
                     league=str(league).strip() if league else None,
                     timestamp=sample_ts,
+                    weight=1.0,
                 )
             )
 
-            stats.picks_accepted += 1
+        # Issue #35: Si weight_by_match=True, reponderar cada pick del partido por 1 / N_picks
+        if weight_by_match and row_accepted_samples:
+            match_w = 1.0 / len(row_accepted_samples)
+            row_accepted_samples = [
+                CalibrationSample(
+                    prob=s.prob,
+                    hit_value=s.hit_value,
+                    market_family=s.market_family,
+                    side=s.side,
+                    line_bucket=s.line_bucket,
+                    league=s.league,
+                    timestamp=s.timestamp,
+                    weight=round(s.weight * match_w, 6),
+                )
+                for s in row_accepted_samples
+            ]
+
+        samples.extend(row_accepted_samples)
+        stats.picks_accepted += len(row_accepted_samples)
 
     return samples, stats
 
@@ -459,6 +497,232 @@ def load_rows_from_db(
         if close_after:
             session.close()
 
+# ═══════════════════════════════════════════════════════════════════════
+# COMPARACIÓN CANDIDATO vs ACTIVO
+# ═══════════════════════════════════════════════════════════════════════
+
+# Mínimo de muestras OOF posteriores a lo que vio el activo para una comparación 100% justa.
+MIN_FAIR_SAMPLES = 150
+
+# Si la comparación es "leaky" (el activo pudo ver las muestras), el candidato puede
+# quedar ligeramente peor sin que se rechace, porque el activo juega con ventaja.
+LEAK_ALLOWANCE = {"brier": 0.001, "log_loss": 0.003}
+# Si True, una mejora cuyo IC95 de ΔBrier incluye 0 (ruido) NO se promueve.
+REQUIRE_SIGNIFICANT_VS_ACTIVE = False
+
+_ACTIVE_CUTOFF_KEYS = ("trained_until", "cutoff_date")
+
+
+def _active_trained_until(active_cal) -> datetime | None:
+    """Fecha máxima de datos que vio el calibrador activo (si el artefacto la registra)."""
+    md = getattr(active_cal, "metadata", None) or {}
+    for key in _ACTIVE_CUTOFF_KEYS:
+        dt = _coerce_cutoff_datetime(md.get(key))
+        if dt is not None:
+            return dt
+    return None
+
+
+def _paired_bootstrap_brier(
+    cand_probs: Sequence[float],
+    act_probs: Sequence[float],
+    outcomes: Sequence[float],
+    n_boot: int = 1000,
+    seed: int = 7,
+) -> dict:
+    """
+    Bootstrap pareado de (Brier_candidato - Brier_activo) sobre las mismas muestras.
+    Si el IC95 incluye 0, la diferencia no se distingue del ruido.
+    """
+    n = len(outcomes)
+    if n == 0:
+        nan = float("nan")
+        return {"mean_diff": nan, "ci_low": nan, "ci_high": nan, "p_cand_better": nan}
+
+    diffs = [(c - o) ** 2 - (a - o) ** 2 for c, a, o in zip(cand_probs, act_probs, outcomes)]
+    rng = random.Random(seed)
+    boots = sorted(sum(rng.choices(diffs, k=n)) / n for _ in range(n_boot))
+    return {
+        "mean_diff": sum(diffs) / n,
+        "ci_low": boots[int(0.025 * n_boot)],
+        "ci_high": boots[min(n_boot - 1, int(0.975 * n_boot))],
+        "p_cand_better": sum(1 for b in boots if b < 0) / n_boot,
+    }
+
+
+def compare_with_active(
+    wf: WalkForwardResult,
+    active_path: Path | str,
+    tol_ece: float = 0.002,
+    min_fair_samples: int = MIN_FAIR_SAMPLES,
+) -> dict:
+    """
+    Compara candidato vs activo sobre EXACTAMENTE las mismas muestras OOF.
+
+    status:
+      'no_active' -> no hay activo entrenado.
+      'error'     -> no se pudo cargar/evaluar (no se debe promover sin force).
+      'ok'        -> comparación realizada.
+
+    mode (solo si status == 'ok'):
+      'fair'            -> solo muestras posteriores a `trained_until` del activo.
+      'leaky_no_cutoff' -> el activo no registra `trained_until`: se usan todas las
+                           muestras; el activo pudo verlas (sesgo a su favor).
+      'leaky_fallback'  -> hay `trained_until`, pero quedan menos de
+                           `min_fair_samples` muestras posteriores: se usan todas.
+
+    En modos 'leaky_*' el candidato gana si no es peor que el activo más una holgura
+    (LEAK_ALLOWANCE), porque el activo evalúa parcialmente sobre sus datos de entreno.
+    """
+    path = Path(active_path)
+    if not path.exists():
+        return {"status": "no_active"}
+
+    try:
+        active_cal = HierarchicalCalibrator.load(path)
+    except Exception as exc:
+        logger.warning("No se pudo cargar el calibrador activo: %s", exc)
+        return {"status": "error", "error": f"load: {exc}"}
+
+    if not active_cal.is_trained:
+        return {"status": "no_active"}
+
+    n_all = len(wf.outcomes)
+    if not (len(wf.samples) == len(wf.raw_probs) == len(wf.calibrated_probs) == n_all):
+        return {
+            "status": "error",
+            "error": (
+                f"walk-forward desalineado: samples={len(wf.samples)} "
+                f"raw={len(wf.raw_probs)} cal={len(wf.calibrated_probs)} outcomes={n_all}"
+            ),
+        }
+
+    trained_until = _active_trained_until(active_cal)
+
+    fair_idx: list[int] = []
+    if trained_until is not None:
+        for i, s in enumerate(wf.samples):
+            ts = _coerce_datetime(s.timestamp)
+            if ts is not None and ts > trained_until:
+                fair_idx.append(i)
+
+    if trained_until is None:
+        mode, idx = "leaky_no_cutoff", list(range(n_all))
+    elif len(fair_idx) >= min_fair_samples:
+        mode, idx = "fair", fair_idx
+    else:
+        mode, idx = "leaky_fallback", list(range(n_all))
+
+    base = {
+        "mode": mode,
+        "leaky": mode != "fair",
+        "trained_until": trained_until.isoformat() if trained_until else None,
+        "n_fair_available": len(fair_idx),
+        "n_excluded_seen_by_active": (n_all - len(idx)),
+    }
+
+    try:
+        outcomes = [wf.outcomes[i] for i in idx]
+        raw_probs = [wf.raw_probs[i] for i in idx]
+        cand_probs = [wf.calibrated_probs[i] for i in idx]
+        act_probs = [
+            active_cal.apply(
+                prob=wf.samples[i].normalized_prob(),
+                market_family=wf.samples[i].market_family,
+                side=wf.samples[i].side,
+                line_bucket=wf.samples[i].line_bucket,
+                league=wf.samples[i].league,
+            )
+            for i in idx
+        ]
+    except Exception as exc:
+        logger.warning("Fallo al evaluar el calibrador activo: %s", exc)
+        return {"status": "error", "error": f"apply: {exc}", **base}
+
+    raw = evaluate(raw_probs, outcomes)
+    cand = evaluate(cand_probs, outcomes)
+    act = evaluate(act_probs, outcomes)
+
+    deltas = {k: cand[k] - act[k] for k in ("brier", "log_loss", "ece")}
+
+    if mode == "fair":
+        wins = {
+            "brier": deltas["brier"] < 0,
+            "log_loss": deltas["log_loss"] < 0,
+            "ece": deltas["ece"] <= tol_ece,
+        }
+    else:
+        wins = {
+            "brier": deltas["brier"] <= LEAK_ALLOWANCE["brier"],
+            "log_loss": deltas["log_loss"] <= LEAK_ALLOWANCE["log_loss"],
+            "ece": deltas["ece"] <= tol_ece,
+        }
+
+    boot = _paired_bootstrap_brier(cand_probs, act_probs, outcomes)
+    stored = ((getattr(active_cal, "metadata", None) or {}).get("walk_forward") or {}).get("calibrated")
+
+    return {
+        "status": "ok",
+        "n_compared": len(idx),
+        "raw": raw,
+        "candidate": cand,
+        "active": act,
+        "active_stored": stored,
+        "deltas": deltas,
+        "bootstrap": boot,
+        "wins": wins,
+        "significant": boot["ci_high"] < 0,
+        "candidate_better": bool(wins["brier"] and wins["log_loss"] and wins["ece"]),
+        **base,
+    }
+
+
+def format_active_comparison(cmp: dict) -> str:
+    status = cmp.get("status")
+    if not status:
+        return ""
+    if status == "no_active":
+        return "Comparación vs activo: no hay calibrador activo entrenado."
+    if status == "error":
+        return f"Comparación vs activo: NO DISPONIBLE ({cmp.get('error')})"
+
+    r, c, a, d, b = cmp["raw"], cmp["candidate"], cmp["active"], cmp["deltas"], cmp["bootstrap"]
+    mode_txt = {
+        "fair": "justa: solo partidos posteriores a lo que vio el activo",
+        "leaky_no_cutoff": "con sesgo a favor del activo (no registra trained_until)",
+        "leaky_fallback": (
+            f"con sesgo a favor del activo (solo {cmp['n_fair_available']} muestras "
+            f"posteriores a {cmp['trained_until']})"
+        ),
+    }.get(cmp.get("mode"), cmp.get("mode"))
+
+    lines = [
+        f"Comparación vs activo sobre las MISMAS {cmp['n_compared']} muestras OOF [{mode_txt}]",
+        f"  {'':9}{'crudo':>10}{'activo':>10}{'candidato':>11}{'Δ cand-act':>12}",
+        f"  {'Brier':9}{r['brier']:>10.5f}{a['brier']:>10.5f}{c['brier']:>11.5f}{d['brier']:>+12.5f}",
+        f"  {'LogLoss':9}{r['log_loss']:>10.5f}{a['log_loss']:>10.5f}{c['log_loss']:>11.5f}{d['log_loss']:>+12.5f}",
+        f"  {'ECE':9}{r['ece']:>10.5f}{a['ece']:>10.5f}{c['ece']:>11.5f}{d['ece']:>+12.5f}",
+        f"  ΔBrier IC95 [{b['ci_low']:+.5f}, {b['ci_high']:+.5f}]  "
+        f"P(candidato mejor)={b['p_cand_better']:.2f}  "
+        f"{'significativo' if cmp['significant'] else 'NO significativo (puede ser ruido)'}",
+    ]
+    if cmp.get("leaky"):
+        lines.append(
+            f"  Holgura por sesgo: Brier +{LEAK_ALLOWANCE['brier']}, "
+            f"LogLoss +{LEAK_ALLOWANCE['log_loss']} (el activo juega con ventaja)."
+        )
+    st = cmp.get("active_stored")
+    if st and st.get("brier") is not None:
+        lines.append(
+            "  (informativo, otro dataset) guardado en active.json: "
+            f"Brier {st.get('brier'):.5f} | LogLoss {st.get('log_loss', float('nan')):.5f} "
+            f"| ECE {st.get('ece', float('nan')):.5f}"
+        )
+    lines.append(
+        "  Veredicto: " + ("candidato MEJOR que el activo" if cmp["candidate_better"]
+                           else "candidato NO mejora al activo")
+    )
+    return "\n".join(lines)
 
 # ═══════════════════════════════════════════════════════════════════════
 # ENTRENAMIENTO Y PROMOCIÓN
@@ -476,6 +740,7 @@ class TrainingReport:
     calibrator_version: str | None = None
     artifact_path: str | None = None
     segments: list[str] = field(default_factory=list)
+    active_comparison: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -484,6 +749,7 @@ class TrainingReport:
             "n_samples": self.n_samples,
             "extraction": self.extraction,
             "walk_forward": self.walk_forward,
+            "active_comparison": self.active_comparison,
             "calibrator_version": self.calibrator_version,
             "artifact_path": self.artifact_path,
             "segments": self.segments,
@@ -495,19 +761,16 @@ class TrainingReport:
         wf = self.walk_forward
         if wf.get("raw") and wf.get("calibrated"):
             r, c = wf["raw"], wf["calibrated"]
-            lines.append(f"OOF evaluadas: {r.get('n')}")
-            lines.append(
-                f"  Brier    {r.get('brier'):.5f} -> {c.get('brier'):.5f}"
-                if r.get("brier") is not None else ""
-            )
-            lines.append(
-                f"  LogLoss  {r.get('log_loss'):.5f} -> {c.get('log_loss'):.5f}"
-                if r.get("log_loss") is not None else ""
-            )
-            lines.append(
-                f"  ECE      {r.get('ece'):.5f} -> {c.get('ece'):.5f}"
-                if r.get("ece") is not None else ""
-            )
+            lines.append(f"OOF evaluadas: {r.get('n')}  [crudo (sin calibrar) -> candidato]")
+            if r.get("brier") is not None:
+                lines.append(f"  Brier    {r['brier']:.5f} -> {c['brier']:.5f}")
+            if r.get("log_loss") is not None:
+                lines.append(f"  LogLoss  {r['log_loss']:.5f} -> {c['log_loss']:.5f}")
+            if r.get("ece") is not None:
+                lines.append(f"  ECE      {r['ece']:.5f} -> {c['ece']:.5f}")
+        cmp_text = format_active_comparison(self.active_comparison)
+        if cmp_text:
+            lines.append(cmp_text)
         if self.segments:
             lines.append(f"segmentos: {len(self.segments)}")
         return "\n".join(l for l in lines if l)
@@ -526,6 +789,11 @@ def train_calibrator(
 ) -> TrainingReport:
     """
     Ajusta, valida y (si mejora) promueve el calibrador.
+
+    Promoción: el candidato debe (1) mejorar al crudo en OOF (Brier y log loss)
+    y (2) no ser peor que el activo en Brier, log loss y ECE, comparados sobre
+    las MISMAS muestras OOF y, si el activo registra `trained_until`, solo sobre
+    muestras posteriores a lo que el activo ya vio.
 
     `force` publica el artefacto aunque no mejore — solo para depuración.
     `dry_run` calcula todo y no escribe nada.
@@ -568,6 +836,52 @@ def train_calibrator(
         return report
 
     improves = wf.improved()
+
+    # Comparación candidato vs activo sobre las mismas muestras OOF.
+    # Se calcula siempre (informativa); solo bloquea si no hay `force`.
+    cmp = compare_with_active(wf, artifact_path)
+    report.active_comparison = cmp
+    status = cmp.get("status")
+
+    if status == "not_comparable":
+        logger.warning(
+            "El activo ya vio todas las muestras OOF (trained_until=%s): "
+            "no hay comparación justa; se decide solo contra el crudo.",
+            cmp.get("trained_until"),
+        )
+    elif status == "ok" and cmp.get("leaky"):
+        logger.warning(
+            "Comparación vs activo con sesgo a su favor (modo=%s, muestras justas "
+            "disponibles=%s). Holgura aplicada: %s.",
+            cmp.get("mode"), cmp.get("n_fair_available"), LEAK_ALLOWANCE,
+        )
+
+    if not force:
+        if status == "error":
+            report.reason = (
+                f"No se pudo comparar contra el activo ({cmp.get('error')}). "
+                "Sin comparación válida no se promueve; usa --force para saltarlo."
+            )
+            return report
+
+        if status == "ok":
+            d = cmp["deltas"]
+            if not cmp["candidate_better"]:
+                report.reason = (
+                    "El candidato no supera al activo en las mismas "
+                    f"{cmp['n_compared']} muestras OOF: "
+                    f"ΔBrier={d['brier']:+.5f}, ΔLogLoss={d['log_loss']:+.5f}, "
+                    f"ΔECE={d['ece']:+.5f} (negativo = mejor)."
+                )
+                return report
+            if REQUIRE_SIGNIFICANT_VS_ACTIVE and not cmp["significant"]:
+                b = cmp["bootstrap"]
+                report.reason = (
+                    "La mejora sobre el activo no es estadísticamente distinguible de "
+                    f"ruido (ΔBrier IC95 [{b['ci_low']:+.5f}, {b['ci_high']:+.5f}])."
+                )
+                return report
+
     if not improves and not force:
         report.reason = (
             "La calibración NO mejora Brier y log loss out-of-sample. "
@@ -586,8 +900,21 @@ def train_calibrator(
     calibrator.metadata["extraction"] = report.extraction
     calibrator.metadata["forced"] = bool(force and not improves)
 
-    # Si hay corte temporal, el nombre del artefacto usa la fecha de corte
-    # (fin del día) en lugar de la hora actual, para que sea autoexplicativo.
+    # Fecha máxima de datos vistos: permite que el próximo entrenamiento compare
+    # solo sobre muestras que este calibrador NO ha visto.
+    stamps = [t for t in (_coerce_datetime(s.timestamp) for s in samples) if t is not None]
+    if stamps:
+        calibrator.metadata["trained_until"] = max(stamps).isoformat()
+    calibrator.metadata["n_train_samples"] = n
+
+    if status == "ok":
+        calibrator.metadata["vs_previous_active"] = {
+            "n_compared": cmp["n_compared"],
+            "deltas": cmp["deltas"],
+            "bootstrap": cmp["bootstrap"],
+            "leaky": cmp["leaky"],
+        }
+
     if cutoff_label:
         calibrator.metadata["cutoff_date"] = cutoff_label
         try:
@@ -607,18 +934,20 @@ def train_calibrator(
 
     path = Path(artifact_path)
     calibrator.save(path)
-    # Copia versionada en history con el nombre estándar de versión.
-    # El corte temporal se almacena en calibrator.metadata["cutoff_date"] si aplica.
-    if cutoff_label:
-        calibrator.metadata["cutoff_date"] = cutoff_label
     calibrator.save(history_dir_for(path) / f"{calibrator.version}.json")
     logger.info("Artefacto history guardado: 'history/%s.json'", calibrator.version)
 
     report.promoted = True
-    report.reason = (
-        f"Promovido: mejora Brier y log loss out-of-sample."
-        if improves else "Promovido por --force (NO mejoró las métricas)."
-    )
+    if not improves:
+        report.reason = "Promovido por --force (NO mejoró las métricas)."
+    elif status == "ok":
+        d = cmp["deltas"]
+        report.reason = (
+            "Promovido: mejora al crudo y al activo en las mismas muestras OOF "
+            f"(ΔBrier={d['brier']:+.5f}, ΔLogLoss={d['log_loss']:+.5f}, ΔECE={d['ece']:+.5f})."
+        )
+    else:
+        report.reason = "Promovido: mejora Brier y log loss out-of-sample."
     return report
 
 
@@ -661,6 +990,8 @@ def run_training(
     league_filter: str | None = None,
     include_excluded: bool = False,
     until_date: datetime | str | None = None,
+    weight_by_match: bool = False,
+    decision_region_only: bool = False,
 ) -> TrainingReport:
     """
     Pipeline completo: BD -> muestras -> validación -> artefacto.
@@ -715,7 +1046,12 @@ def run_training(
             until_date, len(rows),
         )
 
-    samples, stats = extract_samples(rows, require_timestamp=require_timestamp)
+    samples, stats = extract_samples(
+        rows,
+        require_timestamp=require_timestamp,
+        weight_by_match=weight_by_match,
+        decision_region_only=decision_region_only,
+    )
     logger.info("Extracción: %s", stats.summary())
     return train_calibrator(
         samples,
@@ -765,6 +1101,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         action="store_true",
         help="Incluye partidos marcados con count_in_profitability=False.",
     )
+    ap.add_argument("--weight-by-match", action="store_true",
+                    help="Pondera cada pick por 1 / N_picks del partido (Issue #35).")
+    ap.add_argument("--decision-region-only", action="store_true",
+                    help="Entrena únicamente en la región de decisión de picks con valor/elegibles (Issue #41).")
     ap.add_argument("--force", action="store_true",
                     help="Promueve aunque no mejore / omite guardia de liga ya calibrada.")
     ap.add_argument("--dry-run", action="store_true")
@@ -785,6 +1125,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         league_filter=args.league,
         include_excluded=args.include_excluded,
         until_date=args.until_date,
+        weight_by_match=args.weight_by_match,
+        decision_region_only=args.decision_region_only,
     )
 
     print(json.dumps(report.as_dict(), indent=2, ensure_ascii=False)

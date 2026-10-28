@@ -1,0 +1,242 @@
+{
+  "44": {
+    "competition_name": "2. Bundesliga",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "325": {
+    "competition_name": "Campeonato Brasileiro Série A",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "390": {
+    "competition_name": "Brasileirão Série B",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "35": {
+    "competition_name": "Bundesliga",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "13470": {
+    "competition_name": "Canadian Premier League",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "649": {
+    "competition_name": "Chinese Super League",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "384": {
+    "competition_name": "CONMEBOL Libertadores",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "480": {
+    "competition_name": "CONMEBOL Sudamericana",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "7": {
+    "competition_name": "UEFA Champions League",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "133": {
+    "competition_name": "Copa América",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "329": {
+    "competition_name": "Copa del Rey",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "328": {
+    "competition_name": "Coppa Italia",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "335": {
+    "competition_name": "Coupe de France",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "172": {
+    "competition_name": "Czech First League",
+    "type": "split",
+    "start_month_day": "07-01"
+  },
+  "217": {
+    "competition_name": "DFB Pokal",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "16736": {
+    "competition_name": "División Profesional",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "202": {
+    "competition_name": "Ekstraklasa",
+    "type": "split",
+    "start_month_day": "07-01"
+  },
+  "1": {
+    "competition_name": "EURO",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "19": {
+    "competition_name": "FA Cup",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "357": {
+    "competition_name": "FIFA Club World Cup",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "16": {
+    "competition_name": "FIFA World Cup",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "170": {
+    "competition_name": "HNL",
+    "type": "split",
+    "start_month_day": "07-01"
+  },
+  "410": {
+    "competition_name": "K League 1",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "8": {
+    "competition_name": "LaLiga",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "54": {
+    "competition_name": "LaLiga 2",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "406": {
+    "competition_name": "Liga 1 Te Apuesto",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "11653": {
+    "competition_name": "Liga de Primera",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "11621": {
+    "competition_name": "Liga MX, Apertura",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "11620": {
+    "competition_name": "Liga MX, Clausura",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "238": {
+    "competition_name": "Liga Portugal Betclic",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "155": {
+    "competition_name": "Liga Profesional de Fútbol",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "240": {
+    "competition_name": "LigaPro Serie A",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "34": {
+    "competition_name": "Ligue 1",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "242": {
+    "competition_name": "MLS",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "17": {
+    "competition_name": "Premier League",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "11539": {
+    "competition_name": "Primera A",
+    "type": "calendar",
+    "start_month_day": "07-01"
+  },
+  "38": {
+    "competition_name": "Pro League",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "955": {
+    "competition_name": "Saudi Pro League",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "36": {
+    "competition_name": "Scottish Premiership",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "23": {
+    "competition_name": "Serie A",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "37": {
+    "competition_name": "VriendenLoterij Eredivisie",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "39": {
+    "competition_name": "Danish Superliga",
+    "type": "split",
+    "start_month_day": "07-01"
+  },
+  "11541": {
+    "competition_name": "Primera División",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "808": {
+    "competition_name": "Egyptian Premier League",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "491": {
+    "competition_name": "3. Liga",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "703": {
+    "competition_name": "Primera Nacional",
+    "type": "calendar",
+    "start_month_day": "01-01"
+  },
+  "52": {
+    "competition_name": "Trendyol Süper Lig",
+    "type": "split",
+    "start_month_day": "08-01"
+  },
+  "679": {
+    "competition_name": "UEFA Europa League",
+    "type": "split",
+    "start_month_day": "08-01"
+  }
+}

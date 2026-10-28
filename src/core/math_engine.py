@@ -803,8 +803,11 @@ class LeagueMathEngine:
                 val = (float(ch) if team_role == "home" else float(ca)) if is_team_specific else (float(ch) + float(ca))
         elif fam == "cards":
             yh, ya = m.get("final_yellow_cards_home"), m.get("final_yellow_cards_away")
+            rh, ra = m.get("final_red_cards_home") or 0, m.get("final_red_cards_away") or 0
             if yh is not None and ya is not None:
-                val = (float(yh) if team_role == "home" else float(ya)) if is_team_specific else (float(yh) + float(ya))
+                val_h = float(yh) + float(rh) * 2.0
+                val_a = float(ya) + float(ra) * 2.0
+                val = val_h if team_role == "home" else (val_a if team_role == "away" else (val_h + val_a))
         elif fam in {"shots", "shots_target"}:
             if fam == "shots_target":
                 sth, sta = m.get("final_shots_on_target_home"), m.get("final_shots_on_target_away")

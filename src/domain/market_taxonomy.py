@@ -22,6 +22,7 @@ class MarketFamily(StrEnum):
     SHOTS = "shots"
     SHOTS_TARGET = "shots_target"
     FOULS = "fouls"
+    OFFSIDES = "offsides"
     GENERIC = "generic"
 
 
@@ -49,30 +50,30 @@ class MarketKey:
 
 DEFAULT_LINE_BUCKETS: Dict[str, List[Tuple[Optional[float], Optional[float], str]]] = {
     "goals": [
-        (None, 1.5, "low_0_5_1_5"),
-        (2.0, 2.5, "core_2_5"),
-        (3.0, 3.5, "high_3_5"),
-        (4.0, None, "extreme_4_plus"),
+        (None, 1.75, "low_0_5_1_5"),
+        (1.75, 2.75, "core_2_5"),
+        (2.75, 3.75, "high_3_5"),
+        (3.75, None, "extreme_4_plus"),
     ],
     "cards": [
-        (None, 3.5, "low_2_5_3_5"),
-        (4.0, 4.5, "core_4_5"),
-        (5.0, None, "high_5_5_plus"),
+        (None, 3.75, "low_2_5_3_5"),
+        (3.75, 4.75, "core_4_5"),
+        (4.75, None, "high_5_5_plus"),
     ],
     "corners": [
-        (None, 8.5, "low"),
-        (9.0, 10.5, "core"),
-        (11.0, None, "high"),
+        (None, 8.75, "low"),
+        (8.75, 10.75, "core"),
+        (10.75, None, "high"),
     ],
     "shots_target": [
-        (None, 6.5, "low_6_5"),
-        (7.0, 8.5, "core_7_5_8_5"),
-        (9.0, None, "high_9_plus"),
+        (None, 6.75, "low_6_5"),
+        (6.75, 8.75, "core_7_5_8_5"),
+        (8.75, None, "high_9_plus"),
     ],
     "shots": [
-        (None, 22.5, "low"),
-        (23.0, 25.5, "core"),
-        (26.0, None, "high"),
+        (None, 22.75, "low"),
+        (22.75, 25.75, "core"),
+        (25.75, None, "high"),
     ],
 }
 
@@ -123,6 +124,12 @@ def normalize_market_family(raw: str) -> str:
     ):
         return MarketFamily.RESULT
 
+    # Tarjetas y Córners (Evaluar antes de Double Chance para evitar que '12.5 corners' haga match con '12')
+    if any(k in val for k in ["tarjetas", "cards", "tarjetas amarillas", "yellow cards"]):
+        return MarketFamily.CARDS
+    if any(k in val for k in ["corners", "córners", "saques de esquina", "corner"]):
+        return MarketFamily.CORNERS
+
     # Double Chance
     if (
         any(k in val for k in ["doble oportunidad", "double chance"])
@@ -130,13 +137,7 @@ def normalize_market_family(raw: str) -> str:
     ):
         return MarketFamily.DOUBLE_CHANCE
 
-    # Tarjetas y Córners
-    if any(k in val for k in ["tarjetas", "cards", "tarjetas amarillas", "yellow cards"]):
-        return MarketFamily.CARDS
-    if any(k in val for k in ["corners", "córners", "saques de esquina", "corner"]):
-        return MarketFamily.CORNERS
-
-    # SHOTS_TARGET: comprobación estricta ANTES de SHOTS
+    # SHOTS_TARGET: comprobación estricta ANTES de SHOTS (incluyendo 'pta')
     if any(k in val for k in [
         "tiros a puerta",
         "tiros al arco",
@@ -145,7 +146,8 @@ def normalize_market_family(raw: str) -> str:
         "shot_on_target",
         "remates a puerta",
         "remates al arco",
-        "sot"
+        "sot",
+        "pta",
     ]):
         return MarketFamily.SHOTS_TARGET
 
@@ -155,6 +157,8 @@ def normalize_market_family(raw: str) -> str:
 
     if any(k in val for k in ["faltas", "fouls"]):
         return MarketFamily.FOULS
+    if any(k in val for k in ["offsides", "fuera de juego", "fueras de juego", "fueras", "offside"]):
+        return MarketFamily.OFFSIDES
     if any(k in val for k in ["gol", "goles", "goals", "over", "under", "total"]):
         return MarketFamily.GOALS
     if any(k in val for k in ["ganador", "visitante", "local", "empate"]):
@@ -170,10 +174,14 @@ def normalize_market_side(raw: str, family: Optional[str] = None) -> str:
 
     val = str(raw).strip().lower()
 
-    # Over / Under
-    if any(k in val for k in ["over", "más de", "mas de", "más", "mas", "+"]):
+    # Over / Under (Exigir 'over'/'under' explícito o frases inequívocas, no signos matemáticos aislados)
+    if any(k in val for k in ["over", "más de", "mas de"]):
         return MarketSide.OVER
-    if any(k in val for k in ["under", "menos de", "menos", "-"]):
+    if any(k in val for k in ["under", "menos de"]):
+        return MarketSide.UNDER
+    if re.search(r"(?:^|\s)\+\s*\d", val) or val == "+":
+        return MarketSide.OVER
+    if re.search(r"(?:^|\s)-\s*\d", val) or val == "-":
         return MarketSide.UNDER
 
     # Result 1X2 (comprobar antes de doble oportunidad si no incluye 'empate' u 'o')

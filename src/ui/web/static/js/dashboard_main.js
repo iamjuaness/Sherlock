@@ -434,8 +434,8 @@ function renderRankings(items, containerId, emoji) {
     return;
   }
 
-  // Sort by profit desc, take top 5
-  const topItems = [...items].sort((a, b) => b.profit - a.profit).slice(0, 5);
+  // Sort by profit desc, take top 10
+  const topItems = [...items].sort((a, b) => b.profit - a.profit).slice(0, 10);
 
   container.innerHTML = topItems
     .map((item) => {

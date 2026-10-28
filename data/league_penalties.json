@@ -1,15 +1,33 @@
 [
   {
-    "league": "MLS",
-    "market_family": "cards",
+    "league": "Primera A",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 7.5
+  },
+  {
+    "league": "Primera A",
+    "market_family": "corners",
     "market_side": "over",
-    "line": 3.5
+    "line": 10.5
+  },
+  {
+    "league": "Primera A",
+    "market_family": "goals",
+    "market_side": "under",
+    "line": 1.5
+  },
+  {
+    "league": "MLS",
+    "market_family": "result",
+    "market_side": "away",
+    "line": null
   },
   {
     "league": "MLS",
     "market_family": "cards",
     "market_side": "over",
-    "line": 4.5
+    "line": 3.5
   },
   {
     "league": "MLS",
@@ -20,20 +38,14 @@
   {
     "league": "MLS",
     "market_family": "cards",
-    "market_side": "under",
-    "line": 3.5
-  },
-  {
-    "league": "MLS",
-    "market_family": "corners",
     "market_side": "over",
-    "line": 11.5
+    "line": 4.5
   },
   {
     "league": "MLS",
-    "market_family": "shots",
-    "market_side": "under",
-    "line": 22.5
+    "market_family": "shots_target",
+    "market_side": "over",
+    "line": 10.5
   },
   {
     "league": "MLS",
@@ -43,219 +55,33 @@
   },
   {
     "league": "MLS",
-    "market_family": "shots",
-    "market_side": "under",
-    "line": 26.5
-  },
-  {
-    "league": "MLS",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 8.5
-  },
-  {
-    "league": "MLS",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 2.5
-  },
-  {
-    "league": "MLS",
-    "market_family": "corners",
-    "market_side": "over",
-    "line": 9.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "double_chance",
-    "market_side": "draw_away",
-    "line": null
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "cards",
-    "market_side": "over",
-    "line": 4.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "cards",
-    "market_side": "over",
-    "line": 5.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "shots_target",
-    "market_side": "under",
-    "line": 8.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 2.5
-  },
-  {
-    "league": "Brasileirão Série B",
     "market_family": "corners",
     "market_side": "over",
     "line": 11.5
   },
   {
-    "league": "Brasileirão Série B",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 9.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "shots_target",
-    "market_side": "under",
-    "line": 9.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "shots_target",
-    "market_side": "over",
-    "line": 9.5
-  },
-  {
-    "league": "Brasileirão Série B",
+    "league": "MLS",
     "market_family": "goals",
     "market_side": "under",
-    "line": 1.5
+    "line": 2.5
   },
   {
-    "league": "Brasileirão Série B",
+    "league": "MLS",
     "market_family": "goals",
     "market_side": "over",
     "line": 2.5
   },
   {
-    "league": "Brasileirão Série B",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 1.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "corners",
-    "market_side": "over",
-    "line": 10.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "corners",
+    "league": "MLS",
+    "market_family": "shots",
     "market_side": "under",
-    "line": 10.5
+    "line": 22.5
   },
   {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "cards",
-    "market_side": "over",
-    "line": 4.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "shots_target",
-    "market_side": "under",
-    "line": 8.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "shots_target",
+    "league": "MLS",
+    "market_family": "corners",
     "market_side": "over",
     "line": 9.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "cards",
-    "market_side": "over",
-    "line": 3.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 9.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "cards",
-    "market_side": "under",
-    "line": 5.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 2.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "corners",
-    "market_side": "over",
-    "line": 10.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "cards",
-    "market_side": "over",
-    "line": 5.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "shots",
-    "market_side": "under",
-    "line": 23.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "corners",
-    "market_side": "over",
-    "line": 11.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "cards",
-    "market_side": "under",
-    "line": 6.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "shots",
-    "market_side": "over",
-    "line": 29.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "shots_target",
-    "market_side": "under",
-    "line": 9.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 3.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "shots",
-    "market_side": "under",
-    "line": 26.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "shots",
-    "market_side": "under",
-    "line": 25.5
-  },
-  {
-    "league": "División Profesional",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 4.5
   },
   {
     "league": "División Profesional",
@@ -270,34 +96,58 @@
     "line": null
   },
   {
-    "league": "Liga 1 Te Apuesto",
+    "league": "División Profesional",
+    "market_family": "btts",
+    "market_side": "no",
+    "line": null
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 9.5
+  },
+  {
+    "league": "Saudi Pro League",
     "market_family": "double_chance",
-    "market_side": "draw_away",
+    "market_side": "home_draw",
+    "line": null
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "result",
+    "market_side": "home",
+    "line": null
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "goals",
+    "market_side": "under",
+    "line": 3.5
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "goals",
+    "market_side": "over",
+    "line": 2.5
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "goals",
+    "market_side": "over",
+    "line": 3.5
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "btts",
+    "market_side": "no",
     "line": null
   },
   {
     "league": "Liga 1 Te Apuesto",
-    "market_family": "cards",
-    "market_side": "under",
-    "line": 5.5
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 8.5
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "cards",
+    "market_family": "goals",
     "market_side": "over",
-    "line": 5.5
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 9.5
+    "line": 3.5
   },
   {
     "league": "Liga 1 Te Apuesto",
@@ -306,154 +156,34 @@
     "line": null
   },
   {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 2.5
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "btts",
-    "market_side": "no",
+    "league": "Premier League",
+    "market_family": "result",
+    "market_side": "home",
     "line": null
   },
   {
-    "league": "Liga MX, Apertura",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 3.5
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 2.5
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 3.5
-  },
-  {
-    "league": "Liga MX, Apertura",
-    "market_family": "cards",
-    "market_side": "under",
-    "line": 5.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "cards",
-    "market_side": "over",
-    "line": 4.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "shots_target",
-    "market_side": "under",
-    "line": 7.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 7.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "cards",
-    "market_side": "over",
-    "line": 5.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 2.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "btts",
-    "market_side": "no",
-    "line": null
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
+    "league": "Premier League",
     "market_family": "shots_target",
     "market_side": "under",
     "line": 8.5
   },
   {
-    "league": "Liga Profesional de Fútbol",
+    "league": "Premier League",
     "market_family": "shots",
     "market_side": "under",
     "line": 23.5
   },
   {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "shots",
-    "market_side": "under",
-    "line": 24.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 1.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 6.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "shots",
-    "market_side": "over",
-    "line": 26.5
-  },
-  {
-    "league": "Liga Profesional de Fútbol",
-    "market_family": "cards",
+    "league": "Premier League",
+    "market_family": "shots_target",
     "market_side": "under",
     "line": 7.5
   },
   {
-    "league": "Liga de Primera",
-    "market_family": "double_chance",
-    "market_side": "draw_away",
-    "line": null
-  },
-  {
-    "league": "Liga de Primera",
+    "league": "Premier League",
     "market_family": "cards",
     "market_side": "under",
-    "line": 7.5
-  },
-  {
-    "league": "LigaPro Serie A",
-    "market_family": "double_chance",
-    "market_side": "draw_away",
-    "line": null
-  },
-  {
-    "league": "LigaPro Serie A",
-    "market_family": "result",
-    "market_side": "away",
-    "line": null
-  },
-  {
-    "league": "LigaPro Serie A",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 1.5
-  },
-  {
-    "league": "LigaPro Serie A",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 10.5
+    "line": 4.5
   },
   {
     "league": "Premier League",
@@ -462,117 +192,165 @@
     "line": null
   },
   {
-    "league": "Primera A",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 2.5
-  },
-  {
-    "league": "Primera A",
+    "league": "Premier League",
     "market_family": "cards",
     "market_side": "over",
-    "line": 6.5
+    "line": 3.5
   },
   {
-    "league": "Primera A",
-    "market_family": "corners",
+    "league": "Brasileirão Série B",
+    "market_family": "cards",
+    "market_side": "over",
+    "line": 4.5
+  },
+  {
+    "league": "Brasileirão Série B",
+    "market_family": "shots_target",
     "market_side": "under",
     "line": 8.5
   },
   {
-    "league": "Primera A",
-    "market_family": "corners",
-    "market_side": "under",
-    "line": 7.5
-  },
-  {
-    "league": "Primera A",
-    "market_family": "corners",
-    "market_side": "over",
-    "line": 10.5
-  },
-  {
-    "league": "Primera A",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 1.5
-  },
-  {
-    "league": "Primera A",
-    "market_family": "corners",
-    "market_side": "over",
-    "line": 9.5
-  },
-  {
-    "league": "Primera A",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 3.5
-  },
-  {
     "league": "Brasileirão Série B",
-    "market_family": "btts",
-    "market_side": "no",
-    "line": null
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "goals",
-    "market_side": "over",
-    "line": 3.5
-  },
-  {
-    "league": "Liga 1 Te Apuesto",
-    "market_family": "result",
-    "market_side": "draw",
-    "line": null
-  },
-  {
-    "league": "Premier League",
-    "market_family": "result",
-    "market_side": "home",
-    "line": null
-  },
-  {
-    "league": "Primera A",
-    "market_family": "btts",
-    "market_side": "no",
-    "line": null
-  },
-  {
-    "league": "MLS",
-    "market_family": "goals",
-    "market_side": "under",
-    "line": 2.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "shots",
-    "market_side": "under",
-    "line": 24.5
-  },
-  {
-    "league": "Brasileirão Série B",
-    "market_family": "cards",
-    "market_side": "under",
-    "line": 6.5
-  },
-  {
-    "league": "Campeonato Brasileiro Série A",
     "market_family": "double_chance",
     "market_side": "draw_away",
     "line": null
   },
   {
-    "league": "Campeonato Brasileiro Série A",
+    "league": "Brasileirão Série B",
+    "market_family": "cards",
+    "market_side": "over",
+    "line": 5.5
+  },
+  {
+    "league": "Brasileirão Série B",
+    "market_family": "goals",
+    "market_side": "under",
+    "line": 1.5
+  },
+  {
+    "league": "Brasileirão Série B",
+    "market_family": "btts",
+    "market_side": "yes",
+    "line": null
+  },
+  {
+    "league": "Brasileirão Série B",
+    "market_family": "goals",
+    "market_side": "over",
+    "line": 2.5
+  },
+  {
+    "league": "Brasileirão Série B",
+    "market_family": "cards",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Brasileirão Série B",
+    "market_family": "corners",
+    "market_side": "over",
+    "line": 10.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "cards",
+    "market_side": "over",
+    "line": 4.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
     "market_family": "result",
     "market_side": "away",
     "line": null
   },
   {
-    "league": "Campeonato Brasileiro Série A",
-    "market_family": "result",
-    "market_side": "home",
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 7.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "cards",
+    "market_side": "over",
+    "line": 5.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 7.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 8.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 24.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "goals",
+    "market_side": "under",
+    "line": 1.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots",
+    "market_side": "over",
+    "line": 26.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots",
+    "market_side": "over",
+    "line": 25.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 7.5
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 21.5
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 22.5
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "double_chance",
+    "market_side": "draw_away",
     "line": null
+  },
+  {
+    "league": "Saudi Pro League",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 20.5
   }
 ]

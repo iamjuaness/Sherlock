@@ -334,3 +334,77 @@ def test_artifact_metadata_records_validation(tmp_path):
     data = json.loads(art.read_text(encoding="utf-8"))
     assert "walk_forward" in data["metadata"]
     assert data["metadata"]["walk_forward"]["calibrated"]["brier"] > 0
+
+def test_compare_with_active_uses_same_samples_and_reports_deltas(tmp_path):
+    art = tmp_path / "active.json"
+    train_calibrator(_overconfident_samples(seed=3), artifact_path=art,
+                     prior_strength=5.0, min_samples=40)
+    data = json.loads(art.read_text(encoding="utf-8"))
+    assert "trained_until" in data["metadata"]
+
+    report = train_calibrator(_overconfident_samples(n=900, seed=4), artifact_path=art,
+                              prior_strength=5.0, min_samples=40, dry_run=True)
+    cmp = report.active_comparison
+    assert cmp["status"] in ("ok", "not_comparable")
+    if cmp["status"] == "ok":
+        assert set(cmp["deltas"]) == {"brier", "log_loss", "ece"}
+        assert cmp["candidate"]["n"] == cmp["active"]["n"] == cmp["n_compared"]
+        assert "Δ cand-act" in report.summary()
+
+
+def test_does_not_promote_if_active_comparison_fails(tmp_path, monkeypatch):
+    art = tmp_path / "active.json"
+    train_calibrator(_overconfident_samples(), artifact_path=art,
+                     prior_strength=5.0, min_samples=40)
+    monkeypatch.setattr(
+        HierarchicalCalibrator, "apply",
+        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    report = train_calibrator(_overconfident_samples(seed=9), artifact_path=art,
+                              prior_strength=5.0, min_samples=40)
+    assert report.promoted is False
+    assert "comparar" in report.reason.lower()
+
+def test_walk_forward_arrays_are_aligned():
+    wf = walk_forward_calibrate(
+        _overconfident_samples(), n_folds=5, prior_strength=5.0,
+        min_samples=40, min_train=120.0,
+    )
+    assert len(wf.samples) == len(wf.raw_probs) == len(wf.calibrated_probs) == len(wf.outcomes) > 0
+
+
+def test_trained_until_is_persisted(tmp_path):
+    art = tmp_path / "active.json"
+    train_calibrator(_overconfident_samples(), artifact_path=art,
+                     prior_strength=5.0, min_samples=40)
+    cal = HierarchicalCalibrator.load(art)
+    assert cal.metadata.get("trained_until")
+
+
+def test_compare_falls_back_to_leaky_when_few_fair_samples(tmp_path):
+    art = tmp_path / "active.json"
+    samples = _overconfident_samples()
+    train_calibrator(samples, artifact_path=art, prior_strength=5.0, min_samples=40)
+    wf = walk_forward_calibrate(samples, n_folds=5, prior_strength=5.0,
+                                min_samples=40, min_train=120.0)
+    cmp = compare_with_active(wf, art)
+    assert cmp["status"] == "ok"
+    assert cmp["mode"] == "leaky_fallback"
+    assert cmp["n_compared"] == len(wf.outcomes)
+
+
+def test_compare_fair_mode_uses_only_newer_samples(tmp_path):
+    art = tmp_path / "active.json"
+    old = _overconfident_samples(n=500, seed=3)
+    train_calibrator(old, artifact_path=art, prior_strength=5.0, min_samples=40)
+    last = max(s.timestamp for s in old)
+    new = [
+        CalibrationSample(prob=s.prob, hit_value=s.hit_value, market_family=s.market_family,
+                          league=s.league, timestamp=last + timedelta(hours=i + 1))
+        for i, s in enumerate(_overconfident_samples(n=700, seed=11))
+    ]
+    wf = walk_forward_calibrate(old + new, n_folds=5, prior_strength=5.0,
+                                min_samples=40, min_train=120.0)
+    cmp = compare_with_active(wf, art, min_fair_samples=50)
+    assert cmp["status"] == "ok" and cmp["mode"] == "fair"
+    assert cmp["n_compared"] < len(wf.outcomes)

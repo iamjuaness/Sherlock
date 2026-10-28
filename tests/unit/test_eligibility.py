@@ -152,11 +152,35 @@ def test_zero_h2h_with_samples_blocks():
     )
 
 
+def test_zero_h2h_with_few_samples_does_not_block():
+    """Con n < 8 muestras no se bloquea por H2H cero: la incertidumbre se absorbe en fiabilidad."""
+    assert evaluate_soft_filters(
+        good_snapshot(h2h_hit_rate=0.0, h2h_samples=3)
+    ) == frozenset()
+
+
 def test_zero_h2h_without_samples_does_not_block():
     """0% sin muestra no es información, es ausencia de información."""
     assert evaluate_soft_filters(
         good_snapshot(h2h_hit_rate=0.0, h2h_samples=0)
     ) == frozenset()
+
+
+def test_low_empirical_hit_rate_with_samples_blocks():
+    """Un pick con hit rate empírico de 5% (o menor al 35%) con muestra suficiente se bloquea."""
+    snap = good_snapshot(empirical_hit_rate=5.0, hit_rate_samples=6)
+    assert BlockReason.EMPIRICAL_HIT_RATE_TOO_LOW in evaluate_soft_filters(snap)
+
+
+def test_low_empirical_hit_rate_without_sufficient_samples_passes():
+    """Sin muestra suficiente de partidos (n < 5), no se descarta sólo por el hit rate empírico."""
+    snap = good_snapshot(empirical_hit_rate=20.0, hit_rate_samples=2)
+    assert BlockReason.EMPIRICAL_HIT_RATE_TOO_LOW not in evaluate_soft_filters(snap)
+
+
+def test_acceptable_empirical_hit_rate_passes():
+    snap = good_snapshot(empirical_hit_rate=50.0, hit_rate_samples=10)
+    assert BlockReason.EMPIRICAL_HIT_RATE_TOO_LOW not in evaluate_soft_filters(snap)
 
 
 def test_missing_prob_fails_closed():

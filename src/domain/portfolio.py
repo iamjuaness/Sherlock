@@ -1,12 +1,23 @@
 """
 Módulo para la separación entre prediction_universe y selected_portfolio.
+
+Expone dos funciones de scaling de exposición:
+  · filter_selected_portfolio  → opera sobre PredictionRecord (dominio puro)
+  · apply_portfolio_exposure_cap → opera sobre ValueIndicator (pipeline compare.py)
 """
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    # Importación tardía para evitar dependencias circulares con compare.py
+    from src.ui.api.compare import ValueIndicator
+
+logger = logging.getLogger("sherlock.portfolio")
 
 
 @dataclass
@@ -143,6 +154,156 @@ class PredictionRecord:
         )
 
 
-def filter_selected_portfolio(records: List[PredictionRecord]) -> List[PredictionRecord]:
-    """Filtra únicamente las predicciones publicables (cartera seleccionada)."""
-    return [r for r in records if r.publishable]
+def filter_selected_portfolio(
+    records: List[PredictionRecord],
+    max_total_exposure: float = 0.25,
+    min_stake_threshold: float = 0.005,
+) -> List[PredictionRecord]:
+    """
+    Filtra y escala la cartera seleccionada resolviendo la exposición simultánea.
+
+    1. Filtra las predicciones individuales marcadas como publishable y con stake > 0.
+    2. Si la suma total de stakes supera max_total_exposure (e.g. 25% del bankroll),
+       aplica Simultaneous Kelly Scaling lineal a todos los picks concurrentes.
+    3. Si tras el recorte algún pick queda por debajo de min_stake_threshold (0.5%),
+       se descarta de forma segura para no asumir micro-posiciones con fricción.
+    """
+    candidates = [r for r in records if r.publishable and r.stake_final > 0.0]
+    if not candidates:
+        return []
+
+    total_stake = sum(r.stake_final for r in candidates)
+
+    # Si la suma de stakes está dentro del límite de riesgo del portafolio, se conserva intacta
+    if total_stake <= max_total_exposure:
+        return candidates
+
+    scale = max_total_exposure / total_stake
+    selected: List[PredictionRecord] = []
+
+    for r in candidates:
+        scaled_stake = round(r.stake_final * scale, 5)
+        if scaled_stake < min_stake_threshold:
+            r.publishable = False
+            r.stake_final = 0.0
+            r.block_reasons.append(f"portfolio_scaled_below_min_stake ({scaled_stake:.4f})")
+            r.eligibility_decision = "blocked_portfolio_scale"
+        else:
+            r.stake_final = scaled_stake
+            selected.append(r)
+
+    return selected
+
+
+def apply_portfolio_exposure_cap(
+    value_indicators: "List[ValueIndicator]",
+    max_total_exposure: float = 0.25,
+    min_stake_threshold: float = 0.5,
+) -> "List[ValueIndicator]":
+    """
+    Aplica Simultaneous Kelly Scaling sobre una lista de ValueIndicator publicables.
+
+    Conecta portfolio.py con el pipeline de compare.py resolviendo la sobreexposición
+    simultánea por jornada:
+
+    - Usa ``kelly_fraction`` (fracción del bankroll [0–1]) como métrica de exposición
+      real. ``stake_units`` es una escala de presentación (0.5–3.0) y no es comparable
+      directamente con ``max_total_exposure``.
+    - Si la suma de kelly_fractions de todos los picks publicables supera
+      ``max_total_exposure``, todos se recortan con el mismo factor de scaling.
+    - El mismo factor se aplica a ``stake_units`` para mantener coherencia de display.
+    - Picks cuyo ``stake_units`` escaldo quede < ``min_stake_threshold`` se bloquean
+      irreversiblemente (``is_publishable=False``, ``quality_score=-1``) y el motivo
+      se registra en ``eligibility_hard_blocks`` para trazabilidad completa.
+
+    Esta función es idempotente: si la exposición total ya está dentro del límite,
+    devuelve la lista sin modificar.
+
+    Args:
+        value_indicators: Lista completa de picks evaluados por ``evaluate_pick_eligibility``.
+                          Solo se consideran los que tienen ``is_publishable=True`` y
+                          ``kelly_fraction > 0``.
+        max_total_exposure: Límite de exposición simultánea como fracción del bankroll
+                            (defecto: 0.25 = 25%). Se compara contra la suma de
+                            ``kelly_fraction`` de los picks.
+        min_stake_threshold: Stake mínimo viable en unidades absolutas tras el scaling.
+                             Picks con ``stake_units`` < umbral son bloqueados.
+                             (defecto: 0.5 unidades — mínimo de compare.py).
+
+    Returns:
+        Lista de ValueIndicator modificados in-place. Los picks bloqueados por el
+        scaling se incluyen en la lista (con ``is_publishable=False``) para que
+        el caller pueda registrar el motivo del recorte.
+    """
+    # Solo operamos sobre picks activos y con kelly_fraction positiva
+    candidates = [
+        v for v in value_indicators
+        if getattr(v, "is_publishable", False) and (getattr(v, "kelly_fraction", None) or 0.0) > 0.0
+    ]
+
+    if not candidates:
+        logger.debug("apply_portfolio_exposure_cap: no hay candidatos publicables con kelly_fraction > 0")
+        return value_indicators
+
+    # Exposición total = suma de kelly_fractions (fracción del bankroll)
+    total_kelly = sum(getattr(v, "kelly_fraction", 0.0) or 0.0 for v in candidates)
+
+    if total_kelly <= max_total_exposure:
+        logger.debug(
+            "apply_portfolio_exposure_cap: exposición total kelly=%.4f ≤ límite %.4f — sin scaling",
+            total_kelly,
+            max_total_exposure,
+        )
+        return value_indicators
+
+    scale = max_total_exposure / total_kelly
+    logger.info(
+        "apply_portfolio_exposure_cap: exposición total kelly=%.4f > límite %.4f → scale=%.4f sobre %d picks",
+        total_kelly,
+        max_total_exposure,
+        scale,
+        len(candidates),
+    )
+
+    for v in candidates:
+        original_kelly = getattr(v, "kelly_fraction", 0.0) or 0.0
+        original_stake = getattr(v, "stake_units", 0.0) or 0.0
+        scaled_kelly = round(original_kelly * scale, 6)
+        scaled_stake = round(original_stake * scale, 2)
+
+        if scaled_stake < min_stake_threshold:
+            # Bloqueo por micro-stake: no asumir exposición con demasiada fricción
+            reason = (
+                f"portfolio_scaled_below_min_stake "
+                f"(stake={scaled_stake:.2f}u < min={min_stake_threshold:.1f}u, "
+                f"kelly={original_kelly:.4f}→{scaled_kelly:.4f})"
+            )
+            logger.debug(
+                "apply_portfolio_exposure_cap: bloqueando pick '%s' — %s",
+                getattr(v, "selection", "?"),
+                reason,
+            )
+            v.kelly_fraction = 0.0
+            v.stake_units = 0.0
+            v.is_publishable = False
+            v.is_value = False
+            if hasattr(v, "quality_score"):
+                v.quality_score = -1
+            if hasattr(v, "eligibility_hard_blocks"):
+                if reason not in v.eligibility_hard_blocks:
+                    v.eligibility_hard_blocks = list(v.eligibility_hard_blocks) + [reason]
+            if hasattr(v, "eligibility_reasons"):
+                v.eligibility_reasons = list(v.eligibility_reasons) + [reason]
+        else:
+            v.kelly_fraction = scaled_kelly
+            v.stake_units = scaled_stake
+            logger.debug(
+                "apply_portfolio_exposure_cap: pick '%s' kelly %.4f→%.4f, stake %.2f→%.2f",
+                getattr(v, "selection", "?"),
+                original_kelly,
+                scaled_kelly,
+                original_stake,
+                scaled_stake,
+            )
+
+    return value_indicators

@@ -50,7 +50,7 @@ from typing import Any, Iterable, Mapping
 
 # Versión de la política de publicación. Cambiar un umbral obliga a subirla:
 # sin esto no se puede saber con qué reglas se publicó un pick histórico.
-POLICY_VERSION = "elig-v2.2"
+POLICY_VERSION = "elig-v2.5"
 
 
 class BlockReason(str, Enum):
@@ -78,6 +78,8 @@ class BlockReason(str, Enum):
     STAKE_TOO_LOW = "stake_too_low"
     H2H_ZERO_HIT_RATE = "h2h_zero_hit_rate"
     H2H_LOW_HIT_RATE = "h2h_low_hit_rate"
+    EMPIRICAL_HIT_RATE_TOO_LOW = "empirical_hit_rate_too_low"
+    QUALITY_SCORE_TOO_LOW = "quality_score_too_low"
 
 
 HARD_BLOCKS: frozenset[BlockReason] = frozenset({
@@ -120,6 +122,8 @@ REASON_LABELS: dict[BlockReason, str] = {
     BlockReason.STAKE_TOO_LOW: "Stake por debajo del mínimo",
     BlockReason.H2H_ZERO_HIT_RATE: "0% de acierto en H2H con muestra disponible",
     BlockReason.H2H_LOW_HIT_RATE: "H2H con acierto bajo y muestra suficiente (riesgo elevado)",
+    BlockReason.EMPIRICAL_HIT_RATE_TOO_LOW: "Hit rate histórico empírico insuficiente para ser pick de calidad",
+    BlockReason.QUALITY_SCORE_TOO_LOW: "Score de calidad del pick por debajo del umbral mínimo de categoría",
 }
 
 
@@ -166,7 +170,17 @@ class PublicationThresholds:
     # Aumentado a 8: el planning exige nunca bloquear por H2H bruto con n < 8.
     min_h2h_samples_for_block: int = 8
     low_h2h_families: frozenset[str] = frozenset({"double_chance", "doublechance"})
-    version: str = "elig-v2.2"
+
+    # ── Hit Rate Empírico Mínimo ──
+    # Si hay muestra histórica suficiente de la temporada (ej. n >= 5),
+    # el pick se descarta si su tasa de acierto real es inferior al 35% (o menor que la cuota amerite).
+    min_empirical_hit_rate: float = 35.0
+    min_empirical_samples: int = 5
+
+    # ── Score de Calidad Mínimo Diferenciado por Categoría ──
+    min_quality_score_standard: float = 33.0
+    min_quality_score_underdog: float = 22.0
+    version: str = "elig-v2.5"
 
     def min_prob_for(self, market_family: str | None) -> float:
         fam = (market_family or "generic").lower()
@@ -211,6 +225,11 @@ class PickSnapshot:
     h2h_hits: int | None = None
     h2h_samples: int = 0
     selection: str = ""
+    empirical_hit_rate: float | None = None
+    hit_rate_samples: int = 0
+    quality_score: float | None = None
+    is_underdog: bool = False
+    min_edge_add: float = 0.0
 
     @staticmethod
     def _get(src: Any, *names: str, default=None):
@@ -251,6 +270,31 @@ class PickSnapshot:
         fam = market_family or cls._get(src, "market_family", "marketFamily") or "generic"
         raw_hits = cls._get(src, "h2h_hits", "h2hHits")
 
+        # Hit rate empírico (combinado o promedio home/away si viene)
+        emp_hr = cls._get(src, "empirical_hit_rate", "empiricalHitRate")
+        if emp_hr is None:
+            h_hr = cls._get(src, "home_hit_rate", "homeHitRate")
+            a_hr = cls._get(src, "away_hit_rate", "awayHitRate")
+            if h_hr is not None and a_hr is not None:
+                emp_hr = (float(h_hr) + float(a_hr)) / 2.0
+            elif h_hr is not None:
+                emp_hr = float(h_hr)
+            elif a_hr is not None:
+                emp_hr = float(a_hr)
+
+        emp_samples = cls._get(src, "hit_rate_samples", "hitRateSamples", default=0)
+        if not emp_samples:
+            h_cnt = cls._get(src, "home_matches_count", "homeMatchesCount", default=0) or 0
+            a_cnt = cls._get(src, "away_matches_count", "awayMatchesCount", default=0) or 0
+            emp_samples = (int(h_cnt) if h_cnt else 0) + (int(a_cnt) if a_cnt else 0)
+
+        # Determinar si es underdog para aplicar el umbral diferenciado
+        is_und = bool(cls._get(src, "is_underdog", "isUnderdog", default=False))
+        if not is_und:
+            odds_val = _as_float(cls._get(src, "odds"))
+            if odds_val is not None and odds_val > 2.50:
+                is_und = True
+
         return cls(
             market_family=str(fam),
             odds=_as_float(cls._get(src, "odds")),
@@ -263,6 +307,11 @@ class PickSnapshot:
             h2h_hits=int(_as_float(raw_hits)) if raw_hits is not None else None,
             h2h_samples=int(_as_float(cls._get(src, "h2h_samples", "h2hSamples", default=0)) or 0),
             selection=str(cls._get(src, "selection", default="") or ""),
+            empirical_hit_rate=_as_float(emp_hr),
+            hit_rate_samples=int(_as_float(emp_samples) or 0),
+            quality_score=_as_float(cls._get(src, "quality_score", "qualityScore")),
+            is_underdog=is_und,
+            min_edge_add=float(cls._get(src, "min_edge_add", "minEdgeAdd", default=0.0) or 0.0),
         )
 
 
@@ -418,14 +467,16 @@ def evaluate_soft_filters(
 
     if snapshot.edge is None:
         fails.add(BlockReason.EDGE_MISSING)
-    elif snapshot.edge < thresholds.min_edge_for(snapshot.market_family):
-        fails.add(BlockReason.EDGE_TOO_LOW)
-    elif snapshot.edge > thresholds.max_edge:
-        # Edge > 25% se descarta por alto riesgo a menos que la probabilidad (calibrada) sea >= 67%
-        prob_val = snapshot.prob if snapshot.prob is not None else 0.0
-        prob_pct = prob_val * 100.0 if 0.0 < prob_val <= 1.0 else prob_val
-        if prob_pct < thresholds.max_edge_high_prob_threshold:
-            fails.add(BlockReason.EDGE_TOO_HIGH)
+    else:
+        required_min_edge = thresholds.min_edge_for(snapshot.market_family) + (snapshot.min_edge_add or 0.0)
+        if snapshot.edge < required_min_edge:
+            fails.add(BlockReason.EDGE_TOO_LOW)
+        elif snapshot.edge > thresholds.max_edge:
+            # Edge > 25% se descarta por alto riesgo a menos que la probabilidad (calibrada) sea >= 67%
+            prob_val = snapshot.prob if snapshot.prob is not None else 0.0
+            prob_pct = prob_val * 100.0 if 0.0 < prob_val <= 1.0 else prob_val
+            if prob_pct < thresholds.max_edge_high_prob_threshold:
+                fails.add(BlockReason.EDGE_TOO_HIGH)
 
     if (
         snapshot.data_quality_score is not None
@@ -447,7 +498,7 @@ def evaluate_soft_filters(
     if (
         thresholds.block_on_zero_h2h
         and effective_h2h_hr is not None
-        and snapshot.h2h_samples >= 1
+        and snapshot.h2h_samples >= thresholds.min_h2h_samples_for_block
     ):
         if effective_h2h_hr == 0.0 or (snapshot.h2h_hits is not None and snapshot.h2h_hits == 0):
             fails.add(BlockReason.H2H_ZERO_HIT_RATE)
@@ -463,6 +514,24 @@ def evaluate_soft_filters(
         and snapshot.h2h_samples >= thresholds.min_h2h_samples_for_block  # nunca con n < 8
     ):
         fails.add(BlockReason.H2H_LOW_HIT_RATE)
+
+    # ── Hit Rate Empírico de Temporada (Filtro de Calidad Real) ──
+    # Si hay muestra suficiente (n >= min_empirical_samples), el pick no puede
+    # tener un hit rate ridículamente bajo (ej. 5% - 30%) que contradiga la calidad del pick.
+    if (
+        snapshot.empirical_hit_rate is not None
+        and snapshot.hit_rate_samples >= thresholds.min_empirical_samples
+        and snapshot.empirical_hit_rate < thresholds.min_empirical_hit_rate
+    ):
+        fails.add(BlockReason.EMPIRICAL_HIT_RATE_TOO_LOW)
+
+    # ── Score de Calidad Integral (Diferenciado por Categoría) ──
+    # Descarta automáticamente picks que no alcanzan el estándar de calidad
+    # (55 para estándar / valor profesional, 45 para underdogs).
+    if snapshot.quality_score is not None:
+        min_q = thresholds.min_quality_score_underdog if snapshot.is_underdog else thresholds.min_quality_score_standard
+        if snapshot.quality_score < min_q:
+            fails.add(BlockReason.QUALITY_SCORE_TOO_LOW)
 
     return frozenset(fails)
 

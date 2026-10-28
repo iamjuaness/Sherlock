@@ -900,22 +900,29 @@ function renderResults(data) {
               ? "advantage-away"
               : "";
 
-        const max = Math.max(c.homevalue, c.awayvalue) || 1;
-        const homePct = (c.homevalue / max) * 100;
-        const awayPct = (c.awayvalue / max) * 100;
+        const hVal = c.home_value ?? c.homevalue ?? null;
+        const aVal = c.away_value ?? c.awayvalue ?? null;
+        const hNum = hVal !== null ? Number(hVal) : 0;
+        const aNum = aVal !== null ? Number(aVal) : 0;
+        const max = Math.max(hNum, aNum) || 1;
+        const homePct = hVal !== null ? (hNum / max) * 100 : 0;
+        const awayPct = aVal !== null ? (aNum / max) * 100 : 0;
+
+        const hDisplay = hVal !== null ? Number(hVal).toFixed(2) : "-";
+        const aDisplay = aVal !== null ? Number(aVal).toFixed(2) : "-";
 
         return `<tr class="${cls}">
       <td style="text-align:left; color:#f8fafc; font-weight: 600;">${c.label}</td>
       <td>
         <div class="stat-bar-wrapper right">
-          <span class="stat-val">${c.homevalue.toFixed(2)}</span>
+          <span class="stat-val">${hDisplay}</span>
           <div class="stat-track"><div class="stat-fill home-fill" style="width: ${homePct}%;"></div></div>
         </div>
       </td>
       <td>
         <div class="stat-bar-wrapper left">
           <div class="stat-track"><div class="stat-fill away-fill" style="width: ${awayPct}%;"></div></div>
-          <span class="stat-val">${c.awayvalue.toFixed(2)}</span>
+          <span class="stat-val">${aDisplay}</span>
         </div>
       </td>
       <td style="font-size: 1.1rem;">${icon}</td>
@@ -949,7 +956,7 @@ function renderResults(data) {
       if (radarChart) radarChart.destroy();
       const rCtx = radarCanvas.getContext("2d");
       const maxVals = data.comparisons.map(
-        (c) => Math.max(c.home_value, c.away_value) || 1,
+        (c) => Math.max(c.home_value || 0, c.away_value || 0) || 1,
       );
 
       radarChart = new Chart(rCtx, {
@@ -960,7 +967,7 @@ function renderResults(data) {
             {
               label: data.home_name,
               data: data.comparisons.map(
-                (c, i) => (c.home_value / maxVals[i]) * 100,
+                (c, i) => ((c.home_value || 0) / maxVals[i]) * 100,
               ),
               borderColor: "#3b82f6",
               backgroundColor: "rgba(59, 130, 246, 0.25)",
@@ -973,7 +980,7 @@ function renderResults(data) {
             {
               label: data.away_name,
               data: data.comparisons.map(
-                (c, i) => (c.away_value / maxVals[i]) * 100,
+                (c, i) => ((c.away_value || 0) / maxVals[i]) * 100,
               ),
               borderColor: "#f97316",
               backgroundColor: "rgba(249, 115, 22, 0.25)",
@@ -1158,7 +1165,7 @@ function renderResults(data) {
       const bCtx = barCanvas.getContext("2d");
 
       // Math.log1p(x) es igual a Math.log(1 + x), evita el -Infinity con ceros
-      const normalize = (val) => Math.log1p(Math.max(0, val));
+      const normalize = (val) => Math.log1p(Math.max(0, val || 0));
 
       barChart = new Chart(bCtx, {
         type: "bar",
@@ -1194,7 +1201,8 @@ function renderResults(data) {
                 // Leer el valor REAL almacenado en vez del valor logarítmico
                 label: function (context) {
                   const realValue = context.dataset.realData[context.dataIndex];
-                  return ` ${context.dataset.label}: ${realValue.toFixed(2)}`;
+                  const displayVal = (realValue !== null && realValue !== undefined) ? Number(realValue).toFixed(2) : "N/A";
+                  return ` ${context.dataset.label}: ${displayVal}`;
                 },
               },
             },

@@ -1,26 +1,4827 @@
 {
+  "generated_at_utc": "2026-10-19T04:26:53.330168+00:00",
+  "source_calibration": "data\\calibration\\active.json",
+  "total_segments": 802,
+  "status_counts": {
+    "watch": 297,
+    "active": 68,
+    "reduced": 290,
+    "blocked": 147
+  },
   "segments": {
-    "league:brasileirão série b|family:shots|side:under|bucket:core": "reduced",
-    "league:brasileirão série b|family:shots|side:over|bucket:high": "reduced"
+    "family:goals|side:under|bucket:core_2_5": "blocked",
+    "family:shots|side:over|bucket:core": "blocked",
+    "family:shots|side:under|bucket:high": "blocked",
+    "league:brasileirão série b|family:cards|side:over": "blocked",
+    "league:brasileirão série b|family:cards|side:over|bucket:core_4_5": "blocked",
+    "league:brasileirão série b|family:cards|side:over|bucket:high_5_5_plus": "blocked",
+    "league:brasileirão série b|family:cards|side:under|bucket:high_5_5_plus": "blocked",
+    "league:brasileirão série b|family:double_chance|side:draw_away": "blocked",
+    "league:brasileirão série b|family:double_chance|side:draw_away|bucket:no_line": "blocked",
+    "league:brasileirão série b|family:goals|side:under|bucket:low_0_5_1_5": "blocked",
+    "league:brasileirão série b|family:result|side:home": "blocked",
+    "league:brasileirão série b|family:result|side:home|bucket:no_line": "blocked",
+    "league:brasileirão série b|family:shots|side:over|bucket:high": "blocked",
+    "league:brasileirão série b|family:shots|side:under|bucket:core": "blocked",
+    "league:bundesliga|family:goals|side:under": "blocked",
+    "league:bundesliga|family:shots": "blocked",
+    "league:bundesliga|family:shots|side:over": "blocked",
+    "league:bundesliga|family:shots|side:under": "blocked",
+    "league:campeonato brasileiro série a|family:btts|side:no": "blocked",
+    "league:campeonato brasileiro série a|family:btts|side:no|bucket:no_line": "blocked",
+    "league:campeonato brasileiro série a|family:btts|side:yes": "blocked",
+    "league:campeonato brasileiro série a|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:campeonato brasileiro série a|family:cards|side:over|bucket:low_2_5_3_5": "blocked",
+    "league:campeonato brasileiro série a|family:shots|side:over|bucket:high": "blocked",
+    "league:czech first league|family:btts": "blocked",
+    "league:czech first league|family:btts|side:no": "blocked",
+    "league:czech first league|family:btts|side:no|bucket:no_line": "blocked",
+    "league:czech first league|family:btts|side:yes": "blocked",
+    "league:czech first league|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:dfb pokal|family:double_chance": "blocked",
+    "league:dfb pokal|family:result": "blocked",
+    "league:división profesional|family:double_chance|side:draw_away": "blocked",
+    "league:división profesional|family:double_chance|side:draw_away|bucket:no_line": "blocked",
+    "league:división profesional|family:result|side:home": "blocked",
+    "league:división profesional|family:result|side:home|bucket:no_line": "blocked",
+    "league:hnl|family:corners": "blocked",
+    "league:laliga|family:btts": "blocked",
+    "league:laliga|family:btts|side:no": "blocked",
+    "league:laliga|family:btts|side:no|bucket:no_line": "blocked",
+    "league:laliga|family:btts|side:yes": "blocked",
+    "league:laliga|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:laliga|family:corners|side:under": "blocked",
+    "league:laliga|family:goals|side:over": "blocked",
+    "league:laliga|family:shots|side:under": "blocked",
+    "league:liga 1 te apuesto|family:corners|side:under": "blocked",
+    "league:liga 1 te apuesto|family:goals|side:over": "blocked",
+    "league:liga de primera|family:btts": "blocked",
+    "league:liga de primera|family:btts|side:no": "blocked",
+    "league:liga de primera|family:btts|side:no|bucket:no_line": "blocked",
+    "league:liga de primera|family:btts|side:yes": "blocked",
+    "league:liga de primera|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:liga de primera|family:corners|side:over": "blocked",
+    "league:liga de primera|family:corners|side:under": "blocked",
+    "league:liga de primera|family:double_chance|side:home_draw": "blocked",
+    "league:liga de primera|family:double_chance|side:home_draw|bucket:no_line": "blocked",
+    "league:liga de primera|family:result|side:away": "blocked",
+    "league:liga de primera|family:result|side:away|bucket:no_line": "blocked",
+    "league:liga mx, apertura|family:btts|side:no": "blocked",
+    "league:liga mx, apertura|family:btts|side:no|bucket:no_line": "blocked",
+    "league:liga mx, apertura|family:btts|side:yes": "blocked",
+    "league:liga mx, apertura|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:liga mx, apertura|family:shots|side:over|bucket:high": "blocked",
+    "league:liga portugal betclic|family:double_chance|side:home_away": "blocked",
+    "league:liga portugal betclic|family:double_chance|side:home_away|bucket:no_line": "blocked",
+    "league:liga profesional de fútbol|family:result|side:away": "blocked",
+    "league:liga profesional de fútbol|family:result|side:away|bucket:no_line": "blocked",
+    "league:liga profesional de fútbol|family:shots_target|side:under|bucket:core_7_5_8_5": "blocked",
+    "league:liga profesional de fútbol|family:shots|side:over|bucket:high": "blocked",
+    "league:ligapro serie a|family:double_chance|side:draw_away": "blocked",
+    "league:ligapro serie a|family:double_chance|side:draw_away|bucket:no_line": "blocked",
+    "league:ligue 1|family:corners": "blocked",
+    "league:ligue 1|family:shots|side:under": "blocked",
+    "league:ligue 1|family:shots|side:under|bucket:low": "blocked",
+    "league:mls|family:double_chance|side:home_draw": "blocked",
+    "league:mls|family:double_chance|side:home_draw|bucket:no_line": "blocked",
+    "league:mls|family:goals|side:over|bucket:extreme_4_plus": "blocked",
+    "league:mls|family:goals|side:over|bucket:high_3_5": "blocked",
+    "league:premier league|family:btts|side:no": "blocked",
+    "league:premier league|family:btts|side:no|bucket:no_line": "blocked",
+    "league:premier league|family:btts|side:yes": "blocked",
+    "league:premier league|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:premier league|family:cards|side:under": "blocked",
+    "league:premier league|family:corners|side:under": "blocked",
+    "league:premier league|family:shots|side:over": "blocked",
+    "league:premier league|family:shots|side:over|bucket:low": "blocked",
+    "league:premier league|family:shots|side:under": "blocked",
+    "league:premier league|family:shots|side:under|bucket:low": "blocked",
+    "league:primera a|family:btts": "blocked",
+    "league:primera a|family:btts|side:no": "blocked",
+    "league:primera a|family:btts|side:no|bucket:no_line": "blocked",
+    "league:primera a|family:btts|side:yes": "blocked",
+    "league:primera a|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:primera a|family:corners|side:over|bucket:core": "blocked",
+    "league:primera a|family:double_chance|side:home_away": "blocked",
+    "league:primera a|family:double_chance|side:home_away|bucket:no_line": "blocked",
+    "league:primera a|family:goals|side:under|bucket:core_2_5": "blocked",
+    "league:primera división|family:btts": "blocked",
+    "league:primera nacional|family:btts": "blocked",
+    "league:primera nacional|family:corners": "blocked",
+    "league:pro league|family:btts": "blocked",
+    "league:pro league|family:btts|side:no": "blocked",
+    "league:pro league|family:btts|side:no|bucket:no_line": "blocked",
+    "league:pro league|family:btts|side:yes": "blocked",
+    "league:pro league|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:pro league|family:cards|side:under": "blocked",
+    "league:pro league|family:corners|side:under": "blocked",
+    "league:pro league|family:double_chance|side:draw_away": "blocked",
+    "league:pro league|family:double_chance|side:draw_away|bucket:no_line": "blocked",
+    "league:pro league|family:result|side:home": "blocked",
+    "league:pro league|family:result|side:home|bucket:no_line": "blocked",
+    "league:saudi pro league|family:btts": "blocked",
+    "league:saudi pro league|family:btts|side:no": "blocked",
+    "league:saudi pro league|family:btts|side:no|bucket:no_line": "blocked",
+    "league:saudi pro league|family:btts|side:yes": "blocked",
+    "league:saudi pro league|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:saudi pro league|family:cards|side:under": "blocked",
+    "league:saudi pro league|family:goals|side:over": "blocked",
+    "league:saudi pro league|family:result|side:home": "blocked",
+    "league:saudi pro league|family:result|side:home|bucket:no_line": "blocked",
+    "league:scottish premiership|family:btts": "blocked",
+    "league:scottish premiership|family:shots": "blocked",
+    "league:scottish premiership|family:shots|side:over": "blocked",
+    "league:serie a|family:corners|side:under": "blocked",
+    "league:serie a|family:goals|side:over": "blocked",
+    "league:serie a|family:shots|side:over": "blocked",
+    "league:serie a|family:shots|side:over|bucket:low": "blocked",
+    "league:serie a|family:shots|side:under": "blocked",
+    "league:uefa champions league|family:cards": "blocked",
+    "league:uefa champions league|family:corners": "blocked",
+    "league:uefa champions league|family:double_chance": "blocked",
+    "league:uefa champions league|family:goals": "blocked",
+    "league:uefa champions league|family:shots": "blocked",
+    "league:uefa europa league|family:corners": "blocked",
+    "league:uefa europa league|family:shots": "blocked",
+    "league:uefa europa league|family:shots|side:under": "blocked",
+    "league:vriendenloterij eredivisie|family:btts|side:no": "blocked",
+    "league:vriendenloterij eredivisie|family:btts|side:no|bucket:no_line": "blocked",
+    "league:vriendenloterij eredivisie|family:btts|side:yes": "blocked",
+    "league:vriendenloterij eredivisie|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_away": "blocked",
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_away|bucket:no_line": "blocked",
+    "league:vriendenloterij eredivisie|family:shots": "blocked",
+    "league:vriendenloterij eredivisie|family:shots|side:over": "blocked",
+    "league:vriendenloterij eredivisie|family:shots|side:over|bucket:high": "blocked",
+    "league:vriendenloterij eredivisie|family:shots|side:over|bucket:low": "blocked",
+    "league:vriendenloterij eredivisie|family:shots|side:under": "blocked",
+    "league:vriendenloterij eredivisie|family:shots|side:under|bucket:low": "blocked",
+    "family:cards|side:over|bucket:core_4_5": "reduced",
+    "family:corners|side:under|bucket:low": "reduced",
+    "family:goals|side:over|bucket:high_3_5": "reduced",
+    "family:shots|side:over|bucket:high": "reduced",
+    "family:shots|side:under|bucket:core": "reduced",
+    "league:2. bundesliga|family:btts": "reduced",
+    "league:2. bundesliga|family:corners": "reduced",
+    "league:2. bundesliga|family:goals": "reduced",
+    "league:brasileirão série b|family:btts": "reduced",
+    "league:brasileirão série b|family:cards|side:under": "reduced",
+    "league:brasileirão série b|family:goals|side:over|bucket:low_0_5_1_5": "reduced",
+    "league:brasileirão série b|family:goals|side:under": "reduced",
+    "league:brasileirão série b|family:shots|side:under": "reduced",
+    "league:brasileirão série b|family:shots|side:under|bucket:low": "reduced",
+    "league:bundesliga|family:btts": "reduced",
+    "league:bundesliga|family:btts|side:no": "reduced",
+    "league:bundesliga|family:btts|side:no|bucket:no_line": "reduced",
+    "league:bundesliga|family:btts|side:yes": "reduced",
+    "league:bundesliga|family:btts|side:yes|bucket:no_line": "reduced",
+    "league:bundesliga|family:corners": "reduced",
+    "league:bundesliga|family:double_chance|side:draw_away": "reduced",
+    "league:bundesliga|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:bundesliga|family:double_chance|side:home_away": "reduced",
+    "league:bundesliga|family:double_chance|side:home_away|bucket:no_line": "reduced",
+    "league:bundesliga|family:double_chance|side:home_draw": "reduced",
+    "league:bundesliga|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:bundesliga|family:goals|side:over": "reduced",
+    "league:bundesliga|family:result|side:draw": "reduced",
+    "league:bundesliga|family:result|side:draw|bucket:no_line": "reduced",
+    "league:bundesliga|family:result|side:home": "reduced",
+    "league:bundesliga|family:result|side:home|bucket:no_line": "reduced",
+    "league:campeonato brasileiro série a|family:cards|side:over": "reduced",
+    "league:campeonato brasileiro série a|family:cards|side:under|bucket:high_5_5_plus": "reduced",
+    "league:campeonato brasileiro série a|family:double_chance|side:draw_away": "reduced",
+    "league:campeonato brasileiro série a|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:campeonato brasileiro série a|family:double_chance|side:home_away": "reduced",
+    "league:campeonato brasileiro série a|family:double_chance|side:home_away|bucket:no_line": "reduced",
+    "league:campeonato brasileiro série a|family:double_chance|side:home_draw": "reduced",
+    "league:campeonato brasileiro série a|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:campeonato brasileiro série a|family:result|side:away": "reduced",
+    "league:campeonato brasileiro série a|family:result|side:away|bucket:no_line": "reduced",
+    "league:campeonato brasileiro série a|family:result|side:home": "reduced",
+    "league:campeonato brasileiro série a|family:result|side:home|bucket:no_line": "reduced",
+    "league:campeonato brasileiro série a|family:shots|side:over": "reduced",
+    "league:campeonato brasileiro série a|family:shots|side:under|bucket:core": "reduced",
+    "league:campeonato brasileiro série a|family:shots|side:under|bucket:low": "reduced",
+    "league:canadian premier league|family:btts": "reduced",
+    "league:canadian premier league|family:goals": "reduced",
+    "league:conmebol libertadores|family:double_chance": "reduced",
+    "league:conmebol libertadores|family:result": "reduced",
+    "league:conmebol sudamericana|family:btts": "reduced",
+    "league:conmebol sudamericana|family:cards": "reduced",
+    "league:conmebol sudamericana|family:shots": "reduced",
+    "league:czech first league|family:cards|side:under": "reduced",
+    "league:czech first league|family:corners|side:under": "reduced",
+    "league:czech first league|family:double_chance|side:draw_away": "reduced",
+    "league:czech first league|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:czech first league|family:double_chance|side:home_draw": "reduced",
+    "league:czech first league|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:czech first league|family:goals|side:over": "reduced",
+    "league:czech first league|family:goals|side:under": "reduced",
+    "league:czech first league|family:result": "reduced",
+    "league:czech first league|family:result|side:away": "reduced",
+    "league:czech first league|family:result|side:away|bucket:no_line": "reduced",
+    "league:czech first league|family:result|side:home": "reduced",
+    "league:czech first league|family:result|side:home|bucket:no_line": "reduced",
+    "league:czech first league|family:shots|side:over|bucket:high": "reduced",
+    "league:danish superliga|family:double_chance": "reduced",
+    "league:dfb pokal": "reduced",
+    "league:dfb pokal|family:btts": "reduced",
+    "league:dfb pokal|family:goals": "reduced",
+    "league:división profesional|family:btts": "reduced",
+    "league:división profesional|family:btts|side:no": "reduced",
+    "league:división profesional|family:btts|side:no|bucket:no_line": "reduced",
+    "league:división profesional|family:corners": "reduced",
+    "league:división profesional|family:double_chance|side:home_draw": "reduced",
+    "league:división profesional|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:división profesional|family:goals|side:under": "reduced",
+    "league:división profesional|family:result|side:away": "reduced",
+    "league:división profesional|family:result|side:away|bucket:no_line": "reduced",
+    "league:egyptian premier league|family:double_chance": "reduced",
+    "league:egyptian premier league|family:result": "reduced",
+    "league:hnl|family:btts": "reduced",
+    "league:hnl|family:double_chance": "reduced",
+    "league:laliga|family:cards|side:over": "reduced",
+    "league:laliga|family:corners": "reduced",
+    "league:laliga|family:corners|side:over": "reduced",
+    "league:laliga|family:double_chance|side:draw_away": "reduced",
+    "league:laliga|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:laliga|family:double_chance|side:home_draw": "reduced",
+    "league:laliga|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:laliga|family:goals": "reduced",
+    "league:laliga|family:goals|side:under": "reduced",
+    "league:laliga|family:result|side:away": "reduced",
+    "league:laliga|family:result|side:away|bucket:no_line": "reduced",
+    "league:laliga|family:result|side:home": "reduced",
+    "league:laliga|family:result|side:home|bucket:no_line": "reduced",
+    "league:laliga|family:shots": "reduced",
+    "league:laliga|family:shots|side:over|bucket:low": "reduced",
+    "league:laliga|family:shots|side:under|bucket:low": "reduced",
+    "league:liga 1 te apuesto|family:btts|side:yes": "reduced",
+    "league:liga 1 te apuesto|family:btts|side:yes|bucket:no_line": "reduced",
+    "league:liga 1 te apuesto|family:cards": "reduced",
+    "league:liga 1 te apuesto|family:cards|side:over": "reduced",
+    "league:liga 1 te apuesto|family:cards|side:under": "reduced",
+    "league:liga 1 te apuesto|family:cards|side:under|bucket:high_5_5_plus": "reduced",
+    "league:liga 1 te apuesto|family:corners": "reduced",
+    "league:liga 1 te apuesto|family:corners|side:over": "reduced",
+    "league:liga 1 te apuesto|family:double_chance|side:home_draw": "reduced",
+    "league:liga 1 te apuesto|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:liga 1 te apuesto|family:goals|side:under": "reduced",
+    "league:liga 1 te apuesto|family:result|side:away": "reduced",
+    "league:liga 1 te apuesto|family:result|side:away|bucket:no_line": "reduced",
+    "league:liga 1 te apuesto|family:result|side:home": "reduced",
+    "league:liga 1 te apuesto|family:result|side:home|bucket:no_line": "reduced",
+    "league:liga de primera|family:cards|side:over": "reduced",
+    "league:liga de primera|family:corners": "reduced",
+    "league:liga de primera|family:double_chance|side:home_away": "reduced",
+    "league:liga de primera|family:double_chance|side:home_away|bucket:no_line": "reduced",
+    "league:liga de primera|family:goals|side:over": "reduced",
+    "league:liga de primera|family:goals|side:under": "reduced",
+    "league:liga de primera|family:result|side:draw": "reduced",
+    "league:liga de primera|family:result|side:draw|bucket:no_line": "reduced",
+    "league:liga de primera|family:result|side:home": "reduced",
+    "league:liga de primera|family:result|side:home|bucket:no_line": "reduced",
+    "league:liga mx, apertura|family:cards": "reduced",
+    "league:liga mx, apertura|family:cards|side:over": "reduced",
+    "league:liga mx, apertura|family:corners|side:over": "reduced",
+    "league:liga mx, apertura|family:corners|side:under": "reduced",
+    "league:liga mx, apertura|family:double_chance|side:draw_away": "reduced",
+    "league:liga mx, apertura|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:liga mx, apertura|family:double_chance|side:home_away": "reduced",
+    "league:liga mx, apertura|family:double_chance|side:home_away|bucket:no_line": "reduced",
+    "league:liga mx, apertura|family:double_chance|side:home_draw": "reduced",
+    "league:liga mx, apertura|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:liga mx, apertura|family:goals": "reduced",
+    "league:liga mx, apertura|family:goals|side:over": "reduced",
+    "league:liga mx, apertura|family:result|side:away": "reduced",
+    "league:liga mx, apertura|family:result|side:away|bucket:no_line": "reduced",
+    "league:liga mx, apertura|family:result|side:home": "reduced",
+    "league:liga mx, apertura|family:result|side:home|bucket:no_line": "reduced",
+    "league:liga mx, apertura|family:shots|side:over": "reduced",
+    "league:liga mx, apertura|family:shots|side:over|bucket:low": "reduced",
+    "league:liga mx, apertura|family:shots|side:under|bucket:low": "reduced",
+    "league:liga portugal betclic|family:btts": "reduced",
+    "league:liga portugal betclic|family:btts|side:no": "reduced",
+    "league:liga portugal betclic|family:btts|side:no|bucket:no_line": "reduced",
+    "league:liga portugal betclic|family:btts|side:yes": "reduced",
+    "league:liga portugal betclic|family:btts|side:yes|bucket:no_line": "reduced",
+    "league:liga portugal betclic|family:cards": "reduced",
+    "league:liga portugal betclic|family:corners": "reduced",
+    "league:liga portugal betclic|family:double_chance": "reduced",
+    "league:liga portugal betclic|family:goals|side:over": "reduced",
+    "league:liga portugal betclic|family:goals|side:under": "reduced",
+    "league:liga portugal betclic|family:result": "reduced",
+    "league:liga portugal betclic|family:result|side:draw": "reduced",
+    "league:liga portugal betclic|family:result|side:draw|bucket:no_line": "reduced",
+    "league:liga portugal betclic|family:shots|side:over": "reduced",
+    "league:liga portugal betclic|family:shots|side:under|bucket:low": "reduced",
+    "league:liga profesional de fútbol|family:btts": "reduced",
+    "league:liga profesional de fútbol|family:btts|side:no": "reduced",
+    "league:liga profesional de fútbol|family:btts|side:no|bucket:no_line": "reduced",
+    "league:liga profesional de fútbol|family:btts|side:yes": "reduced",
+    "league:liga profesional de fútbol|family:btts|side:yes|bucket:no_line": "reduced",
+    "league:liga profesional de fútbol|family:cards|side:over|bucket:core_4_5": "reduced",
+    "league:liga profesional de fútbol|family:cards|side:over|bucket:high_5_5_plus": "reduced",
+    "league:liga profesional de fútbol|family:cards|side:under": "reduced",
+    "league:liga profesional de fútbol|family:cards|side:under|bucket:high_5_5_plus": "reduced",
+    "league:liga profesional de fútbol|family:corners|side:over|bucket:low": "reduced",
+    "league:liga profesional de fútbol|family:corners|side:under|bucket:low": "reduced",
+    "league:liga profesional de fútbol|family:goals|side:under": "reduced",
+    "league:liga profesional de fútbol|family:goals|side:under|bucket:low_0_5_1_5": "reduced",
+    "league:liga profesional de fútbol|family:shots|side:over": "reduced",
+    "league:liga profesional de fútbol|family:shots|side:under": "reduced",
+    "league:liga profesional de fútbol|family:shots|side:under|bucket:low": "reduced",
+    "league:ligapro serie a|family:btts|side:no": "reduced",
+    "league:ligapro serie a|family:btts|side:no|bucket:no_line": "reduced",
+    "league:ligapro serie a|family:btts|side:yes": "reduced",
+    "league:ligapro serie a|family:btts|side:yes|bucket:no_line": "reduced",
+    "league:ligapro serie a|family:corners|side:over": "reduced",
+    "league:ligapro serie a|family:double_chance|side:home_draw": "reduced",
+    "league:ligapro serie a|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:ligapro serie a|family:result|side:home": "reduced",
+    "league:ligapro serie a|family:result|side:home|bucket:no_line": "reduced",
+    "league:ligue 1|family:shots": "reduced",
+    "league:ligue 1|family:shots|side:over": "reduced",
+    "league:mls|family:cards|side:over": "reduced",
+    "league:mls|family:cards|side:over|bucket:core_4_5": "reduced",
+    "league:mls|family:cards|side:over|bucket:high_3_5": "reduced",
+    "league:mls|family:cards|side:over|bucket:low_2_5_3_5": "reduced",
+    "league:mls|family:cards|side:under|bucket:core_4_5": "reduced",
+    "league:mls|family:result|side:away": "reduced",
+    "league:mls|family:result|side:away|bucket:no_line": "reduced",
+    "league:premier league|family:cards": "reduced",
+    "league:premier league|family:corners": "reduced",
+    "league:premier league|family:double_chance|side:draw_away": "reduced",
+    "league:premier league|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:premier league|family:double_chance|side:home_draw": "reduced",
+    "league:premier league|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:premier league|family:goals|side:over": "reduced",
+    "league:premier league|family:goals|side:under": "reduced",
+    "league:premier league|family:result|side:away": "reduced",
+    "league:premier league|family:result|side:away|bucket:no_line": "reduced",
+    "league:premier league|family:shots": "reduced",
+    "league:premier league|family:shots|side:over|bucket:high": "reduced",
+    "league:primera a|family:cards|side:over": "reduced",
+    "league:primera a|family:cards|side:over|bucket:high_5_5_plus": "reduced",
+    "league:primera a|family:cards|side:under": "reduced",
+    "league:primera a|family:cards|side:under|bucket:high_5_5_plus": "reduced",
+    "league:primera a|family:corners": "reduced",
+    "league:primera a|family:corners|side:over": "reduced",
+    "league:primera a|family:corners|side:under": "reduced",
+    "league:primera a|family:corners|side:under|bucket:low": "reduced",
+    "league:primera a|family:double_chance|side:draw_away": "reduced",
+    "league:primera a|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:primera a|family:goals|side:over|bucket:low_0_5_1_5": "reduced",
+    "league:primera a|family:goals|side:under": "reduced",
+    "league:primera a|family:result|side:draw": "reduced",
+    "league:primera a|family:result|side:draw|bucket:no_line": "reduced",
+    "league:primera nacional|family:double_chance": "reduced",
+    "league:pro league|family:cards|side:over": "reduced",
+    "league:pro league|family:corners": "reduced",
+    "league:pro league|family:double_chance": "reduced",
+    "league:pro league|family:double_chance|side:home_away": "reduced",
+    "league:pro league|family:double_chance|side:home_away|bucket:no_line": "reduced",
+    "league:pro league|family:double_chance|side:home_draw": "reduced",
+    "league:pro league|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:pro league|family:goals|side:over": "reduced",
+    "league:pro league|family:result|side:away": "reduced",
+    "league:pro league|family:result|side:away|bucket:no_line": "reduced",
+    "league:pro league|family:result|side:draw": "reduced",
+    "league:pro league|family:result|side:draw|bucket:no_line": "reduced",
+    "league:pro league|family:shots|side:over|bucket:high": "reduced",
+    "league:pro league|family:shots|side:over|bucket:low": "reduced",
+    "league:pro league|family:shots|side:under": "reduced",
+    "league:pro league|family:shots|side:under|bucket:low": "reduced",
+    "league:saudi pro league|family:cards|side:over": "reduced",
+    "league:saudi pro league|family:corners|side:under": "reduced",
+    "league:saudi pro league|family:double_chance|side:draw_away": "reduced",
+    "league:saudi pro league|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:saudi pro league|family:double_chance|side:home_away": "reduced",
+    "league:saudi pro league|family:double_chance|side:home_away|bucket:no_line": "reduced",
+    "league:saudi pro league|family:double_chance|side:home_draw": "reduced",
+    "league:saudi pro league|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:saudi pro league|family:goals": "reduced",
+    "league:saudi pro league|family:result|side:away": "reduced",
+    "league:saudi pro league|family:result|side:away|bucket:no_line": "reduced",
+    "league:saudi pro league|family:result|side:draw": "reduced",
+    "league:saudi pro league|family:result|side:draw|bucket:no_line": "reduced",
+    "league:saudi pro league|family:shots": "reduced",
+    "league:saudi pro league|family:shots|side:over": "reduced",
+    "league:saudi pro league|family:shots|side:over|bucket:low": "reduced",
+    "league:saudi pro league|family:shots|side:under|bucket:low": "reduced",
+    "league:scottish premiership|family:cards": "reduced",
+    "league:scottish premiership|family:corners": "reduced",
+    "league:scottish premiership|family:shots|side:under": "reduced",
+    "league:scottish premiership|family:shots|side:under|bucket:low": "reduced",
+    "league:serie a|family:btts": "reduced",
+    "league:serie a|family:btts|side:no": "reduced",
+    "league:serie a|family:btts|side:no|bucket:no_line": "reduced",
+    "league:serie a|family:btts|side:yes": "reduced",
+    "league:serie a|family:btts|side:yes|bucket:no_line": "reduced",
+    "league:serie a|family:cards|side:over": "reduced",
+    "league:serie a|family:corners": "reduced",
+    "league:serie a|family:double_chance|side:draw_away": "reduced",
+    "league:serie a|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:serie a|family:double_chance|side:home_draw": "reduced",
+    "league:serie a|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:serie a|family:result|side:away": "reduced",
+    "league:serie a|family:result|side:away|bucket:no_line": "reduced",
+    "league:serie a|family:result|side:home": "reduced",
+    "league:serie a|family:result|side:home|bucket:no_line": "reduced",
+    "league:serie a|family:shots|side:under|bucket:low": "reduced",
+    "league:uefa champions league": "reduced",
+    "league:uefa champions league|family:result": "reduced",
+    "league:uefa europa league|family:cards": "reduced",
+    "league:uefa europa league|family:goals": "reduced",
+    "league:uefa europa league|family:result": "reduced",
+    "league:vriendenloterij eredivisie|family:cards|side:over": "reduced",
+    "league:vriendenloterij eredivisie|family:double_chance|side:draw_away": "reduced",
+    "league:vriendenloterij eredivisie|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_draw": "reduced",
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_draw|bucket:no_line": "reduced",
+    "league:vriendenloterij eredivisie|family:goals|side:under": "reduced",
+    "league:vriendenloterij eredivisie|family:result|side:away": "reduced",
+    "league:vriendenloterij eredivisie|family:result|side:away|bucket:no_line": "reduced",
+    "league:vriendenloterij eredivisie|family:result|side:draw": "reduced",
+    "league:vriendenloterij eredivisie|family:result|side:draw|bucket:no_line": "reduced",
+    "league:vriendenloterij eredivisie|family:result|side:home": "reduced",
+    "league:vriendenloterij eredivisie|family:result|side:home|bucket:no_line": "reduced",
+    "family:btts": "watch",
+    "family:btts|side:no": "watch",
+    "family:btts|side:no|bucket:no_line": "watch",
+    "family:btts|side:yes": "watch",
+    "family:btts|side:yes|bucket:no_line": "watch",
+    "family:cards|side:over": "watch",
+    "family:cards|side:over|bucket:high_5_5_plus": "watch",
+    "family:cards|side:under|bucket:core_4_5": "watch",
+    "family:cards|side:under|bucket:low_2_5_3_5": "watch",
+    "family:corners": "watch",
+    "family:corners|side:over": "watch",
+    "family:corners|side:over|bucket:core": "watch",
+    "family:corners|side:over|bucket:high": "watch",
+    "family:corners|side:over|bucket:low": "watch",
+    "family:corners|side:under": "watch",
+    "family:corners|side:under|bucket:core": "watch",
+    "family:double_chance|side:draw_away": "watch",
+    "family:double_chance|side:draw_away|bucket:no_line": "watch",
+    "family:double_chance|side:home_draw": "watch",
+    "family:double_chance|side:home_draw|bucket:no_line": "watch",
+    "family:double_chance|side:over": "watch",
+    "family:double_chance|side:over|bucket:no_line": "watch",
+    "family:double_chance|side:under": "watch",
+    "family:double_chance|side:under|bucket:no_line": "watch",
+    "family:goals|side:over|bucket:core_2_5": "watch",
+    "family:goals|side:over|bucket:extreme_4_plus": "watch",
+    "family:goals|side:under": "watch",
+    "family:goals|side:under|bucket:high_3_5": "watch",
+    "family:result|side:home": "watch",
+    "family:result|side:home|bucket:no_line": "watch",
+    "family:shots": "watch",
+    "family:shots|side:over": "watch",
+    "family:shots|side:over|bucket:low": "watch",
+    "family:shots|side:under": "watch",
+    "family:shots|side:under|bucket:low": "watch",
+    "league:2. bundesliga|family:double_chance": "watch",
+    "league:2. bundesliga|family:result": "watch",
+    "league:brasileirão série b|family:btts|side:no": "watch",
+    "league:brasileirão série b|family:btts|side:no|bucket:no_line": "watch",
+    "league:brasileirão série b|family:btts|side:yes": "watch",
+    "league:brasileirão série b|family:btts|side:yes|bucket:no_line": "watch",
+    "league:brasileirão série b|family:cards": "watch",
+    "league:brasileirão série b|family:corners": "watch",
+    "league:brasileirão série b|family:corners|side:over": "watch",
+    "league:brasileirão série b|family:corners|side:under": "watch",
+    "league:brasileirão série b|family:double_chance|side:home_away": "watch",
+    "league:brasileirão série b|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:brasileirão série b|family:double_chance|side:home_draw": "watch",
+    "league:brasileirão série b|family:double_chance|side:home_draw|bucket:no_line": "watch",
+    "league:brasileirão série b|family:goals": "watch",
+    "league:brasileirão série b|family:goals|side:over": "watch",
+    "league:brasileirão série b|family:result": "watch",
+    "league:brasileirão série b|family:result|side:away": "watch",
+    "league:brasileirão série b|family:result|side:away|bucket:no_line": "watch",
+    "league:brasileirão série b|family:result|side:draw": "watch",
+    "league:brasileirão série b|family:result|side:draw|bucket:no_line": "watch",
+    "league:brasileirão série b|family:shots": "watch",
+    "league:brasileirão série b|family:shots|side:over": "watch",
+    "league:brasileirão série b|family:shots|side:over|bucket:low": "watch",
+    "league:bundesliga": "watch",
+    "league:bundesliga|family:cards": "watch",
+    "league:bundesliga|family:cards|side:over": "watch",
+    "league:bundesliga|family:cards|side:under": "watch",
+    "league:bundesliga|family:double_chance": "watch",
+    "league:bundesliga|family:goals": "watch",
+    "league:bundesliga|family:result": "watch",
+    "league:bundesliga|family:result|side:away": "watch",
+    "league:bundesliga|family:result|side:away|bucket:no_line": "watch",
+    "league:campeonato brasileiro série a|family:btts": "watch",
+    "league:campeonato brasileiro série a|family:cards": "watch",
+    "league:campeonato brasileiro série a|family:cards|side:under": "watch",
+    "league:campeonato brasileiro série a|family:corners": "watch",
+    "league:campeonato brasileiro série a|family:corners|side:over": "watch",
+    "league:campeonato brasileiro série a|family:corners|side:under": "watch",
+    "league:campeonato brasileiro série a|family:goals|side:over": "watch",
+    "league:campeonato brasileiro série a|family:goals|side:under": "watch",
+    "league:campeonato brasileiro série a|family:result|side:draw": "watch",
+    "league:campeonato brasileiro série a|family:result|side:draw|bucket:no_line": "watch",
+    "league:campeonato brasileiro série a|family:shots": "watch",
+    "league:campeonato brasileiro série a|family:shots|side:over|bucket:low": "watch",
+    "league:campeonato brasileiro série a|family:shots|side:under": "watch",
+    "league:canadian premier league|family:corners": "watch",
+    "league:canadian premier league|family:double_chance": "watch",
+    "league:canadian premier league|family:result": "watch",
+    "league:conmebol libertadores|family:shots": "watch",
+    "league:conmebol sudamericana": "watch",
+    "league:conmebol sudamericana|family:double_chance": "watch",
+    "league:conmebol sudamericana|family:goals": "watch",
+    "league:conmebol sudamericana|family:result": "watch",
+    "league:coppa italia": "watch",
+    "league:czech first league|family:cards": "watch",
+    "league:czech first league|family:cards|side:over": "watch",
+    "league:czech first league|family:corners": "watch",
+    "league:czech first league|family:double_chance|side:home_away": "watch",
+    "league:czech first league|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:czech first league|family:goals": "watch",
+    "league:czech first league|family:result|side:draw": "watch",
+    "league:czech first league|family:result|side:draw|bucket:no_line": "watch",
+    "league:czech first league|family:shots": "watch",
+    "league:czech first league|family:shots|side:over": "watch",
+    "league:czech first league|family:shots|side:over|bucket:low": "watch",
+    "league:czech first league|family:shots|side:under": "watch",
+    "league:czech first league|family:shots|side:under|bucket:low": "watch",
+    "league:danish superliga": "watch",
+    "league:danish superliga|family:result": "watch",
+    "league:danish superliga|family:shots": "watch",
+    "league:división profesional|family:btts|side:yes": "watch",
+    "league:división profesional|family:btts|side:yes|bucket:no_line": "watch",
+    "league:división profesional|family:corners|side:over": "watch",
+    "league:división profesional|family:corners|side:over|bucket:core": "watch",
+    "league:división profesional|family:corners|side:under": "watch",
+    "league:división profesional|family:corners|side:under|bucket:core": "watch",
+    "league:división profesional|family:double_chance": "watch",
+    "league:división profesional|family:double_chance|side:home_away": "watch",
+    "league:división profesional|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:división profesional|family:goals": "watch",
+    "league:división profesional|family:goals|side:over": "watch",
+    "league:división profesional|family:result": "watch",
+    "league:división profesional|family:result|side:draw": "watch",
+    "league:división profesional|family:result|side:draw|bucket:no_line": "watch",
+    "league:egyptian premier league": "watch",
+    "league:hnl|family:goals": "watch",
+    "league:hnl|family:result": "watch",
+    "league:laliga": "watch",
+    "league:laliga 2": "watch",
+    "league:laliga 2|family:double_chance": "watch",
+    "league:laliga 2|family:result": "watch",
+    "league:laliga|family:cards": "watch",
+    "league:laliga|family:cards|side:under": "watch",
+    "league:laliga|family:double_chance": "watch",
+    "league:laliga|family:double_chance|side:home_away": "watch",
+    "league:laliga|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:laliga|family:result": "watch",
+    "league:laliga|family:result|side:draw": "watch",
+    "league:laliga|family:result|side:draw|bucket:no_line": "watch",
+    "league:laliga|family:shots|side:over": "watch",
+    "league:liga 1 te apuesto|family:btts": "watch",
+    "league:liga 1 te apuesto|family:btts|side:no": "watch",
+    "league:liga 1 te apuesto|family:btts|side:no|bucket:no_line": "watch",
+    "league:liga 1 te apuesto|family:double_chance|side:draw_away": "watch",
+    "league:liga 1 te apuesto|family:double_chance|side:draw_away|bucket:no_line": "watch",
+    "league:liga 1 te apuesto|family:double_chance|side:home_away": "watch",
+    "league:liga 1 te apuesto|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:liga 1 te apuesto|family:goals": "watch",
+    "league:liga 1 te apuesto|family:result": "watch",
+    "league:liga 1 te apuesto|family:result|side:draw": "watch",
+    "league:liga 1 te apuesto|family:result|side:draw|bucket:no_line": "watch",
+    "league:liga de primera|family:cards|side:under": "watch",
+    "league:liga de primera|family:cards|side:under|bucket:high_5_5_plus": "watch",
+    "league:liga de primera|family:double_chance": "watch",
+    "league:liga de primera|family:double_chance|side:draw_away": "watch",
+    "league:liga de primera|family:double_chance|side:draw_away|bucket:no_line": "watch",
+    "league:liga de primera|family:goals": "watch",
+    "league:liga de primera|family:result": "watch",
+    "league:liga mx, apertura|family:btts": "watch",
+    "league:liga mx, apertura|family:cards|side:under": "watch",
+    "league:liga mx, apertura|family:corners": "watch",
+    "league:liga mx, apertura|family:goals|side:under": "watch",
+    "league:liga mx, apertura|family:result": "watch",
+    "league:liga mx, apertura|family:result|side:draw": "watch",
+    "league:liga mx, apertura|family:result|side:draw|bucket:no_line": "watch",
+    "league:liga mx, apertura|family:shots": "watch",
+    "league:liga mx, apertura|family:shots|side:under": "watch",
+    "league:liga portugal betclic|family:double_chance|side:draw_away": "watch",
+    "league:liga portugal betclic|family:double_chance|side:draw_away|bucket:no_line": "watch",
+    "league:liga portugal betclic|family:double_chance|side:home_draw": "watch",
+    "league:liga portugal betclic|family:double_chance|side:home_draw|bucket:no_line": "watch",
+    "league:liga portugal betclic|family:goals": "watch",
+    "league:liga portugal betclic|family:result|side:away": "watch",
+    "league:liga portugal betclic|family:result|side:away|bucket:no_line": "watch",
+    "league:liga portugal betclic|family:result|side:home": "watch",
+    "league:liga portugal betclic|family:result|side:home|bucket:no_line": "watch",
+    "league:liga portugal betclic|family:shots": "watch",
+    "league:liga portugal betclic|family:shots|side:under": "watch",
+    "league:liga profesional de fútbol|family:cards|side:over": "watch",
+    "league:liga profesional de fútbol|family:corners": "watch",
+    "league:liga profesional de fútbol|family:corners|side:over": "watch",
+    "league:liga profesional de fútbol|family:corners|side:under": "watch",
+    "league:liga profesional de fútbol|family:double_chance|side:draw_away": "watch",
+    "league:liga profesional de fútbol|family:double_chance|side:draw_away|bucket:no_line": "watch",
+    "league:liga profesional de fútbol|family:double_chance|side:home_away": "watch",
+    "league:liga profesional de fútbol|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:liga profesional de fútbol|family:double_chance|side:home_draw": "watch",
+    "league:liga profesional de fútbol|family:double_chance|side:home_draw|bucket:no_line": "watch",
+    "league:liga profesional de fútbol|family:goals": "watch",
+    "league:liga profesional de fútbol|family:result|side:draw": "watch",
+    "league:liga profesional de fútbol|family:result|side:draw|bucket:no_line": "watch",
+    "league:liga profesional de fútbol|family:result|side:home": "watch",
+    "league:liga profesional de fútbol|family:result|side:home|bucket:no_line": "watch",
+    "league:liga profesional de fútbol|family:shots": "watch",
+    "league:liga profesional de fútbol|family:shots|side:over|bucket:low": "watch",
+    "league:ligapro serie a|family:btts": "watch",
+    "league:ligapro serie a|family:corners": "watch",
+    "league:ligapro serie a|family:corners|side:under": "watch",
+    "league:ligapro serie a|family:double_chance": "watch",
+    "league:ligapro serie a|family:double_chance|side:home_away": "watch",
+    "league:ligapro serie a|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:ligapro serie a|family:goals": "watch",
+    "league:ligapro serie a|family:goals|side:over": "watch",
+    "league:ligapro serie a|family:goals|side:under": "watch",
+    "league:ligapro serie a|family:result": "watch",
+    "league:ligapro serie a|family:result|side:away": "watch",
+    "league:ligapro serie a|family:result|side:away|bucket:no_line": "watch",
+    "league:ligapro serie a|family:result|side:draw": "watch",
+    "league:ligapro serie a|family:result|side:draw|bucket:no_line": "watch",
+    "league:ligue 1|family:cards": "watch",
+    "league:ligue 1|family:goals": "watch",
+    "league:mls|family:btts": "watch",
+    "league:mls|family:btts|side:no": "watch",
+    "league:mls|family:btts|side:no|bucket:no_line": "watch",
+    "league:mls|family:btts|side:yes": "watch",
+    "league:mls|family:btts|side:yes|bucket:no_line": "watch",
+    "league:mls|family:cards|side:under": "watch",
+    "league:mls|family:cards|side:under|bucket:high_5_5_plus": "watch",
+    "league:mls|family:corners|side:over": "watch",
+    "league:mls|family:corners|side:under": "watch",
+    "league:mls|family:double_chance": "watch",
+    "league:mls|family:double_chance|side:draw_away": "watch",
+    "league:mls|family:double_chance|side:draw_away|bucket:no_line": "watch",
+    "league:mls|family:double_chance|side:home_away": "watch",
+    "league:mls|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:mls|family:goals|side:over": "watch",
+    "league:mls|family:result|side:draw": "watch",
+    "league:mls|family:result|side:draw|bucket:no_line": "watch",
+    "league:mls|family:result|side:home": "watch",
+    "league:mls|family:result|side:home|bucket:no_line": "watch",
+    "league:mls|family:shots|side:over": "watch",
+    "league:mls|family:shots|side:over|bucket:high": "watch",
+    "league:mls|family:shots|side:over|bucket:low": "watch",
+    "league:mls|family:shots|side:under|bucket:core": "watch",
+    "league:mls|family:shots|side:under|bucket:low": "watch",
+    "league:premier league": "watch",
+    "league:premier league|family:btts": "watch",
+    "league:premier league|family:cards|side:over": "watch",
+    "league:premier league|family:double_chance": "watch",
+    "league:premier league|family:double_chance|side:home_away": "watch",
+    "league:premier league|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:premier league|family:goals": "watch",
+    "league:premier league|family:result": "watch",
+    "league:premier league|family:result|side:draw": "watch",
+    "league:premier league|family:result|side:draw|bucket:no_line": "watch",
+    "league:premier league|family:result|side:home": "watch",
+    "league:premier league|family:result|side:home|bucket:no_line": "watch",
+    "league:primera a|family:cards": "watch",
+    "league:primera a|family:double_chance|side:home_draw": "watch",
+    "league:primera a|family:double_chance|side:home_draw|bucket:no_line": "watch",
+    "league:primera a|family:goals": "watch",
+    "league:primera a|family:goals|side:over": "watch",
+    "league:primera a|family:result|side:away": "watch",
+    "league:primera a|family:result|side:away|bucket:no_line": "watch",
+    "league:primera a|family:result|side:home": "watch",
+    "league:primera a|family:result|side:home|bucket:no_line": "watch",
+    "league:primera división|family:double_chance": "watch",
+    "league:primera división|family:goals": "watch",
+    "league:primera división|family:result": "watch",
+    "league:primera nacional": "watch",
+    "league:primera nacional|family:goals": "watch",
+    "league:primera nacional|family:result": "watch",
+    "league:pro league|family:cards": "watch",
+    "league:pro league|family:goals": "watch",
+    "league:pro league|family:goals|side:under": "watch",
+    "league:pro league|family:result": "watch",
+    "league:pro league|family:shots": "watch",
+    "league:pro league|family:shots|side:over": "watch",
+    "league:saudi pro league|family:cards": "watch",
+    "league:saudi pro league|family:corners": "watch",
+    "league:saudi pro league|family:double_chance": "watch",
+    "league:saudi pro league|family:goals|side:under": "watch",
+    "league:saudi pro league|family:result": "watch",
+    "league:saudi pro league|family:shots|side:over|bucket:high": "watch",
+    "league:saudi pro league|family:shots|side:under": "watch",
+    "league:scottish premiership|family:double_chance": "watch",
+    "league:scottish premiership|family:result": "watch",
+    "league:serie a|family:cards": "watch",
+    "league:serie a|family:cards|side:under": "watch",
+    "league:serie a|family:double_chance": "watch",
+    "league:serie a|family:double_chance|side:home_away": "watch",
+    "league:serie a|family:double_chance|side:home_away|bucket:no_line": "watch",
+    "league:serie a|family:goals": "watch",
+    "league:serie a|family:goals|side:under": "watch",
+    "league:serie a|family:result": "watch",
+    "league:serie a|family:result|side:draw": "watch",
+    "league:serie a|family:result|side:draw|bucket:no_line": "watch",
+    "league:serie a|family:shots": "watch",
+    "league:trendyol süper lig": "watch",
+    "league:uefa champions league|family:btts": "watch",
+    "league:uefa europa league": "watch",
+    "league:uefa europa league|family:btts": "watch",
+    "league:uefa europa league|family:double_chance": "watch",
+    "league:vriendenloterij eredivisie|family:btts": "watch",
+    "league:vriendenloterij eredivisie|family:cards": "watch",
+    "league:vriendenloterij eredivisie|family:cards|side:under": "watch",
+    "league:vriendenloterij eredivisie|family:corners": "watch",
+    "league:vriendenloterij eredivisie|family:double_chance": "watch",
+    "league:vriendenloterij eredivisie|family:goals": "watch",
+    "league:vriendenloterij eredivisie|family:goals|side:over": "watch",
+    "league:vriendenloterij eredivisie|family:result": "watch",
+    "family:cards": "active",
+    "family:cards|side:over|bucket:low_2_5_3_5": "active",
+    "family:cards|side:under": "active",
+    "family:cards|side:under|bucket:high_5_5_plus": "active",
+    "family:corners|side:under|bucket:high": "active",
+    "family:double_chance": "active",
+    "family:double_chance|side:home_away": "active",
+    "family:double_chance|side:home_away|bucket:no_line": "active",
+    "family:goals": "active",
+    "family:goals|side:over": "active",
+    "family:goals|side:over|bucket:low_0_5_1_5": "active",
+    "family:goals|side:under|bucket:extreme_4_plus": "active",
+    "family:goals|side:under|bucket:low_0_5_1_5": "active",
+    "family:result": "active",
+    "family:result|side:away": "active",
+    "family:result|side:away|bucket:no_line": "active",
+    "family:result|side:draw": "active",
+    "family:result|side:draw|bucket:no_line": "active",
+    "global": "active",
+    "league:2. bundesliga": "active",
+    "league:brasileirão série b": "active",
+    "league:brasileirão série b|family:double_chance": "active",
+    "league:campeonato brasileiro série a": "active",
+    "league:campeonato brasileiro série a|family:double_chance": "active",
+    "league:campeonato brasileiro série a|family:goals": "active",
+    "league:campeonato brasileiro série a|family:result": "active",
+    "league:canadian premier league": "active",
+    "league:conmebol libertadores": "active",
+    "league:czech first league": "active",
+    "league:czech first league|family:double_chance": "active",
+    "league:división profesional": "active",
+    "league:hnl": "active",
+    "league:liga 1 te apuesto": "active",
+    "league:liga 1 te apuesto|family:double_chance": "active",
+    "league:liga de primera": "active",
+    "league:liga de primera|family:cards": "active",
+    "league:liga mx, apertura": "active",
+    "league:liga mx, apertura|family:double_chance": "active",
+    "league:liga portugal betclic": "active",
+    "league:liga profesional de fútbol": "active",
+    "league:liga profesional de fútbol|family:cards": "active",
+    "league:liga profesional de fútbol|family:double_chance": "active",
+    "league:liga profesional de fútbol|family:goals|side:over": "active",
+    "league:liga profesional de fútbol|family:goals|side:over|bucket:low_0_5_1_5": "active",
+    "league:liga profesional de fútbol|family:result": "active",
+    "league:ligapro serie a": "active",
+    "league:ligue 1": "active",
+    "league:ligue 1|family:btts": "active",
+    "league:ligue 1|family:double_chance": "active",
+    "league:ligue 1|family:result": "active",
+    "league:mls": "active",
+    "league:mls|family:cards": "active",
+    "league:mls|family:corners": "active",
+    "league:mls|family:goals": "active",
+    "league:mls|family:goals|side:under": "active",
+    "league:mls|family:result": "active",
+    "league:mls|family:shots": "active",
+    "league:mls|family:shots|side:under": "active",
+    "league:primera a": "active",
+    "league:primera a|family:double_chance": "active",
+    "league:primera a|family:result": "active",
+    "league:primera división": "active",
+    "league:pro league": "active",
+    "league:saudi pro league": "active",
+    "league:scottish premiership": "active",
+    "league:scottish premiership|family:goals": "active",
+    "league:serie a": "active",
+    "league:vriendenloterij eredivisie": "active"
   },
   "segment_meta": {
-    "league:brasileirão série b|family:shots|side:under|bucket:core": {
-      "source": "manual_governance",
-      "market_name": "Under 24.5 Tiros",
-      "stake_multiplier": 0.5
+    "family:goals|side:under|bucket:core_2_5": {
+      "n_samples": 505.0,
+      "calibration_gap": 0.153671,
+      "auto": true
+    },
+    "family:shots|side:over|bucket:core": {
+      "n_samples": 141.0,
+      "calibration_gap": 0.200142,
+      "auto": true
+    },
+    "family:shots|side:under|bucket:high": {
+      "n_samples": 197.0,
+      "calibration_gap": 0.163711,
+      "auto": true
+    },
+    "league:brasileirão série b|family:cards|side:over": {
+      "n_samples": 146.0,
+      "calibration_gap": 0.176308,
+      "auto": true
+    },
+    "league:brasileirão série b|family:cards|side:over|bucket:core_4_5": {
+      "n_samples": 77.0,
+      "calibration_gap": 0.203961,
+      "auto": true
+    },
+    "league:brasileirão série b|family:cards|side:over|bucket:high_5_5_plus": {
+      "n_samples": 65.0,
+      "calibration_gap": 0.194939,
+      "auto": true
+    },
+    "league:brasileirão série b|family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 102.0,
+      "calibration_gap": 0.171069,
+      "auto": true
+    },
+    "league:brasileirão série b|family:double_chance|side:draw_away": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.165132,
+      "auto": true
+    },
+    "league:brasileirão série b|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.165132,
+      "auto": true
+    },
+    "league:brasileirão série b|family:goals|side:under|bucket:low_0_5_1_5": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.172759,
+      "auto": true
+    },
+    "league:brasileirão série b|family:result|side:home": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.153099,
+      "auto": true
+    },
+    "league:brasileirão série b|family:result|side:home|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.153099,
+      "auto": true
     },
     "league:brasileirão série b|family:shots|side:over|bucket:high": {
-      "source": "manual_governance",
-      "market_name": "Over 27.5 Tiros",
-      "stake_multiplier": 0.5
+      "n_samples": 138.0,
+      "calibration_gap": 0.158848,
+      "auto": true
+    },
+    "league:brasileirão série b|family:shots|side:under|bucket:core": {
+      "n_samples": 88.0,
+      "calibration_gap": 0.163546,
+      "auto": true
+    },
+    "league:bundesliga|family:goals|side:under": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.16395,
+      "auto": true
+    },
+    "league:bundesliga|family:shots": {
+      "n_samples": 207.0,
+      "calibration_gap": 0.260681,
+      "auto": true
+    },
+    "league:bundesliga|family:shots|side:over": {
+      "n_samples": 103.0,
+      "calibration_gap": 0.34335,
+      "auto": true
+    },
+    "league:bundesliga|family:shots|side:under": {
+      "n_samples": 104.0,
+      "calibration_gap": 0.35475,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:btts|side:no": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.17168,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:btts|side:no|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.17168,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:btts|side:yes": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.17168,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.17168,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:cards|side:over|bucket:low_2_5_3_5": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.186864,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:shots|side:over|bucket:high": {
+      "n_samples": 108.0,
+      "calibration_gap": 0.189019,
+      "auto": true
+    },
+    "league:czech first league|family:btts": {
+      "n_samples": 136.0,
+      "calibration_gap": 0.155941,
+      "auto": true
+    },
+    "league:czech first league|family:btts|side:no": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.190794,
+      "auto": true
+    },
+    "league:czech first league|family:btts|side:no|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.190794,
+      "auto": true
+    },
+    "league:czech first league|family:btts|side:yes": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.190794,
+      "auto": true
+    },
+    "league:czech first league|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.190794,
+      "auto": true
+    },
+    "league:dfb pokal|family:double_chance": {
+      "n_samples": 106.0,
+      "calibration_gap": 0.223849,
+      "auto": true
+    },
+    "league:dfb pokal|family:result": {
+      "n_samples": 96.0,
+      "calibration_gap": 0.21899,
+      "auto": true
+    },
+    "league:división profesional|family:double_chance|side:draw_away": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.155956,
+      "auto": true
+    },
+    "league:división profesional|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.155956,
+      "auto": true
+    },
+    "league:división profesional|family:result|side:home": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.161456,
+      "auto": true
+    },
+    "league:división profesional|family:result|side:home|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.161456,
+      "auto": true
+    },
+    "league:hnl|family:corners": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.152941,
+      "auto": true
+    },
+    "league:laliga|family:btts": {
+      "n_samples": 156.0,
+      "calibration_gap": 0.166359,
+      "auto": true
+    },
+    "league:laliga|family:btts|side:no": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.169667,
+      "auto": true
+    },
+    "league:laliga|family:btts|side:no|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.169667,
+      "auto": true
+    },
+    "league:laliga|family:btts|side:yes": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.163718,
+      "auto": true
+    },
+    "league:laliga|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.163718,
+      "auto": true
+    },
+    "league:laliga|family:corners|side:under": {
+      "n_samples": 76.0,
+      "calibration_gap": 0.172369,
+      "auto": true
+    },
+    "league:laliga|family:goals|side:over": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.174679,
+      "auto": true
+    },
+    "league:laliga|family:shots|side:under": {
+      "n_samples": 147.0,
+      "calibration_gap": 0.15998,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:corners|side:under": {
+      "n_samples": 64.0,
+      "calibration_gap": 0.193953,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:goals|side:over": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.153063,
+      "auto": true
+    },
+    "league:liga de primera|family:btts": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.185757,
+      "auto": true
+    },
+    "league:liga de primera|family:btts|side:no": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.2373,
+      "auto": true
+    },
+    "league:liga de primera|family:btts|side:no|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.2373,
+      "auto": true
+    },
+    "league:liga de primera|family:btts|side:yes": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.249472,
+      "auto": true
+    },
+    "league:liga de primera|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.249472,
+      "auto": true
+    },
+    "league:liga de primera|family:corners|side:over": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.15546,
+      "auto": true
+    },
+    "league:liga de primera|family:corners|side:under": {
+      "n_samples": 62.0,
+      "calibration_gap": 0.164887,
+      "auto": true
+    },
+    "league:liga de primera|family:double_chance|side:home_draw": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.167786,
+      "auto": true
+    },
+    "league:liga de primera|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.167786,
+      "auto": true
+    },
+    "league:liga de primera|family:result|side:away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1762,
+      "auto": true
+    },
+    "league:liga de primera|family:result|side:away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1762,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:btts|side:no": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.168069,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:btts|side:no|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.168069,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:btts|side:yes": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.151402,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.151402,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:shots|side:over|bucket:high": {
+      "n_samples": 65.0,
+      "calibration_gap": 0.176769,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:double_chance|side:home_away": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.150167,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.150167,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:result|side:away": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:liga profesional de fútbol|family:result|side:away|bucket:no_line": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:liga profesional de fútbol|family:shots_target|side:under|bucket:core_7_5_8_5": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:liga profesional de fútbol|family:shots|side:over|bucket:high": {
+      "n_samples": 127.0,
+      "calibration_gap": 0.170268,
+      "auto": true
+    },
+    "league:ligapro serie a|family:double_chance|side:draw_away": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.159703,
+      "auto": true
+    },
+    "league:ligapro serie a|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.159703,
+      "auto": true
+    },
+    "league:ligue 1|family:corners": {
+      "n_samples": 103.0,
+      "calibration_gap": 0.157835,
+      "auto": true
+    },
+    "league:ligue 1|family:shots|side:under": {
+      "n_samples": 103.0,
+      "calibration_gap": 0.19232,
+      "auto": true
+    },
+    "league:ligue 1|family:shots|side:under|bucket:low": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.164782,
+      "auto": true
+    },
+    "league:mls|family:double_chance|side:home_draw": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.158939,
+      "auto": true
+    },
+    "league:mls|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.158939,
+      "auto": true
+    },
+    "league:mls|family:goals|side:over|bucket:extreme_4_plus": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:mls|family:goals|side:over|bucket:high_3_5": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:premier league|family:btts|side:no": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.161186,
+      "auto": true
+    },
+    "league:premier league|family:btts|side:no|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.161186,
+      "auto": true
+    },
+    "league:premier league|family:btts|side:yes": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:premier league|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:premier league|family:cards|side:under": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.214514,
+      "auto": true
+    },
+    "league:premier league|family:corners|side:under": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.187872,
+      "auto": true
+    },
+    "league:premier league|family:shots|side:over": {
+      "n_samples": 135.0,
+      "calibration_gap": 0.159919,
+      "auto": true
+    },
+    "league:premier league|family:shots|side:over|bucket:low": {
+      "n_samples": 65.0,
+      "calibration_gap": 0.160046,
+      "auto": true
+    },
+    "league:premier league|family:shots|side:under": {
+      "n_samples": 136.0,
+      "calibration_gap": 0.187346,
+      "auto": true
+    },
+    "league:premier league|family:shots|side:under|bucket:low": {
+      "n_samples": 85.0,
+      "calibration_gap": 0.211777,
+      "auto": true
+    },
+    "league:primera a|family:btts": {
+      "n_samples": 280.0,
+      "calibration_gap": 0.175514,
+      "auto": true
+    },
+    "league:primera a|family:btts|side:no": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.183128,
+      "auto": true
+    },
+    "league:primera a|family:btts|side:no|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.183128,
+      "auto": true
+    },
+    "league:primera a|family:btts|side:yes": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.168757,
+      "auto": true
+    },
+    "league:primera a|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.168757,
+      "auto": true
+    },
+    "league:primera a|family:corners|side:over|bucket:core": {
+      "n_samples": 71.0,
+      "calibration_gap": 0.218648,
+      "auto": true
+    },
+    "league:primera a|family:double_chance|side:home_away": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.151972,
+      "auto": true
+    },
+    "league:primera a|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.151972,
+      "auto": true
+    },
+    "league:primera a|family:goals|side:under|bucket:core_2_5": {
+      "n_samples": 50,
+      "calibration_gap": 0.2,
+      "auto": false
+    },
+    "league:primera división|family:btts": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.174606,
+      "auto": true
+    },
+    "league:primera nacional|family:btts": {
+      "n_samples": 104.0,
+      "calibration_gap": 0.151019,
+      "auto": true
+    },
+    "league:primera nacional|family:corners": {
+      "n_samples": 64.0,
+      "calibration_gap": 0.295719,
+      "auto": true
+    },
+    "league:pro league|family:btts": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.182229,
+      "auto": true
+    },
+    "league:pro league|family:btts|side:no": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.184915,
+      "auto": true
+    },
+    "league:pro league|family:btts|side:no|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.184915,
+      "auto": true
+    },
+    "league:pro league|family:btts|side:yes": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1856,
+      "auto": true
+    },
+    "league:pro league|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1856,
+      "auto": true
+    },
+    "league:pro league|family:cards|side:under": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1706,
+      "auto": true
+    },
+    "league:pro league|family:corners|side:under": {
+      "n_samples": 69.0,
+      "calibration_gap": 0.184841,
+      "auto": true
+    },
+    "league:pro league|family:double_chance|side:draw_away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.183829,
+      "auto": true
+    },
+    "league:pro league|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.183829,
+      "auto": true
+    },
+    "league:pro league|family:result|side:home": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1905,
+      "auto": true
+    },
+    "league:pro league|family:result|side:home|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1905,
+      "auto": true
+    },
+    "league:saudi pro league|family:btts": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.163583,
+      "auto": true
+    },
+    "league:saudi pro league|family:btts|side:no": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.162611,
+      "auto": true
+    },
+    "league:saudi pro league|family:btts|side:no|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.162611,
+      "auto": true
+    },
+    "league:saudi pro league|family:btts|side:yes": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.17175,
+      "auto": true
+    },
+    "league:saudi pro league|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.17175,
+      "auto": true
+    },
+    "league:saudi pro league|family:cards|side:under": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.153333,
+      "auto": true
+    },
+    "league:saudi pro league|family:goals|side:over": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.168722,
+      "auto": true
+    },
+    "league:saudi pro league|family:result|side:home": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.167111,
+      "auto": true
+    },
+    "league:saudi pro league|family:result|side:home|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.167111,
+      "auto": true
+    },
+    "league:scottish premiership|family:btts": {
+      "n_samples": 84.0,
+      "calibration_gap": 0.193643,
+      "auto": true
+    },
+    "league:scottish premiership|family:shots": {
+      "n_samples": 150.0,
+      "calibration_gap": 0.155273,
+      "auto": true
+    },
+    "league:scottish premiership|family:shots|side:over": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.162141,
+      "auto": true
+    },
+    "league:serie a|family:corners|side:under": {
+      "n_samples": 65.0,
+      "calibration_gap": 0.208846,
+      "auto": true
+    },
+    "league:serie a|family:goals|side:over": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.157486,
+      "auto": true
+    },
+    "league:serie a|family:shots|side:over": {
+      "n_samples": 131.0,
+      "calibration_gap": 0.173084,
+      "auto": true
+    },
+    "league:serie a|family:shots|side:over|bucket:low": {
+      "n_samples": 64.0,
+      "calibration_gap": 0.16075,
+      "auto": true
+    },
+    "league:serie a|family:shots|side:under": {
+      "n_samples": 129.0,
+      "calibration_gap": 0.15693,
+      "auto": true
+    },
+    "league:uefa champions league|family:cards": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.268,
+      "auto": true
+    },
+    "league:uefa champions league|family:corners": {
+      "n_samples": 73.0,
+      "calibration_gap": 0.193082,
+      "auto": true
+    },
+    "league:uefa champions league|family:double_chance": {
+      "n_samples": 137.0,
+      "calibration_gap": 0.152037,
+      "auto": true
+    },
+    "league:uefa champions league|family:goals": {
+      "n_samples": 80.0,
+      "calibration_gap": 0.2714,
+      "auto": true
+    },
+    "league:uefa champions league|family:shots": {
+      "n_samples": 106.0,
+      "calibration_gap": 0.224198,
+      "auto": true
+    },
+    "league:uefa europa league|family:corners": {
+      "n_samples": 64.0,
+      "calibration_gap": 0.190891,
+      "auto": true
+    },
+    "league:uefa europa league|family:shots": {
+      "n_samples": 127.0,
+      "calibration_gap": 0.155134,
+      "auto": true
+    },
+    "league:uefa europa league|family:shots|side:under": {
+      "n_samples": 74.0,
+      "calibration_gap": 0.226906,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:btts|side:no": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.163111,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:btts|side:no|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.163111,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:btts|side:yes": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.163111,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.163111,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_away": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.156683,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.156683,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:shots": {
+      "n_samples": 247.0,
+      "calibration_gap": 0.163907,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:shots|side:over": {
+      "n_samples": 123.0,
+      "calibration_gap": 0.190667,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:shots|side:over|bucket:high": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.171397,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:shots|side:over|bucket:low": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.1596,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:shots|side:under": {
+      "n_samples": 124.0,
+      "calibration_gap": 0.16675,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:shots|side:under|bucket:low": {
+      "n_samples": 74.0,
+      "calibration_gap": 0.2285,
+      "auto": true
+    },
+    "family:cards|side:over|bucket:core_4_5": {
+      "n_samples": 431.0,
+      "calibration_gap": 0.112545,
+      "auto": true
+    },
+    "family:corners|side:under|bucket:low": {
+      "n_samples": 1175.0,
+      "calibration_gap": 0.13091,
+      "auto": true
+    },
+    "family:goals|side:over|bucket:high_3_5": {
+      "n_samples": 294.0,
+      "calibration_gap": 0.125068,
+      "auto": true
+    },
+    "family:shots|side:over|bucket:high": {
+      "n_samples": 1333.0,
+      "calibration_gap": 0.114945,
+      "auto": true
+    },
+    "family:shots|side:under|bucket:core": {
+      "n_samples": 679.0,
+      "calibration_gap": 0.126523,
+      "auto": true
+    },
+    "league:2. bundesliga|family:btts": {
+      "n_samples": 102.0,
+      "calibration_gap": 0.123039,
+      "auto": true
+    },
+    "league:2. bundesliga|family:corners": {
+      "n_samples": 84.0,
+      "calibration_gap": 0.116262,
+      "auto": true
+    },
+    "league:2. bundesliga|family:goals": {
+      "n_samples": 102.0,
+      "calibration_gap": 0.109696,
+      "auto": true
+    },
+    "league:brasileirão série b|family:btts": {
+      "n_samples": 304.0,
+      "calibration_gap": 0.134099,
+      "auto": true
+    },
+    "league:brasileirão série b|family:cards|side:under": {
+      "n_samples": 146.0,
+      "calibration_gap": 0.130493,
+      "auto": true
+    },
+    "league:brasileirão série b|family:goals|side:over|bucket:low_0_5_1_5": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.102238,
+      "auto": true
+    },
+    "league:brasileirão série b|family:goals|side:under": {
+      "n_samples": 147.0,
+      "calibration_gap": 0.12919,
+      "auto": true
+    },
+    "league:brasileirão série b|family:shots|side:under": {
+      "n_samples": 278.0,
+      "calibration_gap": 0.130806,
+      "auto": true
+    },
+    "league:brasileirão série b|family:shots|side:under|bucket:low": {
+      "n_samples": 148.0,
+      "calibration_gap": 0.106743,
+      "auto": true
+    },
+    "league:bundesliga|family:btts": {
+      "n_samples": 120.0,
+      "calibration_gap": 0.105667,
+      "auto": true
+    },
+    "league:bundesliga|family:btts|side:no": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.136733,
+      "auto": true
+    },
+    "league:bundesliga|family:btts|side:no|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.136733,
+      "auto": true
+    },
+    "league:bundesliga|family:btts|side:yes": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.147667,
+      "auto": true
+    },
+    "league:bundesliga|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.147667,
+      "auto": true
+    },
+    "league:bundesliga|family:corners": {
+      "n_samples": 115.0,
+      "calibration_gap": 0.115035,
+      "auto": true
+    },
+    "league:bundesliga|family:double_chance|side:draw_away": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.142883,
+      "auto": true
+    },
+    "league:bundesliga|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.142883,
+      "auto": true
+    },
+    "league:bundesliga|family:double_chance|side:home_away": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.135517,
+      "auto": true
+    },
+    "league:bundesliga|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.135517,
+      "auto": true
+    },
+    "league:bundesliga|family:double_chance|side:home_draw": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.138917,
+      "auto": true
+    },
+    "league:bundesliga|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.138917,
+      "auto": true
+    },
+    "league:bundesliga|family:goals|side:over": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.124867,
+      "auto": true
+    },
+    "league:bundesliga|family:result|side:draw": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.117333,
+      "auto": true
+    },
+    "league:bundesliga|family:result|side:draw|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.117333,
+      "auto": true
+    },
+    "league:bundesliga|family:result|side:home": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.132517,
+      "auto": true
+    },
+    "league:bundesliga|family:result|side:home|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.132517,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:cards|side:over": {
+      "n_samples": 121.0,
+      "calibration_gap": 0.133463,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 92.0,
+      "calibration_gap": 0.107315,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:double_chance|side:draw_away": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.121852,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.121852,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:double_chance|side:home_away": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.106033,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.106033,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:double_chance|side:home_draw": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.13109,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.13109,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:result|side:away": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.1195,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:result|side:away|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.1195,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:result|side:home": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.147648,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:result|side:home|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.147648,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:shots|side:over": {
+      "n_samples": 213.0,
+      "calibration_gap": 0.129713,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:shots|side:under|bucket:core": {
+      "n_samples": 71.0,
+      "calibration_gap": 0.14831,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:shots|side:under|bucket:low": {
+      "n_samples": 128.0,
+      "calibration_gap": 0.108508,
+      "auto": true
+    },
+    "league:canadian premier league|family:btts": {
+      "n_samples": 112.0,
+      "calibration_gap": 0.120696,
+      "auto": true
+    },
+    "league:canadian premier league|family:goals": {
+      "n_samples": 112.0,
+      "calibration_gap": 0.122232,
+      "auto": true
+    },
+    "league:conmebol libertadores|family:double_chance": {
+      "n_samples": 81.0,
+      "calibration_gap": 0.127642,
+      "auto": true
+    },
+    "league:conmebol libertadores|family:result": {
+      "n_samples": 69.0,
+      "calibration_gap": 0.147392,
+      "auto": true
+    },
+    "league:conmebol sudamericana|family:btts": {
+      "n_samples": 62.0,
+      "calibration_gap": 0.145774,
+      "auto": true
+    },
+    "league:conmebol sudamericana|family:cards": {
+      "n_samples": 62.0,
+      "calibration_gap": 0.102709,
+      "auto": true
+    },
+    "league:conmebol sudamericana|family:shots": {
+      "n_samples": 102.0,
+      "calibration_gap": 0.125108,
+      "auto": true
+    },
+    "league:czech first league|family:cards|side:under": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.117794,
+      "auto": true
+    },
+    "league:czech first league|family:corners|side:under": {
+      "n_samples": 64.0,
+      "calibration_gap": 0.132312,
+      "auto": true
+    },
+    "league:czech first league|family:double_chance|side:draw_away": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.132456,
+      "auto": true
+    },
+    "league:czech first league|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.132456,
+      "auto": true
+    },
+    "league:czech first league|family:double_chance|side:home_draw": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.115544,
+      "auto": true
+    },
+    "league:czech first league|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.115544,
+      "auto": true
+    },
+    "league:czech first league|family:goals|side:over": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.13275,
+      "auto": true
+    },
+    "league:czech first league|family:goals|side:under": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.11225,
+      "auto": true
+    },
+    "league:czech first league|family:result": {
+      "n_samples": 204.0,
+      "calibration_gap": 0.106617,
+      "auto": true
+    },
+    "league:czech first league|family:result|side:away": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.112088,
+      "auto": true
+    },
+    "league:czech first league|family:result|side:away|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.112088,
+      "auto": true
+    },
+    "league:czech first league|family:result|side:home": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.149088,
+      "auto": true
+    },
+    "league:czech first league|family:result|side:home|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.149088,
+      "auto": true
+    },
+    "league:czech first league|family:shots|side:over|bucket:high": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.140606,
+      "auto": true
+    },
+    "league:danish superliga|family:double_chance": {
+      "n_samples": 85.0,
+      "calibration_gap": 0.122812,
+      "auto": true
+    },
+    "league:dfb pokal": {
+      "n_samples": 402.0,
+      "calibration_gap": 0.134547,
+      "auto": true
+    },
+    "league:dfb pokal|family:btts": {
+      "n_samples": 64.0,
+      "calibration_gap": 0.147094,
+      "auto": true
+    },
+    "league:dfb pokal|family:goals": {
+      "n_samples": 62.0,
+      "calibration_gap": 0.108871,
+      "auto": true
+    },
+    "league:división profesional|family:btts": {
+      "n_samples": 180.0,
+      "calibration_gap": 0.1038,
+      "auto": true
+    },
+    "league:división profesional|family:btts|side:no": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.104245,
+      "auto": true
+    },
+    "league:división profesional|family:btts|side:no|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.104245,
+      "auto": true
+    },
+    "league:división profesional|family:corners": {
+      "n_samples": 150.0,
+      "calibration_gap": 0.101413,
+      "auto": true
+    },
+    "league:división profesional|family:double_chance|side:home_draw": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.1124,
+      "auto": true
+    },
+    "league:división profesional|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.1124,
+      "auto": true
+    },
+    "league:división profesional|family:goals|side:under": {
+      "n_samples": 89.0,
+      "calibration_gap": 0.135494,
+      "auto": true
+    },
+    "league:división profesional|family:result|side:away": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.128889,
+      "auto": true
+    },
+    "league:división profesional|family:result|side:away|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.128889,
+      "auto": true
+    },
+    "league:egyptian premier league|family:double_chance": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.104064,
+      "auto": true
+    },
+    "league:egyptian premier league|family:result": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.108492,
+      "auto": true
+    },
+    "league:hnl|family:btts": {
+      "n_samples": 74.0,
+      "calibration_gap": 0.136568,
+      "auto": true
+    },
+    "league:hnl|family:double_chance": {
+      "n_samples": 113.0,
+      "calibration_gap": 0.114832,
+      "auto": true
+    },
+    "league:laliga|family:cards|side:over": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.148513,
+      "auto": true
+    },
+    "league:laliga|family:corners": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.126257,
+      "auto": true
+    },
+    "league:laliga|family:corners|side:over": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.123691,
+      "auto": true
+    },
+    "league:laliga|family:double_chance|side:draw_away": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.134423,
+      "auto": true
+    },
+    "league:laliga|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.134423,
+      "auto": true
+    },
+    "league:laliga|family:double_chance|side:home_draw": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.131474,
+      "auto": true
+    },
+    "league:laliga|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.131474,
+      "auto": true
+    },
+    "league:laliga|family:goals": {
+      "n_samples": 156.0,
+      "calibration_gap": 0.102064,
+      "auto": true
+    },
+    "league:laliga|family:goals|side:under": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.102756,
+      "auto": true
+    },
+    "league:laliga|family:result|side:away": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.114846,
+      "auto": true
+    },
+    "league:laliga|family:result|side:away|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.114846,
+      "auto": true
+    },
+    "league:laliga|family:result|side:home": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.135898,
+      "auto": true
+    },
+    "league:laliga|family:result|side:home|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.135898,
+      "auto": true
+    },
+    "league:laliga|family:shots": {
+      "n_samples": 297.0,
+      "calibration_gap": 0.105307,
+      "auto": true
+    },
+    "league:laliga|family:shots|side:over|bucket:low": {
+      "n_samples": 76.0,
+      "calibration_gap": 0.104381,
+      "auto": true
+    },
+    "league:laliga|family:shots|side:under|bucket:low": {
+      "n_samples": 107.0,
+      "calibration_gap": 0.131084,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:btts|side:yes": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.113228,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.113228,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:cards": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.102381,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:cards|side:over": {
+      "n_samples": 76.0,
+      "calibration_gap": 0.133803,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:cards|side:under": {
+      "n_samples": 76.0,
+      "calibration_gap": 0.104987,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 61.0,
+      "calibration_gap": 0.117312,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:corners": {
+      "n_samples": 129.0,
+      "calibration_gap": 0.11907,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:corners|side:over": {
+      "n_samples": 65.0,
+      "calibration_gap": 0.120569,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:double_chance|side:home_draw": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.10238,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.10238,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:goals|side:under": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.111532,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:result|side:away": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.121063,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:result|side:away|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.121063,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:result|side:home": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.118101,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:result|side:home|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.118101,
+      "auto": true
+    },
+    "league:liga de primera|family:cards|side:over": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.105309,
+      "auto": true
+    },
+    "league:liga de primera|family:corners": {
+      "n_samples": 125.0,
+      "calibration_gap": 0.112488,
+      "auto": true
+    },
+    "league:liga de primera|family:double_chance|side:home_away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.132843,
+      "auto": true
+    },
+    "league:liga de primera|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.132843,
+      "auto": true
+    },
+    "league:liga de primera|family:goals|side:over": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.130872,
+      "auto": true
+    },
+    "league:liga de primera|family:goals|side:under": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1104,
+      "auto": true
+    },
+    "league:liga de primera|family:result|side:draw": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.127086,
+      "auto": true
+    },
+    "league:liga de primera|family:result|side:draw|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.127086,
+      "auto": true
+    },
+    "league:liga de primera|family:result|side:home": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.116843,
+      "auto": true
+    },
+    "league:liga de primera|family:result|side:home|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.116843,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:cards": {
+      "n_samples": 132.0,
+      "calibration_gap": 0.106402,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:cards|side:over": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.116667,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:corners|side:over": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.123203,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:corners|side:under": {
+      "n_samples": 82.0,
+      "calibration_gap": 0.110244,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:double_chance|side:draw_away": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.110966,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.110966,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:double_chance|side:home_away": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.100632,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.100632,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:double_chance|side:home_draw": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.122,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.122,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:goals": {
+      "n_samples": 174.0,
+      "calibration_gap": 0.106092,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:goals|side:over": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.127035,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:result|side:away": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.117276,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:result|side:away|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.117276,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:result|side:home": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.105609,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:result|side:home|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.105609,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:shots|side:over": {
+      "n_samples": 127.0,
+      "calibration_gap": 0.112677,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:shots|side:over|bucket:low": {
+      "n_samples": 62.0,
+      "calibration_gap": 0.129,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:shots|side:under|bucket:low": {
+      "n_samples": 82.0,
+      "calibration_gap": 0.112622,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:btts": {
+      "n_samples": 120.0,
+      "calibration_gap": 0.109117,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:btts|side:no": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.125617,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:btts|side:no|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.125617,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:btts|side:yes": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.125617,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.125617,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:cards": {
+      "n_samples": 116.0,
+      "calibration_gap": 0.105077,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:corners": {
+      "n_samples": 99.0,
+      "calibration_gap": 0.10096,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:double_chance": {
+      "n_samples": 206.0,
+      "calibration_gap": 0.101378,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:goals|side:over": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.145883,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:goals|side:under": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.136717,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:result": {
+      "n_samples": 180.0,
+      "calibration_gap": 0.100378,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:result|side:draw": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.148317,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:result|side:draw|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.148317,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:shots|side:over": {
+      "n_samples": 114.0,
+      "calibration_gap": 0.103614,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:shots|side:under|bucket:low": {
+      "n_samples": 103.0,
+      "calibration_gap": 0.103903,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:btts": {
+      "n_samples": 344.0,
+      "calibration_gap": 0.139488,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:btts|side:no": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.133884,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:btts|side:no|bucket:no_line": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.133884,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:btts|side:yes": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.141372,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.141372,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:cards|side:over|bucket:core_4_5": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.10973,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:cards|side:over|bucket:high_5_5_plus": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.110921,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:cards|side:under": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.10132,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.114014,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:corners|side:over|bucket:low": {
+      "n_samples": 76.0,
+      "calibration_gap": 0.121724,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:corners|side:under|bucket:low": {
+      "n_samples": 106.0,
+      "calibration_gap": 0.110849,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:goals|side:under": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.120442,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:goals|side:under|bucket:low_0_5_1_5": {
+      "n_samples": 81.0,
+      "calibration_gap": 0.122753,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:shots|side:over": {
+      "n_samples": 325.0,
+      "calibration_gap": 0.119547,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:shots|side:under": {
+      "n_samples": 339.0,
+      "calibration_gap": 0.120109,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:shots|side:under|bucket:low": {
+      "n_samples": 291.0,
+      "calibration_gap": 0.117983,
+      "auto": true
+    },
+    "league:ligapro serie a|family:btts|side:no": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.126386,
+      "auto": true
+    },
+    "league:ligapro serie a|family:btts|side:no|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.126386,
+      "auto": true
+    },
+    "league:ligapro serie a|family:btts|side:yes": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.126386,
+      "auto": true
+    },
+    "league:ligapro serie a|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.126386,
+      "auto": true
+    },
+    "league:ligapro serie a|family:corners|side:over": {
+      "n_samples": 96.0,
+      "calibration_gap": 0.101437,
+      "auto": true
+    },
+    "league:ligapro serie a|family:double_chance|side:home_draw": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.100218,
+      "auto": true
+    },
+    "league:ligapro serie a|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.100218,
+      "auto": true
+    },
+    "league:ligapro serie a|family:result|side:home": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.149079,
+      "auto": true
+    },
+    "league:ligapro serie a|family:result|side:home|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.149079,
+      "auto": true
+    },
+    "league:ligue 1|family:shots": {
+      "n_samples": 205.0,
+      "calibration_gap": 0.109385,
+      "auto": true
+    },
+    "league:ligue 1|family:shots|side:over": {
+      "n_samples": 102.0,
+      "calibration_gap": 0.132284,
+      "auto": true
+    },
+    "league:mls|family:cards|side:over": {
+      "n_samples": 161.0,
+      "calibration_gap": 0.10195,
+      "auto": true
+    },
+    "league:mls|family:cards|side:over|bucket:core_4_5": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.147136,
+      "auto": true
+    },
+    "league:mls|family:cards|side:over|bucket:high_3_5": {
+      "n_samples": 50,
+      "calibration_gap": 0.12,
+      "auto": false
+    },
+    "league:mls|family:cards|side:over|bucket:low_2_5_3_5": {
+      "n_samples": 86.0,
+      "calibration_gap": 0.137116,
+      "auto": true
+    },
+    "league:mls|family:cards|side:under|bucket:core_4_5": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.115921,
+      "auto": true
+    },
+    "league:mls|family:result|side:away": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.134497,
+      "auto": true
+    },
+    "league:mls|family:result|side:away|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.134497,
+      "auto": true
+    },
+    "league:premier league|family:cards": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.106836,
+      "auto": true
+    },
+    "league:premier league|family:corners": {
+      "n_samples": 128.0,
+      "calibration_gap": 0.126641,
+      "auto": true
+    },
+    "league:premier league|family:double_chance|side:draw_away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.108143,
+      "auto": true
+    },
+    "league:premier league|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.108143,
+      "auto": true
+    },
+    "league:premier league|family:double_chance|side:home_draw": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.136286,
+      "auto": true
+    },
+    "league:premier league|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.136286,
+      "auto": true
+    },
+    "league:premier league|family:goals|side:over": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.128529,
+      "auto": true
+    },
+    "league:premier league|family:goals|side:under": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.102814,
+      "auto": true
+    },
+    "league:premier league|family:result|side:away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1355,
+      "auto": true
+    },
+    "league:premier league|family:result|side:away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1355,
+      "auto": true
+    },
+    "league:premier league|family:shots": {
+      "n_samples": 271.0,
+      "calibration_gap": 0.115786,
+      "auto": true
+    },
+    "league:premier league|family:shots|side:over|bucket:high": {
+      "n_samples": 65.0,
+      "calibration_gap": 0.145123,
+      "auto": true
+    },
+    "league:primera a|family:cards|side:over": {
+      "n_samples": 125.0,
+      "calibration_gap": 0.131568,
+      "auto": true
+    },
+    "league:primera a|family:cards|side:over|bucket:high_5_5_plus": {
+      "n_samples": 125.0,
+      "calibration_gap": 0.131568,
+      "auto": true
+    },
+    "league:primera a|family:cards|side:under": {
+      "n_samples": 125.0,
+      "calibration_gap": 0.109688,
+      "auto": true
+    },
+    "league:primera a|family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 125.0,
+      "calibration_gap": 0.109688,
+      "auto": true
+    },
+    "league:primera a|family:corners": {
+      "n_samples": 247.0,
+      "calibration_gap": 0.11696,
+      "auto": true
+    },
+    "league:primera a|family:corners|side:over": {
+      "n_samples": 126.0,
+      "calibration_gap": 0.144397,
+      "auto": true
+    },
+    "league:primera a|family:corners|side:under": {
+      "n_samples": 121.0,
+      "calibration_gap": 0.116306,
+      "auto": true
+    },
+    "league:primera a|family:corners|side:under|bucket:low": {
+      "n_samples": 88.0,
+      "calibration_gap": 0.132773,
+      "auto": true
+    },
+    "league:primera a|family:double_chance|side:draw_away": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.101878,
+      "auto": true
+    },
+    "league:primera a|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.101878,
+      "auto": true
+    },
+    "league:primera a|family:goals|side:over|bucket:low_0_5_1_5": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.121183,
+      "auto": true
+    },
+    "league:primera a|family:goals|side:under": {
+      "n_samples": 130.0,
+      "calibration_gap": 0.146692,
+      "auto": true
+    },
+    "league:primera a|family:result|side:draw": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.1302,
+      "auto": true
+    },
+    "league:primera a|family:result|side:draw|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.1302,
+      "auto": true
+    },
+    "league:primera nacional|family:double_chance": {
+      "n_samples": 156.0,
+      "calibration_gap": 0.109212,
+      "auto": true
+    },
+    "league:pro league|family:cards|side:over": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.133757,
+      "auto": true
+    },
+    "league:pro league|family:corners": {
+      "n_samples": 128.0,
+      "calibration_gap": 0.12607,
+      "auto": true
+    },
+    "league:pro league|family:double_chance": {
+      "n_samples": 232.0,
+      "calibration_gap": 0.110431,
+      "auto": true
+    },
+    "league:pro league|family:double_chance|side:home_away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.139014,
+      "auto": true
+    },
+    "league:pro league|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.139014,
+      "auto": true
+    },
+    "league:pro league|family:double_chance|side:home_draw": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1194,
+      "auto": true
+    },
+    "league:pro league|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1194,
+      "auto": true
+    },
+    "league:pro league|family:goals|side:over": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.1004,
+      "auto": true
+    },
+    "league:pro league|family:result|side:away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.128014,
+      "auto": true
+    },
+    "league:pro league|family:result|side:away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.128014,
+      "auto": true
+    },
+    "league:pro league|family:result|side:draw": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.128428,
+      "auto": true
+    },
+    "league:pro league|family:result|side:draw|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.128428,
+      "auto": true
+    },
+    "league:pro league|family:shots|side:over|bucket:high": {
+      "n_samples": 65.0,
+      "calibration_gap": 0.130108,
+      "auto": true
+    },
+    "league:pro league|family:shots|side:over|bucket:low": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.113524,
+      "auto": true
+    },
+    "league:pro league|family:shots|side:under": {
+      "n_samples": 134.0,
+      "calibration_gap": 0.103948,
+      "auto": true
+    },
+    "league:pro league|family:shots|side:under|bucket:low": {
+      "n_samples": 95.0,
+      "calibration_gap": 0.111989,
+      "auto": true
+    },
+    "league:saudi pro league|family:cards|side:over": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.149556,
+      "auto": true
+    },
+    "league:saudi pro league|family:corners|side:under": {
+      "n_samples": 71.0,
+      "calibration_gap": 0.111521,
+      "auto": true
+    },
+    "league:saudi pro league|family:double_chance|side:draw_away": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.147917,
+      "auto": true
+    },
+    "league:saudi pro league|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.147917,
+      "auto": true
+    },
+    "league:saudi pro league|family:double_chance|side:home_away": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.141208,
+      "auto": true
+    },
+    "league:saudi pro league|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.141208,
+      "auto": true
+    },
+    "league:saudi pro league|family:double_chance|side:home_draw": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.110194,
+      "auto": true
+    },
+    "league:saudi pro league|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.110194,
+      "auto": true
+    },
+    "league:saudi pro league|family:goals": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.132827,
+      "auto": true
+    },
+    "league:saudi pro league|family:result|side:away": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.120778,
+      "auto": true
+    },
+    "league:saudi pro league|family:result|side:away|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.120778,
+      "auto": true
+    },
+    "league:saudi pro league|family:result|side:draw": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.14725,
+      "auto": true
+    },
+    "league:saudi pro league|family:result|side:draw|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.14725,
+      "auto": true
+    },
+    "league:saudi pro league|family:shots": {
+      "n_samples": 260.0,
+      "calibration_gap": 0.100735,
+      "auto": true
+    },
+    "league:saudi pro league|family:shots|side:over": {
+      "n_samples": 129.0,
+      "calibration_gap": 0.114016,
+      "auto": true
+    },
+    "league:saudi pro league|family:shots|side:over|bucket:low": {
+      "n_samples": 61.0,
+      "calibration_gap": 0.144656,
+      "auto": true
+    },
+    "league:saudi pro league|family:shots|side:under|bucket:low": {
+      "n_samples": 102.0,
+      "calibration_gap": 0.132539,
+      "auto": true
+    },
+    "league:scottish premiership|family:cards": {
+      "n_samples": 84.0,
+      "calibration_gap": 0.118322,
+      "auto": true
+    },
+    "league:scottish premiership|family:corners": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.129462,
+      "auto": true
+    },
+    "league:scottish premiership|family:shots|side:under": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.149,
+      "auto": true
+    },
+    "league:scottish premiership|family:shots|side:under|bucket:low": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.125424,
+      "auto": true
+    },
+    "league:serie a|family:btts": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.101764,
+      "auto": true
+    },
+    "league:serie a|family:btts|side:no": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.10482,
+      "auto": true
+    },
+    "league:serie a|family:btts|side:no|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.10482,
+      "auto": true
+    },
+    "league:serie a|family:btts|side:yes": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.10482,
+      "auto": true
+    },
+    "league:serie a|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.10482,
+      "auto": true
+    },
+    "league:serie a|family:cards|side:over": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.146277,
+      "auto": true
+    },
+    "league:serie a|family:corners": {
+      "n_samples": 115.0,
+      "calibration_gap": 0.123226,
+      "auto": true
+    },
+    "league:serie a|family:double_chance|side:draw_away": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.138472,
+      "auto": true
+    },
+    "league:serie a|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.138472,
+      "auto": true
+    },
+    "league:serie a|family:double_chance|side:home_draw": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.136264,
+      "auto": true
+    },
+    "league:serie a|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.136264,
+      "auto": true
+    },
+    "league:serie a|family:result|side:away": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.130986,
+      "auto": true
+    },
+    "league:serie a|family:result|side:away|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.130986,
+      "auto": true
+    },
+    "league:serie a|family:result|side:home": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.135236,
+      "auto": true
+    },
+    "league:serie a|family:result|side:home|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.135236,
+      "auto": true
+    },
+    "league:serie a|family:shots|side:under|bucket:low": {
+      "n_samples": 110.0,
+      "calibration_gap": 0.143445,
+      "auto": true
+    },
+    "league:uefa champions league": {
+      "n_samples": 674.0,
+      "calibration_gap": 0.122144,
+      "auto": true
+    },
+    "league:uefa champions league|family:result": {
+      "n_samples": 120.0,
+      "calibration_gap": 0.11835,
+      "auto": true
+    },
+    "league:uefa europa league|family:cards": {
+      "n_samples": 74.0,
+      "calibration_gap": 0.116743,
+      "auto": true
+    },
+    "league:uefa europa league|family:goals": {
+      "n_samples": 74.0,
+      "calibration_gap": 0.108297,
+      "auto": true
+    },
+    "league:uefa europa league|family:result": {
+      "n_samples": 111.0,
+      "calibration_gap": 0.130279,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:cards|side:over": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.140301,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:double_chance|side:draw_away": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.137746,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.137746,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_draw": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.117286,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.117286,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:goals|side:under": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.132143,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:result|side:away": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.137318,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:result|side:away|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.137318,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:result|side:draw": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.14527,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:result|side:draw|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.14527,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:result|side:home": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.143333,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:result|side:home|bucket:no_line": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.143333,
+      "auto": true
+    },
+    "family:btts": {
+      "n_samples": 4728.0,
+      "calibration_gap": 0.069633,
+      "auto": true
+    },
+    "family:btts|side:no": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.078449,
+      "auto": true
+    },
+    "family:btts|side:no|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.078449,
+      "auto": true
+    },
+    "family:btts|side:yes": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.079032,
+      "auto": true
+    },
+    "family:btts|side:yes|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.079032,
+      "auto": true
+    },
+    "family:cards|side:over": {
+      "n_samples": 1860.0,
+      "calibration_gap": 0.061239,
+      "auto": true
+    },
+    "family:cards|side:over|bucket:high_5_5_plus": {
+      "n_samples": 649.0,
+      "calibration_gap": 0.090519,
+      "auto": true
+    },
+    "family:cards|side:under|bucket:core_4_5": {
+      "n_samples": 431.0,
+      "calibration_gap": 0.083791,
+      "auto": true
+    },
+    "family:cards|side:under|bucket:low_2_5_3_5": {
+      "n_samples": 383.0,
+      "calibration_gap": 0.095102,
+      "auto": true
+    },
+    "family:corners": {
+      "n_samples": 4119.0,
+      "calibration_gap": 0.061079,
+      "auto": true
+    },
+    "family:corners|side:over": {
+      "n_samples": 1968.0,
+      "calibration_gap": 0.052912,
+      "auto": true
+    },
+    "family:corners|side:over|bucket:core": {
+      "n_samples": 683.0,
+      "calibration_gap": 0.092442,
+      "auto": true
+    },
+    "family:corners|side:over|bucket:high": {
+      "n_samples": 802.0,
+      "calibration_gap": 0.076123,
+      "auto": true
+    },
+    "family:corners|side:over|bucket:low": {
+      "n_samples": 483.0,
+      "calibration_gap": 0.051762,
+      "auto": true
+    },
+    "family:corners|side:under": {
+      "n_samples": 2151.0,
+      "calibration_gap": 0.087456,
+      "auto": true
+    },
+    "family:corners|side:under|bucket:core": {
+      "n_samples": 639.0,
+      "calibration_gap": 0.076451,
+      "auto": true
+    },
+    "family:double_chance|side:draw_away": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.061967,
+      "auto": true
+    },
+    "family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.061967,
+      "auto": true
+    },
+    "family:double_chance|side:home_draw": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.055233,
+      "auto": true
+    },
+    "family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.055233,
+      "auto": true
+    },
+    "family:double_chance|side:over": {
+      "n_samples": 428.0,
+      "calibration_gap": 0.092105,
+      "auto": true
+    },
+    "family:double_chance|side:over|bucket:no_line": {
+      "n_samples": 428.0,
+      "calibration_gap": 0.092105,
+      "auto": true
+    },
+    "family:double_chance|side:under": {
+      "n_samples": 200.0,
+      "calibration_gap": 0.088715,
+      "auto": true
+    },
+    "family:double_chance|side:under|bucket:no_line": {
+      "n_samples": 200.0,
+      "calibration_gap": 0.088715,
+      "auto": true
+    },
+    "family:goals|side:over|bucket:core_2_5": {
+      "n_samples": 518.0,
+      "calibration_gap": 0.062838,
+      "auto": true
+    },
+    "family:goals|side:over|bucket:extreme_4_plus": {
+      "n_samples": 824.0,
+      "calibration_gap": 0.053785,
+      "auto": true
+    },
+    "family:goals|side:under": {
+      "n_samples": 2344.0,
+      "calibration_gap": 0.06152,
+      "auto": true
+    },
+    "family:goals|side:under|bucket:high_3_5": {
+      "n_samples": 481.0,
+      "calibration_gap": 0.07327,
+      "auto": true
+    },
+    "family:result|side:home": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.053423,
+      "auto": true
+    },
+    "family:result|side:home|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.053423,
+      "auto": true
+    },
+    "family:shots": {
+      "n_samples": 5695.0,
+      "calibration_gap": 0.073962,
+      "auto": true
+    },
+    "family:shots|side:over": {
+      "n_samples": 2825.0,
+      "calibration_gap": 0.091021,
+      "auto": true
+    },
+    "family:shots|side:over|bucket:low": {
+      "n_samples": 1351.0,
+      "calibration_gap": 0.064761,
+      "auto": true
+    },
+    "family:shots|side:under": {
+      "n_samples": 2870.0,
+      "calibration_gap": 0.091769,
+      "auto": true
+    },
+    "family:shots|side:under|bucket:low": {
+      "n_samples": 1994.0,
+      "calibration_gap": 0.083463,
+      "auto": true
+    },
+    "league:2. bundesliga|family:double_chance": {
+      "n_samples": 171.0,
+      "calibration_gap": 0.075959,
+      "auto": true
+    },
+    "league:2. bundesliga|family:result": {
+      "n_samples": 153.0,
+      "calibration_gap": 0.075967,
+      "auto": true
+    },
+    "league:brasileirão série b|family:btts|side:no": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.082822,
+      "auto": true
+    },
+    "league:brasileirão série b|family:btts|side:no|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.082822,
+      "auto": true
+    },
+    "league:brasileirão série b|family:btts|side:yes": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.082823,
+      "auto": true
+    },
+    "league:brasileirão série b|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.082823,
+      "auto": true
+    },
+    "league:brasileirão série b|family:cards": {
+      "n_samples": 292.0,
+      "calibration_gap": 0.084072,
+      "auto": true
+    },
+    "league:brasileirão série b|family:corners": {
+      "n_samples": 252.0,
+      "calibration_gap": 0.051004,
+      "auto": true
+    },
+    "league:brasileirão série b|family:corners|side:over": {
+      "n_samples": 114.0,
+      "calibration_gap": 0.079597,
+      "auto": true
+    },
+    "league:brasileirão série b|family:corners|side:under": {
+      "n_samples": 138.0,
+      "calibration_gap": 0.062529,
+      "auto": true
+    },
+    "league:brasileirão série b|family:double_chance|side:home_away": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.08973,
+      "auto": true
+    },
+    "league:brasileirão série b|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.08973,
+      "auto": true
+    },
+    "league:brasileirão série b|family:double_chance|side:home_draw": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.093638,
+      "auto": true
+    },
+    "league:brasileirão série b|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.093638,
+      "auto": true
+    },
+    "league:brasileirão série b|family:goals": {
+      "n_samples": 294.0,
+      "calibration_gap": 0.061599,
+      "auto": true
+    },
+    "league:brasileirão série b|family:goals|side:over": {
+      "n_samples": 147.0,
+      "calibration_gap": 0.056564,
+      "auto": true
+    },
+    "league:brasileirão série b|family:result": {
+      "n_samples": 456.0,
+      "calibration_gap": 0.076274,
+      "auto": true
+    },
+    "league:brasileirão série b|family:result|side:away": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.093882,
+      "auto": true
+    },
+    "league:brasileirão série b|family:result|side:away|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.093882,
+      "auto": true
+    },
+    "league:brasileirão série b|family:result|side:draw": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.097816,
+      "auto": true
+    },
+    "league:brasileirão série b|family:result|side:draw|bucket:no_line": {
+      "n_samples": 152.0,
+      "calibration_gap": 0.097816,
+      "auto": true
+    },
+    "league:brasileirão série b|family:shots": {
+      "n_samples": 555.0,
+      "calibration_gap": 0.060487,
+      "auto": true
+    },
+    "league:brasileirão série b|family:shots|side:over": {
+      "n_samples": 277.0,
+      "calibration_gap": 0.097899,
+      "auto": true
+    },
+    "league:brasileirão série b|family:shots|side:over|bucket:low": {
+      "n_samples": 138.0,
+      "calibration_gap": 0.084514,
+      "auto": true
+    },
+    "league:bundesliga": {
+      "n_samples": 1056.0,
+      "calibration_gap": 0.088717,
+      "auto": true
+    },
+    "league:bundesliga|family:cards": {
+      "n_samples": 120.0,
+      "calibration_gap": 0.0742,
+      "auto": true
+    },
+    "league:bundesliga|family:cards|side:over": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.066017,
+      "auto": true
+    },
+    "league:bundesliga|family:cards|side:under": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.06765,
+      "auto": true
+    },
+    "league:bundesliga|family:double_chance": {
+      "n_samples": 194.0,
+      "calibration_gap": 0.069789,
+      "auto": true
+    },
+    "league:bundesliga|family:goals": {
+      "n_samples": 120.0,
+      "calibration_gap": 0.061842,
+      "auto": true
+    },
+    "league:bundesliga|family:result": {
+      "n_samples": 180.0,
+      "calibration_gap": 0.073039,
+      "auto": true
+    },
+    "league:bundesliga|family:result|side:away": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.096033,
+      "auto": true
+    },
+    "league:bundesliga|family:result|side:away|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.096033,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:btts": {
+      "n_samples": 244.0,
+      "calibration_gap": 0.073828,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:cards": {
+      "n_samples": 242.0,
+      "calibration_gap": 0.079731,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:cards|side:under": {
+      "n_samples": 121.0,
+      "calibration_gap": 0.095769,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:corners": {
+      "n_samples": 227.0,
+      "calibration_gap": 0.088234,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:corners|side:over": {
+      "n_samples": 108.0,
+      "calibration_gap": 0.08288,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:corners|side:under": {
+      "n_samples": 119.0,
+      "calibration_gap": 0.089412,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:goals|side:over": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.062262,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:goals|side:under": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.059221,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:result|side:draw": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.099025,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:result|side:draw|bucket:no_line": {
+      "n_samples": 122.0,
+      "calibration_gap": 0.099025,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:shots": {
+      "n_samples": 426.0,
+      "calibration_gap": 0.078594,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:shots|side:over|bucket:low": {
+      "n_samples": 103.0,
+      "calibration_gap": 0.096563,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:shots|side:under": {
+      "n_samples": 213.0,
+      "calibration_gap": 0.083446,
+      "auto": true
+    },
+    "league:canadian premier league|family:corners": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.098,
+      "auto": true
+    },
+    "league:canadian premier league|family:double_chance": {
+      "n_samples": 168.0,
+      "calibration_gap": 0.050506,
+      "auto": true
+    },
+    "league:canadian premier league|family:result": {
+      "n_samples": 168.0,
+      "calibration_gap": 0.05078,
+      "auto": true
+    },
+    "league:conmebol libertadores|family:shots": {
+      "n_samples": 88.0,
+      "calibration_gap": 0.063557,
+      "auto": true
+    },
+    "league:conmebol sudamericana": {
+      "n_samples": 538.0,
+      "calibration_gap": 0.051152,
+      "auto": true
+    },
+    "league:conmebol sudamericana|family:double_chance": {
+      "n_samples": 99.0,
+      "calibration_gap": 0.08205,
+      "auto": true
+    },
+    "league:conmebol sudamericana|family:goals": {
+      "n_samples": 62.0,
+      "calibration_gap": 0.072226,
+      "auto": true
+    },
+    "league:conmebol sudamericana|family:result": {
+      "n_samples": 93.0,
+      "calibration_gap": 0.080419,
+      "auto": true
+    },
+    "league:coppa italia": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.059028,
+      "auto": true
+    },
+    "league:czech first league|family:cards": {
+      "n_samples": 136.0,
+      "calibration_gap": 0.097743,
+      "auto": true
+    },
+    "league:czech first league|family:cards|side:over": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.09778,
+      "auto": true
+    },
+    "league:czech first league|family:corners": {
+      "n_samples": 123.0,
+      "calibration_gap": 0.096008,
+      "auto": true
+    },
+    "league:czech first league|family:double_chance|side:home_away": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.096294,
+      "auto": true
+    },
+    "league:czech first league|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.096294,
+      "auto": true
+    },
+    "league:czech first league|family:goals": {
+      "n_samples": 136.0,
+      "calibration_gap": 0.081735,
+      "auto": true
+    },
+    "league:czech first league|family:result|side:draw": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.085588,
+      "auto": true
+    },
+    "league:czech first league|family:result|side:draw|bucket:no_line": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.085588,
+      "auto": true
+    },
+    "league:czech first league|family:shots": {
+      "n_samples": 264.0,
+      "calibration_gap": 0.051337,
+      "auto": true
+    },
+    "league:czech first league|family:shots|side:over": {
+      "n_samples": 129.0,
+      "calibration_gap": 0.072744,
+      "auto": true
+    },
+    "league:czech first league|family:shots|side:over|bucket:low": {
+      "n_samples": 61.0,
+      "calibration_gap": 0.081443,
+      "auto": true
+    },
+    "league:czech first league|family:shots|side:under": {
+      "n_samples": 135.0,
+      "calibration_gap": 0.075178,
+      "auto": true
+    },
+    "league:czech first league|family:shots|side:under|bucket:low": {
+      "n_samples": 102.0,
+      "calibration_gap": 0.084774,
+      "auto": true
+    },
+    "league:danish superliga": {
+      "n_samples": 404.0,
+      "calibration_gap": 0.052099,
+      "auto": true
+    },
+    "league:danish superliga|family:result": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.087431,
+      "auto": true
+    },
+    "league:danish superliga|family:shots": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.079127,
+      "auto": true
+    },
+    "league:división profesional|family:btts|side:yes": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.086289,
+      "auto": true
+    },
+    "league:división profesional|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.086289,
+      "auto": true
+    },
+    "league:división profesional|family:corners|side:over": {
+      "n_samples": 75.0,
+      "calibration_gap": 0.063707,
+      "auto": true
+    },
+    "league:división profesional|family:corners|side:over|bucket:core": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.097061,
+      "auto": true
+    },
+    "league:división profesional|family:corners|side:under": {
+      "n_samples": 75.0,
+      "calibration_gap": 0.063707,
+      "auto": true
+    },
+    "league:división profesional|family:corners|side:under|bucket:core": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.097061,
+      "auto": true
+    },
+    "league:división profesional|family:double_chance": {
+      "n_samples": 270.0,
+      "calibration_gap": 0.071622,
+      "auto": true
+    },
+    "league:división profesional|family:double_chance|side:home_away": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.0762,
+      "auto": true
+    },
+    "league:división profesional|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.0762,
+      "auto": true
+    },
+    "league:división profesional|family:goals": {
+      "n_samples": 178.0,
+      "calibration_gap": 0.094073,
+      "auto": true
+    },
+    "league:división profesional|family:goals|side:over": {
+      "n_samples": 89.0,
+      "calibration_gap": 0.080135,
+      "auto": true
+    },
+    "league:división profesional|family:result": {
+      "n_samples": 270.0,
+      "calibration_gap": 0.083292,
+      "auto": true
+    },
+    "league:división profesional|family:result|side:draw": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.0962,
+      "auto": true
+    },
+    "league:división profesional|family:result|side:draw|bucket:no_line": {
+      "n_samples": 90.0,
+      "calibration_gap": 0.0962,
+      "auto": true
+    },
+    "league:egyptian premier league": {
+      "n_samples": 246.0,
+      "calibration_gap": 0.08374,
+      "auto": true
+    },
+    "league:hnl|family:goals": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.084153,
+      "auto": true
+    },
+    "league:hnl|family:result": {
+      "n_samples": 111.0,
+      "calibration_gap": 0.091676,
+      "auto": true
+    },
+    "league:laliga": {
+      "n_samples": 1400.0,
+      "calibration_gap": 0.053182,
+      "auto": true
+    },
+    "league:laliga 2": {
+      "n_samples": 308.0,
+      "calibration_gap": 0.052769,
+      "auto": true
+    },
+    "league:laliga 2|family:double_chance": {
+      "n_samples": 77.0,
+      "calibration_gap": 0.088779,
+      "auto": true
+    },
+    "league:laliga 2|family:result": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.054227,
+      "auto": true
+    },
+    "league:laliga|family:cards": {
+      "n_samples": 156.0,
+      "calibration_gap": 0.098192,
+      "auto": true
+    },
+    "league:laliga|family:cards|side:under": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.070103,
+      "auto": true
+    },
+    "league:laliga|family:double_chance": {
+      "n_samples": 257.0,
+      "calibration_gap": 0.059082,
+      "auto": true
+    },
+    "league:laliga|family:double_chance|side:home_away": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.090423,
+      "auto": true
+    },
+    "league:laliga|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.090423,
+      "auto": true
+    },
+    "league:laliga|family:result": {
+      "n_samples": 234.0,
+      "calibration_gap": 0.063923,
+      "auto": true
+    },
+    "league:laliga|family:result|side:draw": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.09541,
+      "auto": true
+    },
+    "league:laliga|family:result|side:draw|bucket:no_line": {
+      "n_samples": 78.0,
+      "calibration_gap": 0.09541,
+      "auto": true
+    },
+    "league:laliga|family:shots|side:over": {
+      "n_samples": 150.0,
+      "calibration_gap": 0.090993,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:btts": {
+      "n_samples": 158.0,
+      "calibration_gap": 0.064443,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:btts|side:no": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.099582,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:btts|side:no|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.099582,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:double_chance|side:draw_away": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.098266,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.098266,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:double_chance|side:home_away": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.089671,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.089671,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:goals": {
+      "n_samples": 158.0,
+      "calibration_gap": 0.072525,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:result": {
+      "n_samples": 237.0,
+      "calibration_gap": 0.055907,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:result|side:draw": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.086,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:result|side:draw|bucket:no_line": {
+      "n_samples": 79.0,
+      "calibration_gap": 0.086,
+      "auto": true
+    },
+    "league:liga de primera|family:cards|side:under": {
+      "n_samples": 68.0,
+      "calibration_gap": 0.086044,
+      "auto": true
+    },
+    "league:liga de primera|family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.074207,
+      "auto": true
+    },
+    "league:liga de primera|family:double_chance": {
+      "n_samples": 223.0,
+      "calibration_gap": 0.080596,
+      "auto": true
+    },
+    "league:liga de primera|family:double_chance|side:draw_away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.099057,
+      "auto": true
+    },
+    "league:liga de primera|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.099057,
+      "auto": true
+    },
+    "league:liga de primera|family:goals": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.084836,
+      "auto": true
+    },
+    "league:liga de primera|family:result": {
+      "n_samples": 210.0,
+      "calibration_gap": 0.065557,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:btts": {
+      "n_samples": 174.0,
+      "calibration_gap": 0.067655,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:cards|side:under": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.099894,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:corners": {
+      "n_samples": 161.0,
+      "calibration_gap": 0.097981,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:goals|side:under": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.090759,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:result": {
+      "n_samples": 261.0,
+      "calibration_gap": 0.073985,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:result|side:draw": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.06746,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:result|side:draw|bucket:no_line": {
+      "n_samples": 87.0,
+      "calibration_gap": 0.06746,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:shots": {
+      "n_samples": 252.0,
+      "calibration_gap": 0.068441,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:shots|side:under": {
+      "n_samples": 125.0,
+      "calibration_gap": 0.080072,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:double_chance|side:draw_away": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.0874,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.0874,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:double_chance|side:home_draw": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.0703,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.0703,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:goals": {
+      "n_samples": 120.0,
+      "calibration_gap": 0.089783,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:result|side:away": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.075417,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:result|side:away|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.075417,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:result|side:home": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.0886,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:result|side:home|bucket:no_line": {
+      "n_samples": 60.0,
+      "calibration_gap": 0.0886,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:shots": {
+      "n_samples": 231.0,
+      "calibration_gap": 0.076913,
+      "auto": true
+    },
+    "league:liga portugal betclic|family:shots|side:under": {
+      "n_samples": 117.0,
+      "calibration_gap": 0.086419,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:cards|side:over": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.076076,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:corners": {
+      "n_samples": 294.0,
+      "calibration_gap": 0.070524,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:corners|side:over": {
+      "n_samples": 141.0,
+      "calibration_gap": 0.088092,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:corners|side:under": {
+      "n_samples": 153.0,
+      "calibration_gap": 0.080346,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:double_chance|side:draw_away": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.071308,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.071308,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:double_chance|side:home_away": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.098605,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.098605,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:double_chance|side:home_draw": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.092936,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.092936,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:goals": {
+      "n_samples": 344.0,
+      "calibration_gap": 0.082832,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:result|side:draw": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.088122,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:result|side:draw|bucket:no_line": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.088122,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:result|side:home": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.077663,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:result|side:home|bucket:no_line": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.077663,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:shots": {
+      "n_samples": 664.0,
+      "calibration_gap": 0.062358,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:shots|side:over|bucket:low": {
+      "n_samples": 155.0,
+      "calibration_gap": 0.076626,
+      "auto": true
+    },
+    "league:ligapro serie a|family:btts": {
+      "n_samples": 202.0,
+      "calibration_gap": 0.098307,
+      "auto": true
+    },
+    "league:ligapro serie a|family:corners": {
+      "n_samples": 194.0,
+      "calibration_gap": 0.066933,
+      "auto": true
+    },
+    "league:ligapro serie a|family:corners|side:under": {
+      "n_samples": 98.0,
+      "calibration_gap": 0.051255,
+      "auto": true
+    },
+    "league:ligapro serie a|family:double_chance": {
+      "n_samples": 307.0,
+      "calibration_gap": 0.059329,
+      "auto": true
+    },
+    "league:ligapro serie a|family:double_chance|side:home_away": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.08194,
+      "auto": true
+    },
+    "league:ligapro serie a|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.08194,
+      "auto": true
+    },
+    "league:ligapro serie a|family:goals": {
+      "n_samples": 200.0,
+      "calibration_gap": 0.05245,
+      "auto": true
+    },
+    "league:ligapro serie a|family:goals|side:over": {
+      "n_samples": 100.0,
+      "calibration_gap": 0.09386,
+      "auto": true
+    },
+    "league:ligapro serie a|family:goals|side:under": {
+      "n_samples": 100.0,
+      "calibration_gap": 0.086,
+      "auto": true
+    },
+    "league:ligapro serie a|family:result": {
+      "n_samples": 303.0,
+      "calibration_gap": 0.057145,
+      "auto": true
+    },
+    "league:ligapro serie a|family:result|side:away": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.09699,
+      "auto": true
+    },
+    "league:ligapro serie a|family:result|side:away|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.09699,
+      "auto": true
+    },
+    "league:ligapro serie a|family:result|side:draw": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.081386,
+      "auto": true
+    },
+    "league:ligapro serie a|family:result|side:draw|bucket:no_line": {
+      "n_samples": 101.0,
+      "calibration_gap": 0.081386,
+      "auto": true
+    },
+    "league:ligue 1|family:cards": {
+      "n_samples": 110.0,
+      "calibration_gap": 0.059727,
+      "auto": true
+    },
+    "league:ligue 1|family:goals": {
+      "n_samples": 112.0,
+      "calibration_gap": 0.097509,
+      "auto": true
+    },
+    "league:mls|family:btts": {
+      "n_samples": 326.0,
+      "calibration_gap": 0.082368,
+      "auto": true
+    },
+    "league:mls|family:btts|side:no": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.078822,
+      "auto": true
+    },
+    "league:mls|family:btts|side:no|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.078822,
+      "auto": true
+    },
+    "league:mls|family:btts|side:yes": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.078822,
+      "auto": true
+    },
+    "league:mls|family:btts|side:yes|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.078822,
+      "auto": true
+    },
+    "league:mls|family:cards|side:under": {
+      "n_samples": 161.0,
+      "calibration_gap": 0.079404,
+      "auto": true
+    },
+    "league:mls|family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.07646,
+      "auto": true
+    },
+    "league:mls|family:corners|side:over": {
+      "n_samples": 142.0,
+      "calibration_gap": 0.092007,
+      "auto": true
+    },
+    "league:mls|family:corners|side:under": {
+      "n_samples": 154.0,
+      "calibration_gap": 0.088461,
+      "auto": true
+    },
+    "league:mls|family:double_chance": {
+      "n_samples": 544.0,
+      "calibration_gap": 0.067425,
+      "auto": true
+    },
+    "league:mls|family:double_chance|side:draw_away": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.073497,
+      "auto": true
+    },
+    "league:mls|family:double_chance|side:draw_away|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.073497,
+      "auto": true
+    },
+    "league:mls|family:double_chance|side:home_away": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.065908,
+      "auto": true
+    },
+    "league:mls|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.065908,
+      "auto": true
+    },
+    "league:mls|family:goals|side:over": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.073644,
+      "auto": true
+    },
+    "league:mls|family:result|side:draw": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.065233,
+      "auto": true
+    },
+    "league:mls|family:result|side:draw|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.065233,
+      "auto": true
+    },
+    "league:mls|family:result|side:home": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.063687,
+      "auto": true
+    },
+    "league:mls|family:result|side:home|bucket:no_line": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.063687,
+      "auto": true
+    },
+    "league:mls|family:shots|side:over": {
+      "n_samples": 314.0,
+      "calibration_gap": 0.065879,
+      "auto": true
+    },
+    "league:mls|family:shots|side:over|bucket:high": {
+      "n_samples": 159.0,
+      "calibration_gap": 0.098761,
+      "auto": true
+    },
+    "league:mls|family:shots|side:over|bucket:low": {
+      "n_samples": 154.0,
+      "calibration_gap": 0.074324,
+      "auto": true
+    },
+    "league:mls|family:shots|side:under|bucket:core": {
+      "n_samples": 99.0,
+      "calibration_gap": 0.088717,
+      "auto": true
+    },
+    "league:mls|family:shots|side:under|bucket:low": {
+      "n_samples": 182.0,
+      "calibration_gap": 0.059127,
+      "auto": true
+    },
+    "league:premier league": {
+      "n_samples": 1260.0,
+      "calibration_gap": 0.067474,
+      "auto": true
+    },
+    "league:premier league|family:btts": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.0897,
+      "auto": true
+    },
+    "league:premier league|family:cards|side:over": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.062729,
+      "auto": true
+    },
+    "league:premier league|family:double_chance": {
+      "n_samples": 231.0,
+      "calibration_gap": 0.083931,
+      "auto": true
+    },
+    "league:premier league|family:double_chance|side:home_away": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.075829,
+      "auto": true
+    },
+    "league:premier league|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.075829,
+      "auto": true
+    },
+    "league:premier league|family:goals": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.076071,
+      "auto": true
+    },
+    "league:premier league|family:result": {
+      "n_samples": 210.0,
+      "calibration_gap": 0.097552,
+      "auto": true
+    },
+    "league:premier league|family:result|side:draw": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.071586,
+      "auto": true
+    },
+    "league:premier league|family:result|side:draw|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.071586,
+      "auto": true
+    },
+    "league:premier league|family:result|side:home": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.076229,
+      "auto": true
+    },
+    "league:premier league|family:result|side:home|bucket:no_line": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.076229,
+      "auto": true
+    },
+    "league:primera a|family:cards": {
+      "n_samples": 250.0,
+      "calibration_gap": 0.0865,
+      "auto": true
+    },
+    "league:primera a|family:double_chance|side:home_draw": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.078579,
+      "auto": true
+    },
+    "league:primera a|family:double_chance|side:home_draw|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.078579,
+      "auto": true
+    },
+    "league:primera a|family:goals": {
+      "n_samples": 260.0,
+      "calibration_gap": 0.078069,
+      "auto": true
+    },
+    "league:primera a|family:goals|side:over": {
+      "n_samples": 130.0,
+      "calibration_gap": 0.063477,
+      "auto": true
+    },
+    "league:primera a|family:result|side:away": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.069014,
+      "auto": true
+    },
+    "league:primera a|family:result|side:away|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.069014,
+      "auto": true
+    },
+    "league:primera a|family:result|side:home": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.079115,
+      "auto": true
+    },
+    "league:primera a|family:result|side:home|bucket:no_line": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.079115,
+      "auto": true
+    },
+    "league:primera división|family:double_chance": {
+      "n_samples": 106.0,
+      "calibration_gap": 0.069066,
+      "auto": true
+    },
+    "league:primera división|family:goals": {
+      "n_samples": 66.0,
+      "calibration_gap": 0.07703,
+      "auto": true
+    },
+    "league:primera división|family:result": {
+      "n_samples": 99.0,
+      "calibration_gap": 0.061515,
+      "auto": true
+    },
+    "league:primera nacional": {
+      "n_samples": 586.0,
+      "calibration_gap": 0.075382,
+      "auto": true
+    },
+    "league:primera nacional|family:goals": {
+      "n_samples": 104.0,
+      "calibration_gap": 0.055067,
+      "auto": true
+    },
+    "league:primera nacional|family:result": {
+      "n_samples": 156.0,
+      "calibration_gap": 0.065833,
+      "auto": true
+    },
+    "league:pro league|family:cards": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.074293,
+      "auto": true
+    },
+    "league:pro league|family:goals": {
+      "n_samples": 140.0,
+      "calibration_gap": 0.068593,
+      "auto": true
+    },
+    "league:pro league|family:goals|side:under": {
+      "n_samples": 70.0,
+      "calibration_gap": 0.087814,
+      "auto": true
+    },
+    "league:pro league|family:result": {
+      "n_samples": 210.0,
+      "calibration_gap": 0.087305,
+      "auto": true
+    },
+    "league:pro league|family:shots": {
+      "n_samples": 266.0,
+      "calibration_gap": 0.080808,
+      "auto": true
+    },
+    "league:pro league|family:shots|side:over": {
+      "n_samples": 132.0,
+      "calibration_gap": 0.097,
+      "auto": true
+    },
+    "league:saudi pro league|family:cards": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.069361,
+      "auto": true
+    },
+    "league:saudi pro league|family:corners": {
+      "n_samples": 129.0,
+      "calibration_gap": 0.074969,
+      "auto": true
+    },
+    "league:saudi pro league|family:double_chance": {
+      "n_samples": 243.0,
+      "calibration_gap": 0.075206,
+      "auto": true
+    },
+    "league:saudi pro league|family:goals|side:under": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.092958,
+      "auto": true
+    },
+    "league:saudi pro league|family:result": {
+      "n_samples": 216.0,
+      "calibration_gap": 0.077287,
+      "auto": true
+    },
+    "league:saudi pro league|family:shots|side:over|bucket:high": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.068952,
+      "auto": true
+    },
+    "league:saudi pro league|family:shots|side:under": {
+      "n_samples": 131.0,
+      "calibration_gap": 0.085199,
+      "auto": true
+    },
+    "league:scottish premiership|family:double_chance": {
+      "n_samples": 146.0,
+      "calibration_gap": 0.083431,
+      "auto": true
+    },
+    "league:scottish premiership|family:result": {
+      "n_samples": 126.0,
+      "calibration_gap": 0.091651,
+      "auto": true
+    },
+    "league:serie a|family:cards": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.083868,
+      "auto": true
+    },
+    "league:serie a|family:cards|side:under": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.098375,
+      "auto": true
+    },
+    "league:serie a|family:double_chance": {
+      "n_samples": 253.0,
+      "calibration_gap": 0.057802,
+      "auto": true
+    },
+    "league:serie a|family:double_chance|side:home_away": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.098556,
+      "auto": true
+    },
+    "league:serie a|family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.098556,
+      "auto": true
+    },
+    "league:serie a|family:goals": {
+      "n_samples": 144.0,
+      "calibration_gap": 0.07575,
+      "auto": true
+    },
+    "league:serie a|family:goals|side:under": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.097847,
+      "auto": true
+    },
+    "league:serie a|family:result": {
+      "n_samples": 216.0,
+      "calibration_gap": 0.070366,
+      "auto": true
+    },
+    "league:serie a|family:result|side:draw": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.093792,
+      "auto": true
+    },
+    "league:serie a|family:result|side:draw|bucket:no_line": {
+      "n_samples": 72.0,
+      "calibration_gap": 0.093792,
+      "auto": true
+    },
+    "league:serie a|family:shots": {
+      "n_samples": 260.0,
+      "calibration_gap": 0.075477,
+      "auto": true
+    },
+    "league:trendyol süper lig": {
+      "n_samples": 120.0,
+      "calibration_gap": 0.060941,
+      "auto": true
+    },
+    "league:uefa champions league|family:btts": {
+      "n_samples": 80.0,
+      "calibration_gap": 0.09805,
+      "auto": true
+    },
+    "league:uefa europa league": {
+      "n_samples": 666.0,
+      "calibration_gap": 0.077105,
+      "auto": true
+    },
+    "league:uefa europa league|family:btts": {
+      "n_samples": 74.0,
+      "calibration_gap": 0.062892,
+      "auto": true
+    },
+    "league:uefa europa league|family:double_chance": {
+      "n_samples": 142.0,
+      "calibration_gap": 0.083922,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:btts": {
+      "n_samples": 126.0,
+      "calibration_gap": 0.060476,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:cards": {
+      "n_samples": 126.0,
+      "calibration_gap": 0.092849,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:cards|side:under": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.079619,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:corners": {
+      "n_samples": 113.0,
+      "calibration_gap": 0.075876,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:double_chance": {
+      "n_samples": 207.0,
+      "calibration_gap": 0.075739,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:goals": {
+      "n_samples": 126.0,
+      "calibration_gap": 0.091317,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:goals|side:over": {
+      "n_samples": 63.0,
+      "calibration_gap": 0.096778,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie|family:result": {
+      "n_samples": 189.0,
+      "calibration_gap": 0.086407,
+      "auto": true
+    },
+    "family:cards": {
+      "n_samples": 3720.0,
+      "calibration_gap": 0.029791,
+      "auto": true
+    },
+    "family:cards|side:over|bucket:low_2_5_3_5": {
+      "n_samples": 780.0,
+      "calibration_gap": 0.03205,
+      "auto": true
+    },
+    "family:cards|side:under": {
+      "n_samples": 1860.0,
+      "calibration_gap": 0.03211,
+      "auto": true
+    },
+    "family:cards|side:under|bucket:high_5_5_plus": {
+      "n_samples": 1046.0,
+      "calibration_gap": 0.04593,
+      "auto": true
+    },
+    "family:corners|side:under|bucket:high": {
+      "n_samples": 337.0,
+      "calibration_gap": 0.04141,
+      "auto": true
+    },
+    "family:double_chance": {
+      "n_samples": 7720.0,
+      "calibration_gap": 0.01571,
+      "auto": true
+    },
+    "family:double_chance|side:home_away": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.024607,
+      "auto": true
+    },
+    "family:double_chance|side:home_away|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.024607,
+      "auto": true
+    },
+    "family:goals": {
+      "n_samples": 4688.0,
+      "calibration_gap": 0.039197,
+      "auto": true
+    },
+    "family:goals|side:over": {
+      "n_samples": 2344.0,
+      "calibration_gap": 0.034546,
+      "auto": true
+    },
+    "family:goals|side:over|bucket:low_0_5_1_5": {
+      "n_samples": 708.0,
+      "calibration_gap": 0.037925,
+      "auto": true
+    },
+    "family:goals|side:under|bucket:extreme_4_plus": {
+      "n_samples": 522.0,
+      "calibration_gap": 0.032058,
+      "auto": true
+    },
+    "family:goals|side:under|bucket:low_0_5_1_5": {
+      "n_samples": 836.0,
+      "calibration_gap": 0.047372,
+      "auto": true
+    },
+    "family:result": {
+      "n_samples": 7092.0,
+      "calibration_gap": 0.019878,
+      "auto": true
+    },
+    "family:result|side:away": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.044014,
+      "auto": true
+    },
+    "family:result|side:away|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.044014,
+      "auto": true
+    },
+    "family:result|side:draw": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.019481,
+      "auto": true
+    },
+    "family:result|side:draw|bucket:no_line": {
+      "n_samples": 2364.0,
+      "calibration_gap": 0.019481,
+      "auto": true
+    },
+    "global": {
+      "n_samples": 37762.0,
+      "calibration_gap": 0.030062,
+      "auto": true
+    },
+    "league:2. bundesliga": {
+      "n_samples": 612.0,
+      "calibration_gap": 0.048028,
+      "auto": true
+    },
+    "league:brasileirão série b": {
+      "n_samples": 2652.0,
+      "calibration_gap": 0.017739,
+      "auto": true
+    },
+    "league:brasileirão série b|family:double_chance": {
+      "n_samples": 499.0,
+      "calibration_gap": 0.042435,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a": {
+      "n_samples": 2146.0,
+      "calibration_gap": 0.02926,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:double_chance": {
+      "n_samples": 397.0,
+      "calibration_gap": 0.046879,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:goals": {
+      "n_samples": 244.0,
+      "calibration_gap": 0.046234,
+      "auto": true
+    },
+    "league:campeonato brasileiro série a|family:result": {
+      "n_samples": 366.0,
+      "calibration_gap": 0.04826,
+      "auto": true
+    },
+    "league:canadian premier league": {
+      "n_samples": 626.0,
+      "calibration_gap": 0.018808,
+      "auto": true
+    },
+    "league:conmebol libertadores": {
+      "n_samples": 414.0,
+      "calibration_gap": 0.047614,
+      "auto": true
+    },
+    "league:czech first league": {
+      "n_samples": 1224.0,
+      "calibration_gap": 0.041487,
+      "auto": true
+    },
+    "league:czech first league|family:double_chance": {
+      "n_samples": 225.0,
+      "calibration_gap": 0.049107,
+      "auto": true
+    },
+    "league:división profesional": {
+      "n_samples": 1048.0,
+      "calibration_gap": 0.022699,
+      "auto": true
+    },
+    "league:hnl": {
+      "n_samples": 438.0,
+      "calibration_gap": 0.037756,
+      "auto": true
+    },
+    "league:liga 1 te apuesto": {
+      "n_samples": 1082.0,
+      "calibration_gap": 0.041406,
+      "auto": true
+    },
+    "league:liga 1 te apuesto|family:double_chance": {
+      "n_samples": 248.0,
+      "calibration_gap": 0.025201,
+      "auto": true
+    },
+    "league:liga de primera": {
+      "n_samples": 974.0,
+      "calibration_gap": 0.04723,
+      "auto": true
+    },
+    "league:liga de primera|family:cards": {
+      "n_samples": 136.0,
+      "calibration_gap": 0.045544,
+      "auto": true
+    },
+    "league:liga mx, apertura": {
+      "n_samples": 1434.0,
+      "calibration_gap": 0.038879,
+      "auto": true
+    },
+    "league:liga mx, apertura|family:double_chance": {
+      "n_samples": 280.0,
+      "calibration_gap": 0.045882,
+      "auto": true
+    },
+    "league:liga portugal betclic": {
+      "n_samples": 1072.0,
+      "calibration_gap": 0.039165,
+      "auto": true
+    },
+    "league:liga profesional de fútbol": {
+      "n_samples": 3088.0,
+      "calibration_gap": 0.033092,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:cards": {
+      "n_samples": 344.0,
+      "calibration_gap": 0.0355,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:double_chance": {
+      "n_samples": 582.0,
+      "calibration_gap": 0.046632,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:goals|side:over": {
+      "n_samples": 172.0,
+      "calibration_gap": 0.034674,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:goals|side:over|bucket:low_0_5_1_5": {
+      "n_samples": 91.0,
+      "calibration_gap": 0.043791,
+      "auto": true
+    },
+    "league:liga profesional de fútbol|family:result": {
+      "n_samples": 516.0,
+      "calibration_gap": 0.043339,
+      "auto": true
+    },
+    "league:ligapro serie a": {
+      "n_samples": 1206.0,
+      "calibration_gap": 0.026612,
+      "auto": true
+    },
+    "league:ligue 1": {
+      "n_samples": 1004.0,
+      "calibration_gap": 0.038861,
+      "auto": true
+    },
+    "league:ligue 1|family:btts": {
+      "n_samples": 114.0,
+      "calibration_gap": 0.047404,
+      "auto": true
+    },
+    "league:ligue 1|family:double_chance": {
+      "n_samples": 189.0,
+      "calibration_gap": 0.038846,
+      "auto": true
+    },
+    "league:ligue 1|family:result": {
+      "n_samples": 171.0,
+      "calibration_gap": 0.034608,
+      "auto": true
+    },
+    "league:mls": {
+      "n_samples": 2918.0,
+      "calibration_gap": 0.015397,
+      "auto": true
+    },
+    "league:mls|family:cards": {
+      "n_samples": 322.0,
+      "calibration_gap": 0.029652,
+      "auto": true
+    },
+    "league:mls|family:corners": {
+      "n_samples": 296.0,
+      "calibration_gap": 0.02448,
+      "auto": true
+    },
+    "league:mls|family:goals": {
+      "n_samples": 326.0,
+      "calibration_gap": 0.045893,
+      "auto": true
+    },
+    "league:mls|family:goals|side:under": {
+      "n_samples": 163.0,
+      "calibration_gap": 0.036337,
+      "auto": true
+    },
+    "league:mls|family:result": {
+      "n_samples": 489.0,
+      "calibration_gap": 0.049568,
+      "auto": true
+    },
+    "league:mls|family:shots": {
+      "n_samples": 615.0,
+      "calibration_gap": 0.039618,
+      "auto": true
+    },
+    "league:mls|family:shots|side:under": {
+      "n_samples": 301.0,
+      "calibration_gap": 0.04589,
+      "auto": true
+    },
+    "league:primera a": {
+      "n_samples": 1886.0,
+      "calibration_gap": 0.042076,
+      "auto": true
+    },
+    "league:primera a|family:double_chance": {
+      "n_samples": 429.0,
+      "calibration_gap": 0.049802,
+      "auto": true
+    },
+    "league:primera a|family:result": {
+      "n_samples": 420.0,
+      "calibration_gap": 0.049276,
+      "auto": true
+    },
+    "league:primera división": {
+      "n_samples": 436.0,
+      "calibration_gap": 0.029897,
+      "auto": true
+    },
+    "league:pro league": {
+      "n_samples": 1256.0,
+      "calibration_gap": 0.036306,
+      "auto": true
+    },
+    "league:saudi pro league": {
+      "n_samples": 1280.0,
+      "calibration_gap": 0.048025,
+      "auto": true
+    },
+    "league:scottish premiership": {
+      "n_samples": 752.0,
+      "calibration_gap": 0.040705,
+      "auto": true
+    },
+    "league:scottish premiership|family:goals": {
+      "n_samples": 84.0,
+      "calibration_gap": 0.048774,
+      "auto": true
+    },
+    "league:serie a": {
+      "n_samples": 1276.0,
+      "calibration_gap": 0.036734,
+      "auto": true
+    },
+    "league:vriendenloterij eredivisie": {
+      "n_samples": 1134.0,
+      "calibration_gap": 0.045521,
+      "auto": true
     }
-  },
-  "status_counts": {
-    "active": 0,
-    "watch": 0,
-    "reduced": 2,
-    "blocked": 0,
-    "experimental": 0
-  },
-  "total_segments": 2
+  }
 }

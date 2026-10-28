@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from typing import Optional
 import json
 import asyncio
 import copy
@@ -65,11 +66,21 @@ app = FastAPI(
 app.include_router(admin_router)
 
 
+ALLOWED_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get(
+        "SHERLOCK_ALLOWED_ORIGINS",
+        "http://localhost:8000,http://127.0.0.1:8000,http://localhost:3000,http://127.0.0.1:3000",
+    ).split(",")
+    if origin.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=r"^chrome-extension://.*$",
     allow_credentials=True,
-    allow_methods=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
     allow_headers=["*"],
 )
 
@@ -288,50 +299,13 @@ def list_sports() -> list[SportOut]:
     return [SportOut(value=s.value, label=s.value.capitalize()) for s in Sport]
 
 
-@app.get("/api/v1/competitions", tags=["Competitions"])
-def list_competitions():
-    """Return active competitions list from data/competitions.json."""
-    json_path = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR))), "data", "competitions.json")
-    if not os.path.exists(json_path):
-        json_path = os.path.join(os.getcwd(), "data", "competitions.json")
-    if os.path.exists(json_path):
-        try:
-            with open(json_path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            print(f"Error loading competitions.json: {e}")
-    return []
-
 ## Obtener la cantidad de partidos de una liga en especifico
 @app.get("/api/v1/competitions/{competition_id}/matches", tags=["Competitions"])
-def list_matches(competition_id: str, db: Session = Depends(get_db)):
+def list_matches_count_for_competition(competition_id: str, db: Session = Depends(get_db)):
     """Return the number of matches for a specific competition."""
     from sqlalchemy.orm import load_only
     query = db.query(AnalysisHistory).filter(AnalysisHistory.competition == competition_id).options(load_only(AnalysisHistory.id)).count()
     return query
-
-@app.get("/api/v1/competitions/pending-picks", tags=["Competitions"])
-def list_competitions_with_pending_picks(db: Session = Depends(get_db)):
-    """Return list of competition names that have pending picks (final score not set)."""
-    from sqlalchemy.orm import load_only
-    rows = (
-        db.query(AnalysisHistory)
-        .options(load_only(AnalysisHistory.competition, AnalysisHistory.payload, AnalysisHistory.final_score_home))
-        .filter(AnalysisHistory.final_score_home.is_(None))
-        .all()
-    )
-    comps = set()
-    for r in rows:
-        c_name = r.competition
-        if not c_name and r.payload:
-            try:
-                p = json.loads(r.payload) if isinstance(r.payload, str) else r.payload
-                c_name = p.get("competition") or p.get("tournament", {}).get("name")
-            except Exception:
-                pass
-        if c_name:
-            comps.add(c_name.strip())
-    return {"pending_competitions": list(comps)}
 
 
 
@@ -349,14 +323,204 @@ prefill_odds_store: dict[str, dict] = {}
 prefill_odds_match: tuple | None = None
 
 
+_SEASON_STARTS_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "season_starts.json")
+_SEASON_STARTS_CACHE: dict | None = None
+
+def _load_season_starts() -> dict:
+    global _SEASON_STARTS_CACHE
+    if _SEASON_STARTS_CACHE is None:
+        try:
+            abs_path = os.path.abspath(_SEASON_STARTS_PATH)
+            with open(abs_path, "r", encoding="utf-8") as f:
+                _SEASON_STARTS_CACHE = json.load(f)
+        except Exception:
+            _SEASON_STARTS_CACHE = {}
+    return _SEASON_STARTS_CACHE
+
+
+def get_season_start(competition: str, season: str | None = None, tournament_id: str | int | None = None) -> datetime | None:
+    """
+    Retorna la fecha de inicio real de la temporada para una competición.
+    Usa season_starts.json (keyed por tournament_id o competition_name).
+    Soporta temporadas tipo '2026' (calendar) y '2025/2026' o '25/26' (split).
+    Fallback: None (el caller manejará el fallback a la fecha más antigua en DB).
+    """
+    import re
+    starts = _load_season_starts()
+
+    # Normalizar season: "25/26" → "2025/2026"
+    if season:
+        season = re.sub(r'^(\d{2})/(\d{2})$', lambda m: f"20{m.group(1)}/20{m.group(2)}", season)
+
+    # Buscar entrada por tournament_id primero
+    entry = None
+    if tournament_id is not None:
+        entry = starts.get(str(tournament_id))
+    if entry is None:
+        # Fallback: buscar por nombre de competición
+        for v in starts.values():
+            if v.get("competition_name", "").lower() == (competition or "").lower():
+                entry = v
+                break
+
+    if entry is None:
+        return None
+
+    start_md = entry.get("start_month_day", "01-01")  # MM-DD
+    season_type = entry.get("type", "calendar")
+
+    try:
+        month, day = [int(x) for x in start_md.split("-")]
+    except Exception:
+        return None
+
+    # Determinar año de inicio
+    if season_type == "calendar":
+        # Año calendario: extraer primer año de la temporada
+        years = re.findall(r"\d{4}", season or "")
+        if years:
+            year = int(years[0])
+        else:
+            year = datetime.utcnow().year
+        return datetime(year, month, day)
+    else:
+        # Split season (ej. "2025/2026"): usa el primer año + mes/día de inicio
+        years = re.findall(r"\d{4}", season or "")
+        if years:
+            year = int(years[0])
+        else:
+            year = datetime.utcnow().year
+        return datetime(year, month, day)
+
+
+def _compute_league_season_corners(competition: str, season: str | None = None, db_session: Session | None = None, tournament_id: str | int | None = None) -> float | None:
+    """
+    Calcula el promedio de córners por partido para una liga y temporada,
+    usando sólo partidos a partir de la fecha real de inicio de la temporada
+    (según season_starts.json). Excluye partidos sin corners del denominador.
+    """
+    if not competition or competition in ("", "Desconocida", "General"):
+        return None
+
+    import re
+    from src.core.database import SessionLocal
+
+    db_created = False
+    s = db_session
+    if s is None:
+        s = SessionLocal()
+        db_created = True
+
+    try:
+        q = s.query(
+            AnalysisHistory.final_corners_home,
+            AnalysisHistory.final_corners_away,
+            AnalysisHistory.match_date,
+            AnalysisHistory.date,
+        ).filter(
+            AnalysisHistory.competition == competition,
+            AnalysisHistory.sport == Sport.FOOTBALL,
+            AnalysisHistory.final_corners_home.isnot(None),
+            AnalysisHistory.final_corners_away.isnot(None),
+        )
+
+        years = re.findall(r"\d{4}", str(season)) if season else []
+        corner_totals: list[float] = []
+
+        # Obtener la fecha real de inicio de la temporada
+        season_start_dt = get_season_start(competition, season, tournament_id)
+
+        if years:
+            target_year = years[-1]
+            q_season = q.filter(
+                or_(
+                    AnalysisHistory.date.like(f"{target_year}%"),
+                    AnalysisHistory.match_date.like(f"{target_year}%"),
+                    AnalysisHistory.payload.like(f'%"season": "{target_year}"%'),
+                    AnalysisHistory.payload.like(f'%"season":"{target_year}"%'),
+                    AnalysisHistory.payload.like(f'%"season": {target_year}%'),
+                    # Also match short-form: "25/26"
+                    AnalysisHistory.payload.like(f'%"season_year": "{target_year}%'),
+                )
+            ).order_by(AnalysisHistory.date.desc())
+            rows = q_season.all()
+            # Filtrar por fecha real de inicio si disponible
+            for r in rows:
+                if r[0] is None or r[1] is None:
+                    continue
+                if season_start_dt is not None:
+                    rec_date = r[2] or r[3]  # match_date, date
+                    if rec_date is not None:
+                        if isinstance(rec_date, str):
+                            try:
+                                rec_date = datetime.fromisoformat(rec_date.replace("Z", "+00:00"))
+                            except Exception:
+                                rec_date = None
+                        if rec_date and rec_date.replace(tzinfo=None) < season_start_dt:
+                            continue  # anterior al inicio real de temporada
+                corner_totals.append(float(r[0]) + float(r[1]))
+
+        # Si no hubo suficientes muestras por temporada o no se especificó temporada,
+        # fallback a los últimos 200 partidos de la liga
+        if len(corner_totals) < 8:
+            if season_start_dt is not None:
+                q_fallback = q.order_by(AnalysisHistory.date.desc()).limit(500)
+            else:
+                q_fallback = q.order_by(AnalysisHistory.date.desc()).limit(200)
+            rows = q_fallback.all()
+            corner_totals = []
+            for r in rows:
+                if r[0] is None or r[1] is None:
+                    continue
+                if season_start_dt is not None:
+                    rec_date = r[2] or r[3]
+                    if rec_date is not None:
+                        if isinstance(rec_date, str):
+                            try:
+                                rec_date = datetime.fromisoformat(rec_date.replace("Z", "+00:00"))
+                            except Exception:
+                                rec_date = None
+                        if rec_date and rec_date.replace(tzinfo=None) < season_start_dt:
+                            continue
+                corner_totals.append(float(r[0]) + float(r[1]))
+
+        if len(corner_totals) >= 8:
+            computed_avg = sum(corner_totals) / len(corner_totals)
+            if 5.0 <= computed_avg <= 16.0:
+                return round(computed_avg, 2)
+        return None
+    except Exception as exc:
+        print(f"[Sherlock] Error calculando avg_corners_per_game para {competition} ({season}): {exc}")
+        return None
+    finally:
+        if db_created and s is not None:
+            try:
+                s.close()
+            except Exception:
+                pass
+
 
 @app.post("/api/v1/prefill", tags=["Prefill"])
 async def push_prefill(payload: dict) -> dict:
     """
     Browser extension pushes a (partial) form payload here.
     The Sherlock dashboard polls this endpoint and auto-fills the form.
+    Calcula los corners por partido de la liga/temporada y los inyecta en league_stats.
     """
     global prefill_store
+
+    competition = payload.get("competition") or ""
+    season = payload.get("season")
+    tournament_id = payload.get("tournament_id")
+    if not season and isinstance(payload.get("league_stats"), dict):
+        season = payload["league_stats"].get("season")
+
+    computed_corners = _compute_league_season_corners(competition, season, tournament_id=tournament_id)
+    if computed_corners is not None:
+        if not isinstance(payload.get("league_stats"), dict):
+            payload["league_stats"] = {}
+        payload["league_stats"]["avg_corners_per_game"] = computed_corners
+
     prefill_store = payload
     return {"status": "ok", "message": "Datos recibidos. Sherlock los cargará en el formulario."}
 
@@ -589,10 +753,25 @@ def _annotate_best_bookmaker(res: CompareResponse, bookmaker_map: dict, home_nam
                 line_fmt = line_str
             label_to_bookmaker[template.format(line=line_fmt)] = bk
 
+    # #51: Maldición del ganador (Winner's Curse)
+    # Al escoger la mejor cuota entre K casas, la cuota máxima tiende a sobreestimar el valor por ruido estadístico.
+    # Descontamos incertidumbre: discount = 0.01 / sqrt(n_sources) sobre EV y edge.
+    n_sources = len(bookmaker_map) if bookmaker_map else 0
+    # Si hay múltiples casas mapeadas
+    has_shopping = any(isinstance(v, dict) and len(v) > 1 for v in bookmaker_map.values()) or len(bookmaker_map) > 1
+
     for v in res.values:
         bk = label_to_bookmaker.get(v.selection)
         if bk:
             v.bookmaker = bk
+            if has_shopping:
+                # Descuento del ganador: 0.5% - 1.0% de edge/EV por incertidumbre de selección de cuota extrema
+                # 0.0075 = 0.75 puntos porcentuales de penalización en edge_ev
+                curse_discount = 0.0075
+                if v.edge_ev is not None:
+                    v.edge_ev = round(max(0.0, v.edge_ev - curse_discount), 3)
+                if v.edge is not None:
+                    v.edge = round(max(0.0, v.edge - (curse_discount * 100.0)), 2)
 
 def _apply_line_shopping(request: FootballCompareRequest) -> tuple[FootballCompareRequest, dict]:
     """
@@ -1130,8 +1309,9 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
 
                     for h in candidates:
                         title_lower = h.match_title.lower()
-                        home_match = h_name_lower[:5] in title_lower or h_name_lower in title_lower
-                        away_match = a_name_lower[:5] in title_lower or a_name_lower in title_lower
+                        # Issue #15: emparejamiento estricto por nombre completo del equipo (no prefijo de 5 letras)
+                        home_match = h_name_lower in title_lower
+                        away_match = a_name_lower in title_lower
                         if not (home_match and away_match):
                             continue
 
@@ -1146,12 +1326,6 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                         if home_idx != -1 and away_idx != -1 and home_idx < away_idx:
                             matched = h
                             break
-
-                    if not matched and candidates:
-                        cand = candidates[0]
-                        rec_date = cand.match_date or cand.date
-                        if not match_date_val or not rec_date or abs((rec_date - match_date_val).total_seconds()) <= 2 * 86400:
-                            matched = cand
 
             # ── Si encontramos el partido, actualizamos ──
             if matched:
@@ -1299,10 +1473,33 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
 
         print(f"Reconstruido payload: {cleaned_payload}")
 
+        # ── Tarea 1: extraer fecha explícita; warning si falta ──
         match_date_val = None
         if payload.get("start_timestamp"):
-            match_date_val = datetime.utcfromtimestamp(payload["start_timestamp"])
-        else:
+            try:
+                match_date_val = datetime.utcfromtimestamp(payload["start_timestamp"])
+            except Exception as _e:
+                import logging as _logging
+                _logging.getLogger("sherlock").warning(
+                    "[push_result] start_timestamp inválido id=%s payload=%s err=%s",
+                    payload.get("event_id"), payload, _e
+                )
+        if not match_date_val and payload.get("match_date"):
+            try:
+                match_date_val = datetime.fromisoformat(str(payload["match_date"]).replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                pass
+        if not match_date_val and payload.get("date"):
+            try:
+                match_date_val = datetime.fromisoformat(str(payload["date"]).replace("Z", "+00:00")).replace(tzinfo=None)
+            except Exception:
+                pass
+        if not match_date_val:
+            import logging as _logging
+            _logging.getLogger("sherlock").warning(
+                "[push_result] Partido sin fecha: event_id=%s home=%s away=%s payload_keys=%s",
+                payload.get("event_id"), home_name, away_name, list(payload.keys())
+            )
             match_date_val = datetime.utcnow()
 
         # ── Deduplicacion CORREGIDA: ahora SI usa event_id ──
@@ -3552,6 +3749,102 @@ def get_pending_picks_competitions(db: Session = Depends(get_db)):
     }
 
 
+@app.get("/api/v1/history/matches", tags=["Analysis History"])
+def get_history_matches(
+    competition: str = Query(..., description="Nombre de la competición"),
+    season: Optional[str] = Query(None, description="Temporada, ej. '2026' o '2025/2026'"),
+    db: Session = Depends(get_db),
+):
+    """
+    Tarea 3: retorna los partidos ya en DB para una competición/temporada.
+    Watson usa esto para calcular la diferencia y extraer sólo los faltantes.
+    Respuesta: { matches: [ {event_id, match_date, home, away, key} ] }
+    """
+    import re as _re
+    import unicodedata as _ud
+
+    def _norm(s: str) -> str:
+        """Normalizar: minúsculas, sin tildes, trim."""
+        if not s:
+            return ""
+        nfkd = _ud.normalize("NFKD", s)
+        return "".join(c for c in nfkd if not _ud.combining(c)).lower().strip()
+
+    q = db.query(
+        AnalysisHistory.match_title,
+        AnalysisHistory.match_date,
+        AnalysisHistory.date,
+        AnalysisHistory.payload,
+    ).filter(
+        AnalysisHistory.competition == competition,
+        AnalysisHistory.sport == Sport.FOOTBALL,
+    )
+
+    # Filtrar por temporada si se especifica
+    if season:
+        years = _re.findall(r"\d{4}", season)
+        if years:
+            target_year = years[-1]
+            q = q.filter(
+                or_(
+                    AnalysisHistory.date.like(f"{target_year}%"),
+                    AnalysisHistory.match_date.like(f"{target_year}%"),
+                    AnalysisHistory.payload.like(f'%"season_year": "{target_year}%'),
+                    AnalysisHistory.payload.like(f'%"season_year":"{target_year}%'),
+                    AnalysisHistory.payload.like(f'%"season": "{target_year}%'),
+                )
+            )
+
+    rows = q.all()
+    matches = []
+    for row in rows:
+        match_title = row[0] or ""
+        rec_date = row[1] or row[2]
+        payload_str = row[3]
+        event_id = None
+        home = ""
+        away = ""
+
+        # Parse payload for event_id and team names
+        if payload_str:
+            try:
+                p = json.loads(str(payload_str))
+                event_id = p.get("event_id") or p.get("eventId") or p.get("match", {}).get("external_id")
+                home = p.get("home", {}).get("name") or p.get("home_team") or ""
+                away = p.get("away", {}).get("name") or p.get("away_team") or ""
+            except Exception:
+                pass
+
+        # Fallback: parse from match_title "Home vs Away"
+        if not home and " vs " in match_title:
+            parts = match_title.split(" vs ", 1)
+            home = parts[0].strip()
+            away = parts[1].strip()
+
+        date_str = ""
+        if rec_date:
+            try:
+                if isinstance(rec_date, str):
+                    date_str = rec_date[:10]
+                else:
+                    date_str = rec_date.strftime("%Y-%m-%d")
+            except Exception:
+                pass
+
+        # Normalized key for deduplication
+        key = f"{date_str}|{_norm(home)}|{_norm(away)}"
+
+        matches.append({
+            "event_id": str(event_id) if event_id else None,
+            "match_date": date_str,
+            "home": home,
+            "away": away,
+            "key": key,
+        })
+
+    return {"competition": competition, "season": season, "count": len(matches), "matches": matches}
+
+
 @app.post("/api/v1/analysis/{analysis_id}/profitability", tags=["Analysis History"])
 def update_analysis_profitability(
     analysis_id: str,
@@ -3752,6 +4045,63 @@ async def recalculate_all_accuracy(
     """)
     shared_historical_records = [dict(r) for r in db.execute(_q_hist_batch).mappings().all()]
 
+    # ── OPTIMIZACIÓN: Precomputar estadísticas históricas por liga en una sola pasada en memoria ──
+    # Evita que cada partido individual en paralelo o secuencial ejecute SELECTs adicionales a la BD
+    shared_league_stats: dict[str, dict] = {}
+    try:
+        from src.ui.api.main import _check_pick_success, _calculate_pick_profit, _is_pick_hit
+        _q_leagues_batch = _sql_text("""
+            SELECT competition, picks_calculados,
+                   final_score_home, final_score_away,
+                   final_corners_home, final_corners_away,
+                   final_yellow_cards_home, final_yellow_cards_away,
+                   final_shots_home, final_shots_away,
+                   final_shots_on_target_home, final_shots_on_target_away,
+                   final_fouls_home, final_fouls_away
+            FROM analysis_history
+            WHERE picks_calculados IS NOT NULL AND competition IS NOT NULL AND sport = 'FOOTBALL'
+        """)
+        league_batch_rows = db.execute(_q_leagues_batch).mappings().all()
+        for l_row in league_batch_rows:
+            comp_name = (l_row.get("competition") or "").strip().lower()
+            if not comp_name or comp_name in ("desconocida", "general"):
+                continue
+            if comp_name not in shared_league_stats:
+                shared_league_stats[comp_name] = {
+                    "historical_matches": 0,
+                    "historical_picks": 0,
+                    "historical_hits": 0,
+                    "historical_profit": 0.0,
+                }
+            l_entry = shared_league_stats[comp_name]
+            l_entry["historical_matches"] += 1
+
+            has_res = l_row.get("final_score_home") is not None and l_row.get("final_score_away") is not None
+            res_d = dict(l_row) if has_res else None
+
+            p_raw = l_row.get("picks_calculados")
+            if p_raw:
+                try:
+                    p_list = json.loads(p_raw) if isinstance(p_raw, str) else p_raw
+                    if isinstance(p_list, list):
+                        for pk in p_list:
+                            if not isinstance(pk, dict):
+                                continue
+                            stk = float(pk.get("stake", pk.get("stake_units", 0)) or 0)
+                            if stk <= 0:
+                                continue
+                            l_entry["historical_picks"] += 1
+                            if has_res and res_d:
+                                outcome = _check_pick_success(pk, res_d)
+                                if _is_pick_hit(outcome):
+                                    l_entry["historical_hits"] += 1
+                                odds_val = float(pk.get("odds", 1.0) or 1.0)
+                                l_entry["historical_profit"] += _calculate_pick_profit(outcome, odds_val)
+                except Exception:
+                    pass
+    except Exception as ex_ls:
+        print(f"Advertencia optimizando league stats batch: {ex_ls}", flush=True)
+
     if parallel:
         from concurrent.futures import ProcessPoolExecutor
         from src.core.parallel_recalc import split_into_chunks, _recalc_chunk
@@ -3788,6 +4138,7 @@ async def recalculate_all_accuracy(
             chunk_payloads.append({
                 "matches": ch,
                 "shared_historical_records": shared_historical_records,
+                "shared_league_stats": shared_league_stats,
                 "use_general_stats": use_general_stats,
                 "threshold_dt_iso": threshold_dt.isoformat() if threshold_dt else None,
                 "enabled_rules": enabled_rules,
@@ -3910,6 +4261,7 @@ async def recalculate_all_accuracy(
                         current_match_date=m_date,
                         precomputed_historical_records=shared_historical_records,
                         precomputed_team_index=_team_index,
+                        precomputed_league_stats=shared_league_stats,
                     )
             except Exception as comp_err:
                 print(f"  -> Error en motor de comparación para {history.id} ({sport}): {comp_err}", flush=True)
@@ -3930,7 +4282,8 @@ async def recalculate_all_accuracy(
                 if enabled_rules:
                     home_stats = local_payload.get("home", {})
                     away_stats = local_payload.get("away", {})
-                    stat_src = StatSource.from_payload(home_stats, away_stats)
+                    odds_stats = local_payload.get("odds", {})
+                    stat_src = StatSource.from_payload(home_stats, away_stats, odds_stats)
                     for pick in picks:
                         sel = pick.get("selection", "")
                         should_block, _ = evaluate_pick_rules(sel, stat_src, enabled_rules)
@@ -4075,6 +4428,16 @@ def apply_blacklist(db: Session = Depends(get_db)):
                             data_quality_score=pick.get("data_quality_score"),
                             sample_size_weight=pick.get("sample_size_weight"),
                             stake_units=pick.get("stake_units"),
+                            empirical_hit_rate=pick.get("empirical_hit_rate"),
+                            home_hit_rate=pick.get("home_hit_rate"),
+                            away_hit_rate=pick.get("away_hit_rate"),
+                            hit_rate_samples=pick.get("hit_rate_samples", 0),
+                            h2h_hit_rate=pick.get("h2h_hit_rate"),
+                            h2h_raw_hit_rate=pick.get("h2h_raw_hit_rate"),
+                            h2h_samples=pick.get("h2h_samples", 0) or 0,
+                            h2h_hits=pick.get("h2h_hits"),
+                            is_rule_blocked=pick.get("is_rule_blocked", False),
+                            correlation_blocked=pick.get("correlation_blocked", False),
                             is_blacklisted=False
                         )
                         pick["is_publishable"] = is_publishable_pick(v)
@@ -4329,7 +4692,7 @@ def _update_segment_governance_file(league: str, market_name: str, action: str, 
         data["segment_meta"][target_key] = {
             "source": "manual_governance",
             "market_name": market_name,
-            "stake_multiplier": stake_multiplier if stake_multiplier is not None else 0.5
+            "stake_multiplier": stake_multiplier if stake_multiplier is not None else 0.25
         }
     elif action_lower in ["reset", "active"]:
         data["segments"].pop(target_key, None)
@@ -4845,6 +5208,16 @@ def apply_pick_rules(db: Session = Depends(get_db)):
                             data_quality_score=pick.get("data_quality_score"),
                             sample_size_weight=pick.get("sample_size_weight"),
                             stake_units=pick.get("stake_units"),
+                            empirical_hit_rate=pick.get("empirical_hit_rate"),
+                            home_hit_rate=pick.get("home_hit_rate"),
+                            away_hit_rate=pick.get("away_hit_rate"),
+                            hit_rate_samples=pick.get("hit_rate_samples", 0),
+                            h2h_hit_rate=pick.get("h2h_hit_rate"),
+                            h2h_raw_hit_rate=pick.get("h2h_raw_hit_rate"),
+                            h2h_samples=pick.get("h2h_samples", 0) or 0,
+                            h2h_hits=pick.get("h2h_hits"),
+                            correlation_blocked=pick.get("correlation_blocked", False),
+                            is_rule_blocked=False,
                             is_blacklisted=pick.get("is_blacklisted", False),
                         )
                         if not v.is_blacklisted:
@@ -6274,21 +6647,23 @@ def _resolve_ou_outcome(total: float | None, line: float | None, side: str) -> P
     return _combine_split_outcomes(results)
 
 
-def _calculate_pick_profit(outcome: PickOutcome, odds: float) -> float:
-    """Calcula beneficio en unidades con stake plano de 1u."""
+def _calculate_pick_profit(outcome: PickOutcome, odds: float, stake: float = 1.0) -> float:
+    """Calcula beneficio en unidades (por defecto stake plano de 1u)."""
     if outcome is None:
         return 0.0
     if outcome is True:
-        return odds - 1.0
-    if outcome is False:
-        return -1.0
-    if outcome == "void":
-        return 0.0
-    if outcome == "half_win":
-        return (odds - 1.0) / 2.0
-    if outcome == "half_loss":
-        return -0.5
-    return 0.0
+        unit_profit = odds - 1.0
+    elif outcome is False:
+        unit_profit = -1.0
+    elif outcome == "void":
+        unit_profit = 0.0
+    elif outcome == "half_win":
+        unit_profit = (odds - 1.0) / 2.0
+    elif outcome == "half_loss":
+        unit_profit = -0.5
+    else:
+        unit_profit = 0.0
+    return unit_profit * stake
 
 
 def _is_pick_hit(outcome: PickOutcome) -> bool:
@@ -6368,11 +6743,16 @@ def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
             return _resolve_ou_outcome(total_c, line, "under")
 
     # Cards
-    h_y = res.get("final_yellow_cards_home") or 0
-    a_y = res.get("final_yellow_cards_away") or 0
-    h_r = res.get("final_red_cards_home") or 0
-    a_r = res.get("final_red_cards_away") or 0
-    total_cards = (h_y + a_y) + ((h_r + a_r) * 2)
+    h_y_raw = res.get("final_yellow_cards_home")
+    a_y_raw = res.get("final_yellow_cards_away")
+    h_r_raw = res.get("final_red_cards_home")
+    a_r_raw = res.get("final_red_cards_away")
+    has_card_data = any(x is not None for x in (h_y_raw, a_y_raw, h_r_raw, a_r_raw))
+    h_y = h_y_raw or 0
+    a_y = a_y_raw or 0
+    h_r = h_r_raw or 0
+    a_r = a_r_raw or 0
+    total_cards = (h_y + a_y) + ((h_r + a_r) * 2) if has_card_data else None
     if "tarjetas" in sel or "cards" in sel:
         if "over" in sel:
             line = _extract_line(sel, "over")
@@ -6558,19 +6938,6 @@ def _populate_history_extra_fields(h: AnalysisHistory, out: AnalysisHistoryOut, 
         
     return out
 
-
-@app.get("/api/v1/analysis/{analysis_id}", response_model=AnalysisHistoryOut, tags=["Analysis History"])
-def get_analysis_by_id(
-    analysis_id: str,
-    db: Session = Depends(get_db),
-) -> AnalysisHistoryOut:
-    """Retrieve a specific analysis by ID."""
-    history = db.query(AnalysisHistory).filter(AnalysisHistory.id == analysis_id).first()
-    if not history:
-        raise HTTPException(status_code=404, detail="Analysis not found")
-    out = AnalysisHistoryOut.model_validate(history)
-    return _populate_history_extra_fields(history, out)
-
 @app.delete("/api/v1/analysis/{analysis_id}", status_code=204, tags=["Analysis History"])
 def delete_analysis(
     analysis_id: str,
@@ -6672,7 +7039,7 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
 
 if __name__ == "__main__":
 
-    liga = "Primera Nacional"
+    liga = "Primera A"
 
     #----------Contar equipos de liga--------------------------------
 
@@ -6686,15 +7053,15 @@ if __name__ == "__main__":
 
     
     ##---------Cambiar nombre de liga---------------
-    old_name = "Liga 1"
-    new_name = "Liga 1 Te Apuesto"
+    # old_name = "Liga 1"
+    # new_name = "Liga 1 Te Apuesto"
     
-    db = next(get_db())
-    try:
-        resultado = rename_competition_matches(old_name, new_name, db)
-        print(resultado)
-    finally:
-        db.close()
+    # db = next(get_db())
+    # try:
+    #     resultado = rename_competition_matches(old_name, new_name, db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
 
     ##---------Eliminar liga--------------------------------
 
@@ -6735,3 +7102,10 @@ if __name__ == "__main__":
         
     # finally:
     #     db.close()
+
+    db = next(get_db())
+    try:
+        resultado = _compute_league_season_corners(liga, "2026-07-24", db)
+        print(resultado)
+    finally:
+        db.close()

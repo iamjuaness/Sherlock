@@ -154,6 +154,7 @@ def merge_with_existing(
         "league:mls|family:goals|side:over|bucket:extreme_4_plus": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},
         "league:mls|family:cards|side:over|bucket:high_3_5": {"status": "reduced", "n_samples": 50, "calibration_gap": 0.12, "auto": False},
         "league:premier league|family:btts|side:yes": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},
+        "league:premier league|family:btts|side:yes|bucket:no_line": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},
     }
 
     if not reset and existing_path.exists():

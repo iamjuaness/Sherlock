@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Sequence, Tuple
 
 
 def implied_probability(odds: float) -> float:
@@ -27,6 +27,44 @@ def remove_vig_two_way(odds_a: float, odds_b: float) -> Tuple[float, float]:
     if overround <= 0:
         raise ValueError("Overround nulo o negativo")
     return p_a / overround, p_b / overround
+
+
+def remove_vig_power(odds_list: Sequence[float], tol: float = 1e-7, max_iter: int = 100) -> list[float]:
+    """
+    Elimina el margen (vigorish) usando el método de potencia (Shin / Power method).
+    Resuelve sum( (1 / o_i)^k ) = 1.0 para k > 0 mediante bisección o Newton-Raphson.
+    El método de potencia no penaliza desproporcionadamente las probabilidades altas (como en Doble Oportunidad).
+    """
+    valid_odds = [float(o) for o in odds_list if o is not None and o > 1.0]
+    if not valid_odds:
+        return []
+    if len(valid_odds) == 1:
+        return [1.0]
+
+    raw_probs = [1.0 / o for o in valid_odds]
+    s = sum(raw_probs)
+    if abs(s - 1.0) < 1e-6:
+        return raw_probs
+
+    # Bisección para encontrar k tal que sum(p_i^k) == 1.0
+    # Si s > 1.0, k > 1.0; si s < 1.0, k < 1.0
+    low, high = 0.01, 10.0
+    for _ in range(max_iter):
+        mid = (low + high) / 2.0
+        val = sum(math.pow(p, mid) for p in raw_probs)
+        if abs(val - 1.0) < tol:
+            k = mid
+            break
+        if val > 1.0:
+            low = mid
+        else:
+            high = mid
+    else:
+        k = (low + high) / 2.0
+
+    power_probs = [math.pow(p, k) for p in raw_probs]
+    total_pow = sum(power_probs)
+    return [p / total_pow for p in power_probs]
 
 
 def remove_vig_three_way(home: float, draw: float, away: float) -> Tuple[float, float, float]:

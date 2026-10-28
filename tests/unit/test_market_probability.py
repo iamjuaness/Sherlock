@@ -27,6 +27,20 @@ def test_remove_vig_three_way():
     assert abs((ph + pd + pa) - 1.0) < 1e-6
 
 
+def test_remove_vig_power():
+    from src.models.market_probability import remove_vig_power
+    # For symmetric odds 1.90, 1.90
+    probs = remove_vig_power([1.90, 1.90])
+    assert len(probs) == 2
+    assert abs(probs[0] - 0.5) < 1e-4
+    assert abs(sum(probs) - 1.0) < 1e-5
+
+    # Double chance market 3-way
+    dc_probs = remove_vig_power([1.30, 1.45, 1.35])
+    assert len(dc_probs) == 3
+    assert abs(sum(dc_probs) - 1.0) < 1e-5
+
+
 test_clv = compute_clv(2.0, 1.8)
 assert test_clv.clv_percent > 0
 

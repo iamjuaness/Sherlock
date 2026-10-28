@@ -54,6 +54,7 @@ def evaluate_segment_status(
     effective_n: float,
     calibration_gap_abs: float = 0.0,
     recent_clv: float = 0.0,
+    clv_n: int = 0,
     config_path: str = "data/segment_governance.json",
 ) -> SegmentStatus:
     """Evalúa el estado de gobernanza de un segmento según evidencia y configuración manual de seguridad."""
@@ -84,13 +85,25 @@ def evaluate_segment_status(
     if effective_n < 15:
         return SegmentStatus.EXPERIMENTAL
 
-    if effective_n >= 30 and (calibration_gap_abs > 0.15 or (calibration_gap_abs > 0.10 and recent_clv < -0.05)):
+    # Issue #56: CLV solo se evalúa si hay muestra real (clv_n >= 20 picks con closing odds)
+    clv_significant = clv_n >= 20
+
+    if effective_n >= 30 and (
+        calibration_gap_abs > 0.15
+        or (calibration_gap_abs > 0.10 and clv_significant and recent_clv < -0.05)
+    ):
         return SegmentStatus.BLOCKED
 
-    if effective_n >= 25 and (calibration_gap_abs > 0.10 or recent_clv < -0.02):
+    if effective_n >= 25 and (
+        calibration_gap_abs > 0.10
+        or (clv_significant and recent_clv < -0.02)
+    ):
         return SegmentStatus.REDUCED
 
-    if effective_n >= 15 and (calibration_gap_abs > 0.05 or recent_clv < 0.0):
+    if effective_n >= 15 and (
+        calibration_gap_abs > 0.05
+        or (clv_significant and recent_clv < 0.0)
+    ):
         return SegmentStatus.WATCH
 
     return SegmentStatus.ACTIVE

@@ -1,68 +1,39 @@
 """
-Motor de stake y gestión de riesgo.
+Motor de stake y gestión de riesgo institucional de Sherlock.
 
-Implementa el cálculo completo de stake según la política del planning.txt §12:
-
-    stake_final =
-        stake_kelly_fractional
-        × reliability_score
-        × data_quality_factor
-        × drift_factor
-        × correlation_factor
-        × exposure_factor
-
-Con los siguientes límites:
-- Stake mínimo / máximo global
-- Stake máximo por partido
-- Stake máximo por liga
-- Stake máximo por segmento
-- Stake máximo por cluster correlacionado
+Sustituye la aproximación Bernoulli por optimización sobre la distribución
+completa de retornos (ReturnDistribution) e implementa escalado de portafolio
+simultáneo y contracción estadística del edge.
 """
 
 from __future__ import annotations
 
 import json
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Sequence, Tuple
 
+from src.domain.settlement import ReturnDistribution
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Configuración de política de riesgo
-# ═══════════════════════════════════════════════════════════════════════════
 
 _DEFAULT_POLICY_PATH = "data/risk_policy.json"
 
 
 @dataclass(frozen=True)
 class RiskPolicy:
-    """
-    Política de riesgo versionada.
+    """Política de riesgo profesional con soporte de drawdown y portafolio."""
 
-    Todos los stakes están en unidades de bankroll (0.0-1.0).
-    """
-
-    version: str = "1.0"
-
-    # Kelly fraccional global
+    version: str = "3.0"
     kelly_fraction: float = 0.25
-
-    # Límites globales de stake (unidades de bankroll)
     min_stake: float = 0.005
     max_stake: float = 0.05
-
-    # Límites por contexto
+    max_total_exposure: float = 0.25  # Exposición total máxima simultánea
     max_stake_per_match: float = 0.08
     max_stake_per_league: float = 0.12
     max_stake_per_segment: float = 0.06
     max_stake_per_cluster: float = 0.10
-
-    # Umbrales de reliability
     min_reliability_to_publish: float = 0.40
     experimental_stake_cap: float = 0.015
-
-    # Overrides por segmento (cargados desde JSON)
     segment_overrides: Dict[str, Dict] = field(default_factory=dict)
 
     @classmethod
@@ -73,36 +44,31 @@ class RiskPolicy:
         try:
             with open(p, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            overrides = {k: v for k, v in data.get("segment_overrides", {}).items()}
+            gl = data.get("global_limits", {})
             return cls(
-                version=data.get("version", "1.0"),
-                kelly_fraction=data.get("kelly_fraction", 0.25),
-                min_stake=data.get("min_stake", 0.005),
-                max_stake=data.get("max_stake", 0.05),
-                max_stake_per_match=data.get("max_stake_per_match", 0.08),
-                max_stake_per_league=data.get("max_stake_per_league", 0.12),
-                max_stake_per_segment=data.get("max_stake_per_segment", 0.06),
-                max_stake_per_cluster=data.get("max_stake_per_cluster", 0.10),
-                min_reliability_to_publish=data.get("min_reliability_to_publish", 0.40),
-                experimental_stake_cap=data.get("experimental_stake_cap", 0.015),
-                segment_overrides=overrides,
+                version=data.get("version", "3.0"),
+                kelly_fraction=float(gl.get("kelly_fraction", 0.25)),
+                min_stake=float(gl.get("min_stake_units", 0.005)),
+                max_stake=float(gl.get("max_stake_units", 0.05)),
+                max_total_exposure=float(gl.get("max_total_exposure", 0.25)),
+                max_stake_per_match=float(gl.get("max_stake_per_match", 0.08)),
+                max_stake_per_league=float(gl.get("max_stake_per_league", 0.12)),
+                max_stake_per_segment=float(gl.get("max_stake_per_segment", 0.06)),
+                max_stake_per_cluster=float(gl.get("max_stake_per_cluster", 0.06)),
+                min_reliability_to_publish=float(gl.get("min_reliability_score", 0.40)),
+                experimental_stake_cap=float(gl.get("experimental_stake_cap", 0.015)),
+                segment_overrides=data.get("segment_status_overrides", {}),
             )
         except Exception:
             return cls()
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Edge: raw / calibrado / final
-# ═══════════════════════════════════════════════════════════════════════════
-
 @dataclass(frozen=True)
 class EdgeResult:
-    """Descomposición del edge según probabilidades disponibles."""
-
-    edge_raw: float           # edge con p_model cruda (sin calibrar)
-    edge_calibrated: float    # edge con p_calibrated (output del calibrador)
-    edge_final: float         # edge con p_final (blend modelo + mercado)
-    breakeven_prob: float     # 1/odds
+    edge_raw: float
+    edge_calibrated: float
+    edge_final: float
+    breakeven_prob: float
     odds: float
     p_model_raw: Optional[float]
     p_calibrated: Optional[float]
@@ -115,11 +81,6 @@ def compute_edge(
     p_model_raw: Optional[float] = None,
     p_calibrated: Optional[float] = None,
 ) -> EdgeResult:
-    """
-    Calcula las tres versiones de edge.
-
-    El edge definitivo (edge_final) usa SIEMPRE p_final, nunca el modelo crudo.
-    """
     if odds <= 1.0:
         raise ValueError(f"Cuotas inválidas: {odds}")
 
@@ -142,44 +103,45 @@ def compute_edge(
     )
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Kelly fraccionado
-# ═══════════════════════════════════════════════════════════════════════════
-
-def kelly_fractional(
-    p: float,
+def compute_distribution_kelly(
+    distribution: Optional[ReturnDistribution],
     odds: float,
-    fraction: float = 0.25,
+    p_final: float,
+    multiplier: float = 0.25,
+    hard_cap: float = 0.25,
 ) -> float:
-    """
-    Criterio de Kelly fraccionado.
-
-    stake = fraction * (p * odds - 1) / (odds - 1)
-
-    Retorna 0.0 si Kelly es negativo (sin edge real).
-    """
-    if odds <= 1.0 or p <= 0.0 or p >= 1.0:
+    """Calcula Kelly utilizando la distribución completa de outcomes si existe."""
+    if odds <= 1.0 or p_final <= 0.0:
         return 0.0
+
+    if distribution is not None:
+        return distribution.kelly_fraction(multiplier=multiplier, hard_cap=hard_cap)
+
+    # Fallback si no hay distribución multi-resultado (Bernoulli estándar)
     b = odds - 1.0
-    kelly_full = (p * odds - 1.0) / b
-    return max(0.0, kelly_full * fraction)
+    p = p_final
+    q = 1.0 - p
+    f_star = (b * p - q) / b
+    if f_star <= 0.0:
+        return 0.0
+    return round(min(f_star * multiplier, hard_cap), 6)
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Factores de ajuste de stake
-# ═══════════════════════════════════════════════════════════════════════════
+def kelly_fractional(p: float, odds: float, fraction: float = 0.25, hard_cap: float = 1.0) -> float:
+    """Función directa de Kelly Bernoulli fraccionado."""
+    return compute_distribution_kelly(None, odds=odds, p_final=p, multiplier=fraction, hard_cap=hard_cap)
+
+
 
 @dataclass(frozen=True)
 class StakeFactors:
-    """Todos los factores multiplicativos del stake final."""
-
-    kelly_base: float                  # Kelly fraccionado base
-    reliability_score: float           # [0, 1]
-    data_quality_factor: float         # [0, 1]
-    drift_factor: float                # [0, 1] -> 1.0 = sin drift
-    correlation_factor: float          # [0, 1] -> 1.0 = sin correlación
-    exposure_factor: float             # [0, 1] -> 1.0 = sin exposición
-    governance_multiplier: float       # [0, 1] de segment_governance
+    kelly_base: float
+    reliability_score: float
+    data_quality_factor: float = 1.0
+    drift_factor: float = 1.0
+    correlation_factor: float = 1.0
+    exposure_factor: float = 1.0
+    governance_multiplier: float = 1.0
     segment_status: str = "active"
 
 
@@ -190,41 +152,50 @@ def compute_stake_final(
     existing_league_stake: float = 0.0,
     existing_segment_stake: float = 0.0,
     existing_cluster_stake: float = 0.0,
+    current_drawdown_pct: float = 0.0,
 ) -> Tuple[float, str]:
     """
-    Calcula el stake final aplicando todos los factores y límites.
-
-    Retorna (stake_final, reason) donde reason explica si se limitó.
+    Calcula el stake final aplicando ajuste de factores, drawdown scale y límites.
     """
-    # 0. Reliability mínima
     if factors.reliability_score < policy.min_reliability_to_publish:
-        return 0.0, f"reliability_score ({factors.reliability_score:.3f}) < threshold ({policy.min_reliability_to_publish})"
+        return 0.0, (
+            f"reliability_score ({factors.reliability_score:.3f}) < "
+            f"threshold ({policy.min_reliability_to_publish})"
+        )
 
-    # 1. Multiplicación de factores
-    raw = (
-        factors.kelly_base
-        * factors.reliability_score
-        * factors.data_quality_factor
-        * factors.drift_factor
-        * factors.correlation_factor
-        * factors.exposure_factor
-        * factors.governance_multiplier
+    if factors.governance_multiplier <= 0.0:
+        return 0.0, "governance_blocked"
+
+    # Reducción por Drawdown (Half-Kelly escalado al caer el drawdown)
+    dd_scale = 1.0
+    if current_drawdown_pct > 0.15:
+        dd_scale = max(0.20, 1.0 - (current_drawdown_pct * 2.0))
+
+    # Multiplicación directa de todos los factores: stake = kelly × R × Q × D × C × E × G
+    # Cada factor actúa como penalización independiente; la multiplicación directa
+    # es fiel al contrato matemático y evita que la media geométrica inflacione el resultado.
+    composite_factor = (
+        max(0.01, factors.reliability_score)
+        * max(0.01, factors.data_quality_factor)
+        * max(0.01, factors.drift_factor)
+        * max(0.01, factors.correlation_factor)
+        * max(0.01, factors.exposure_factor)
     )
 
-    # 2. Cap de segmento experimental
+    raw = factors.kelly_base * composite_factor * factors.governance_multiplier * dd_scale
+
     if factors.segment_status == "experimental":
         raw = min(raw, policy.experimental_stake_cap)
 
-    # 3. Límites por contexto (exposure)
-    available_match = max(0.0, policy.max_stake_per_match - existing_match_stake)
-    available_league = max(0.0, policy.max_stake_per_league - existing_league_stake)
-    available_segment = max(0.0, policy.max_stake_per_segment - existing_segment_stake)
-    available_cluster = max(0.0, policy.max_stake_per_cluster - existing_cluster_stake)
+    # Límites por contexto
+    avail_match = max(0.0, policy.max_stake_per_match - existing_match_stake)
+    avail_league = max(0.0, policy.max_stake_per_league - existing_league_stake)
+    avail_segment = max(0.0, policy.max_stake_per_segment - existing_segment_stake)
+    avail_cluster = max(0.0, policy.max_stake_per_cluster - existing_cluster_stake)
 
-    context_cap = min(available_match, available_league, available_segment, available_cluster)
+    context_cap = min(avail_match, avail_league, avail_segment, avail_cluster)
     limited = min(raw, context_cap, policy.max_stake)
 
-    # 4. Límite mínimo
     if limited < policy.min_stake:
         return 0.0, f"stake ({limited:.4f}) < min_stake ({policy.min_stake})"
 
@@ -232,47 +203,66 @@ def compute_stake_final(
     if limited < raw:
         reason = f"capped from {raw:.4f} to {limited:.4f} by context/policy"
 
-    return limited, reason
+    return round(limited, 5), reason
 
 
-# ═══════════════════════════════════════════════════════════════════════════
-# Resultado de riesgo completo
-# ═══════════════════════════════════════════════════════════════════════════
+def optimize_simultaneous_portfolio(
+    proposals: Sequence[Tuple[RiskDecision, float]],
+    policy: RiskPolicy,
+) -> List[RiskDecision]:
+    """
+    Escala proporcionalmente las apuestas simultáneas para respetar la exposición global máxima.
+
+    .. deprecated::
+        Esta función opera sobre ``RiskDecision`` y no está conectada al pipeline de
+        producción (detectado por graphify: degree=4, sin callers externos).
+        Para el pipeline real de ``compare_football()`` usar:
+            ``src.domain.portfolio.apply_portfolio_exposure_cap()``
+        que opera sobre ``ValueIndicator`` con kelly_fraction como métrica de exposición.
+
+        Se mantiene como API de dominio puro para pipelines de backtesting que construyan
+        portfolios a partir de ``RiskDecision`` directamente.
+    """
+    total_requested = sum(dec.stake_final for dec, _ in proposals)
+    if total_requested <= policy.max_total_exposure or total_requested == 0.0:
+        return [dec for dec, _ in proposals]
+
+    scale = policy.max_total_exposure / total_requested
+    adjusted_decisions: List[RiskDecision] = []
+
+    for dec, _ in proposals:
+        scaled_stake = round(dec.stake_final * scale, 5)
+        if scaled_stake < policy.min_stake:
+            dec.stake_final = 0.0
+            dec.is_publishable = False
+            dec.block_reason = f"scaled_below_min_stake ({scaled_stake:.4f})"
+        else:
+            dec.stake_final = scaled_stake
+            dec.stake_reason = f"portfolio_scaled (factor: {scale:.3f})"
+        adjusted_decisions.append(dec)
+
+    return adjusted_decisions
+
 
 @dataclass
 class RiskDecision:
-    """
-    Resultado completo del motor de riesgo para un pick.
-
-    Incluye todos los campos de trazabilidad requeridos por la Fase 13.
-    """
-
-    # Probabilidades
     p_model_raw: Optional[float]
     p_calibrated: Optional[float]
     p_market_no_vig: Optional[float]
     p_final: float
-
-    # Edge
     edge_raw: float
     edge_calibrated: float
     edge_final: float
-
-    # Stake
     kelly_base: float
-    stake_pre_risk: float      # antes de factores de ajuste
+    stake_pre_risk: float
     stake_final: float
     stake_reason: str
-
-    # Factores
     reliability_score: float
     data_quality_factor: float
     drift_factor: float
     correlation_factor: float
     exposure_factor: float
     governance_multiplier: float
-
-    # Metadatos de decisión
     segment_status: str
     policy_version: str
     is_publishable: bool
@@ -284,6 +274,7 @@ def compute_risk_decision(
     odds: float,
     policy: RiskPolicy,
     factors: StakeFactors,
+    distribution: Optional[ReturnDistribution] = None,
     p_model_raw: Optional[float] = None,
     p_calibrated: Optional[float] = None,
     p_market_no_vig: Optional[float] = None,
@@ -291,32 +282,52 @@ def compute_risk_decision(
     existing_league_stake: float = 0.0,
     existing_segment_stake: float = 0.0,
     existing_cluster_stake: float = 0.0,
+    current_drawdown_pct: float = 0.0,
 ) -> RiskDecision:
-    """
-    Punto de entrada principal del motor de riesgo.
-
-    Produce un RiskDecision con toda la trazabilidad requerida.
-    """
+    """Punto de entrada principal del motor de riesgo."""
     edge = compute_edge(p_final, odds, p_model_raw, p_calibrated)
 
+    # Si kelly_base no se suministró precalculado, resolverlo con la distribución
+    kelly_base = factors.kelly_base
+    if kelly_base <= 0.0 and edge.edge_final > 0.0:
+        kelly_base = compute_distribution_kelly(
+            distribution=distribution,
+            odds=odds,
+            p_final=p_final,
+            multiplier=policy.kelly_fraction,
+            hard_cap=policy.max_stake,
+        )
+
+    updated_factors = StakeFactors(
+        kelly_base=kelly_base,
+        reliability_score=factors.reliability_score,
+        data_quality_factor=factors.data_quality_factor,
+        drift_factor=factors.drift_factor,
+        correlation_factor=factors.correlation_factor,
+        exposure_factor=factors.exposure_factor,
+        governance_multiplier=factors.governance_multiplier,
+        segment_status=factors.segment_status,
+    )
+
     stake_final, reason = compute_stake_final(
-        factors=factors,
+        factors=updated_factors,
         policy=policy,
         existing_match_stake=existing_match_stake,
         existing_league_stake=existing_league_stake,
         existing_segment_stake=existing_segment_stake,
         existing_cluster_stake=existing_cluster_stake,
+        current_drawdown_pct=current_drawdown_pct,
     )
 
     publishable = (
         stake_final > 0.0
         and edge.edge_final > 0.0
-        and factors.governance_multiplier > 0.0
+        and updated_factors.governance_multiplier > 0.0
     )
 
     block_reason = None
     if not publishable:
-        if factors.governance_multiplier == 0.0:
+        if updated_factors.governance_multiplier == 0.0:
             block_reason = "governance_blocked"
         elif stake_final == 0.0:
             block_reason = reason
@@ -331,17 +342,17 @@ def compute_risk_decision(
         edge_raw=edge.edge_raw,
         edge_calibrated=edge.edge_calibrated,
         edge_final=edge.edge_final,
-        kelly_base=factors.kelly_base,
-        stake_pre_risk=factors.kelly_base,
+        kelly_base=updated_factors.kelly_base,
+        stake_pre_risk=updated_factors.kelly_base,
         stake_final=stake_final,
         stake_reason=reason,
-        reliability_score=factors.reliability_score,
-        data_quality_factor=factors.data_quality_factor,
-        drift_factor=factors.drift_factor,
-        correlation_factor=factors.correlation_factor,
-        exposure_factor=factors.exposure_factor,
-        governance_multiplier=factors.governance_multiplier,
-        segment_status=factors.segment_status,
+        reliability_score=updated_factors.reliability_score,
+        data_quality_factor=updated_factors.data_quality_factor,
+        drift_factor=updated_factors.drift_factor,
+        correlation_factor=updated_factors.correlation_factor,
+        exposure_factor=updated_factors.exposure_factor,
+        governance_multiplier=updated_factors.governance_multiplier,
+        segment_status=updated_factors.segment_status,
         policy_version=policy.version,
         is_publishable=publishable,
         block_reason=block_reason,

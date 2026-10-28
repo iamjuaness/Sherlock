@@ -17,67 +17,123 @@ function mapSofaScoreToSherlockTeamStats(
   teamId = null,
 ) {
   const s = sofaStats.statistics || sofaStats;
-  const matches = s.matches || 1;
+  // ── Issue #5: matches=0 se deja como 0; safeDiv nunca dividirá por 0 ──
+  const matches = s.matches || 0;
   const safeDiv = (a, b) => (b > 0 ? a / b : 0);
 
   // ─── OBTENER WINS/DRAWS/LOSSES REALES DESDE STANDINGS ───
-  let wins = 0,
-    draws = 0,
-    losses = 0;
-  let matchesHome = isHome ? Math.ceil(matches / 2) : Math.floor(matches / 2);
-  let matchesAway = isHome ? Math.floor(matches / 2) : Math.ceil(matches / 2);
+  // ── Issue #5: si no hay standings, dejar como null en lugar de inventar 50/25/25 ──
+  let wins = null,
+    draws = null,
+    losses = null;
+  let matchesHome = null;
+  let matchesAway = null;
 
   if (standings && teamId) {
     const teamStanding = findTeamInStandings(standings, teamId);
     if (teamStanding) {
-      wins = teamStanding.wins || 0;
-      draws = teamStanding.draws || 0;
-      losses = teamStanding.losses || 0;
+      wins = teamStanding.wins ?? 0;
+      draws = teamStanding.draws ?? 0;
+      losses = teamStanding.losses ?? 0;
       if (teamStanding.home) {
         matchesHome = isHome
-          ? teamStanding.home.matches || Math.ceil(matches / 2)
-          : Math.floor(matches / 2);
+          ? (teamStanding.home.matches ?? null)
+          : null;
         matchesAway = !isHome
-          ? teamStanding.away?.matches || Math.ceil(matches / 2)
-          : Math.floor(matches / 2);
+          ? (teamStanding.away?.matches ?? null)
+          : null;
       }
     }
   }
 
-  // Fallback si no hay standings
-  if (wins === 0 && draws === 0 && losses === 0) {
-    wins = Math.round(matches * 0.5);
-    draws = Math.round(matches * 0.25);
-    losses = matches - wins - draws;
+  // Si los standings no aportaron datos, aproximar desde matches totales
+  // pero NO inventar 50/25/25 — dejar wins/draws/losses en null si no hay datos
+  if (wins === null && matches > 0) {
+    // Usamos los goles para approximar si están disponibles
+    const goalsFor = s.goalsScored || 0;
+    const goalsAgainst = s.goalsConceded || 0;
+    // No inventamos; simplemente dejamos en 0 (campos obligatorios en el modelo)
+    wins = 0;
+    draws = 0;
+    losses = 0;
+  } else if (wins === null) {
+    wins = 0;
+    draws = 0;
+    losses = 0;
   }
 
+  // Aproximar home/away si no vinieron de standings
+  if (matchesHome === null) {
+    matchesHome = matches > 0 ? (isHome ? Math.ceil(matches / 2) : Math.floor(matches / 2)) : 0;
+  }
+  if (matchesAway === null) {
+    matchesAway = matches > 0 ? (isHome ? Math.floor(matches / 2) : Math.ceil(matches / 2)) : 0;
+  }
+
+  // ── Issue #7: Tomar clean sheets de standings (home / away) si están disponibles ──
   const cleanSheetsTotal = s.cleanSheets || 0;
-  const cleanSheetsHome = isHome ? cleanSheetsTotal : 0;
-  const cleanSheetsAway = !isHome ? cleanSheetsTotal : 0;
+  let cleanSheetsHome = null;
+  let cleanSheetsAway = null;
 
-  // ─── xG/xGA MEJORADO ───
-  const xgBase =
-    (s.bigChances || 0) * 0.38 +
-    (s.shotsOnTarget || 0) * 0.1 +
-    (s.hitWoodwork || 0) * 0.15 +
-    (s.fastBreakShots || 0) * 0.05 +
-    (s.freeKickShots || 0) * 0.03;
+  if (standings && teamId) {
+    const teamStanding = findTeamInStandings(standings, teamId);
+    if (teamStanding) {
+      if (teamStanding.home?.cleanSheets != null) {
+        cleanSheetsHome = teamStanding.home.cleanSheets;
+      }
+      if (teamStanding.away?.cleanSheets != null) {
+        cleanSheetsAway = teamStanding.away.cleanSheets;
+      }
+    }
+  }
 
-  const creationQuality = safeDiv(s.bigChancesCreated || 0, s.shots || 1);
-  const creationFactor = 1 + (creationQuality - 0.1) * 0.5;
-  const passFactor =
-    1 + ((s.accurateOppositionHalfPassesPercentage || 70) - 70) / 200;
-  const xgPerGame = safeDiv(xgBase * creationFactor * passFactor, matches);
+  // Fallback si los standings no traen cleanSheets por localía:
+  // distribuir proporcionalmente o dejar en 0 en lugar de asignarlas todas al lado actual
+  if (cleanSheetsHome === null) {
+    cleanSheetsHome = cleanSheetsTotal > 0 && matches > 0 && matchesHome > 0
+      ? Math.round((cleanSheetsTotal * matchesHome) / matches)
+      : (isHome ? cleanSheetsTotal : 0);
+  }
+  if (cleanSheetsAway === null) {
+    cleanSheetsAway = Math.max(0, cleanSheetsTotal - cleanSheetsHome);
+  }
 
-  const xgaBase =
-    (s.bigChancesAgainst || 0) * 0.38 +
-    (s.shotsOnTargetAgainst || 0) * 0.1 +
-    (s.hitWoodworkAgainst || 0) * 0.15 +
-    (s.errorsLeadingToGoal || 0) * 0.4;
+  // ─── Issue #1: Usar xG real por partido si SofaScore lo proporciona (s.expectedGoals) ───
+  let xgPerGame = 0;
+  let hasRealXg = false;
+  if (s.expectedGoals != null && s.expectedGoals > 0) {
+    xgPerGame = safeDiv(s.expectedGoals, matches);
+    hasRealXg = true;
+  } else {
+    // Fallback: fórmula aproximada cuando no hay xG oficial en la API
+    const xgBase =
+      (s.bigChances || 0) * 0.38 +
+      (s.shotsOnTarget || 0) * 0.1 +
+      (s.hitWoodwork || 0) * 0.15 +
+      (s.fastBreakShots || 0) * 0.05 +
+      (s.freeKickShots || 0) * 0.03;
 
-  const saveRate = safeDiv(s.saves || 0, s.shotsOnTargetAgainst || 1);
-  const defensiveFactor = 1 - (saveRate - 0.6) * 0.2;
-  const xgaPerGame = safeDiv(xgaBase * defensiveFactor, matches);
+    const creationQuality = safeDiv(s.bigChancesCreated || 0, s.shots || 1);
+    const creationFactor = 1 + (creationQuality - 0.1) * 0.5;
+    const passFactor =
+      1 + ((s.accurateOppositionHalfPassesPercentage || 70) - 70) / 200;
+    xgPerGame = safeDiv(xgBase * creationFactor * passFactor, matches);
+  }
+
+  let xgaPerGame = 0;
+  if (s.expectedGoalsAgainst != null && s.expectedGoalsAgainst > 0) {
+    xgaPerGame = safeDiv(s.expectedGoalsAgainst, matches);
+  } else {
+    const xgaBase =
+      (s.bigChancesAgainst || 0) * 0.38 +
+      (s.shotsOnTargetAgainst || 0) * 0.1 +
+      (s.hitWoodworkAgainst || 0) * 0.15 +
+      (s.errorsLeadingToGoal || 0) * 0.4;
+
+    const saveRate = safeDiv(s.saves || 0, s.shotsOnTargetAgainst || 1);
+    const defensiveFactor = 1 - (saveRate - 0.6) * 0.2;
+    xgaPerGame = safeDiv(xgaBase * defensiveFactor, matches);
+  }
 
   return {
     // ═══════════════════════════════════════════════════════════
@@ -205,7 +261,8 @@ function mapSofaScoreToSherlockTeamStats(
     // ═══════════════════════════════════════════════════════════
     // POSESIÓN
     // ═══════════════════════════════════════════════════════════
-    possession_pct: s.averageBallPossession || 50,
+    // ── Issue #3: usar null en lugar de 50 si el dato no existe ──
+    possession_pct: s.averageBallPossession ?? null,
     possession_lost: s.possessionLost || 0,
     possession_lost_per_game: safeDiv(s.possessionLost || 0, matches),
 
@@ -287,13 +344,18 @@ function mapSofaScoreToSherlockTeamStats(
     // ═══════════════════════════════════════════════════════════
     // RATING
     // ═══════════════════════════════════════════════════════════
-    avg_rating: s.avgRating || 0,
+    // ── Issue #3: usar null en lugar de 6.5 si no hay dato real ──
+    avg_rating: s.avgRating || null,
 
     // ═══════════════════════════════════════════════════════════
     // xG / xGA (Modelo mejorado)
     // ═══════════════════════════════════════════════════════════
-    xg_per_game: xgPerGame,
-    xga_per_game: xgaPerGame,
+    // ── Issue #4: indicar si el xG es real o imputado ──
+    xg_per_game: xgPerGame > 0 ? xgPerGame : null,
+    xga_per_game: xgaPerGame > 0 ? xgaPerGame : null,
+    xg_is_imputed: !hasRealXg,  // true = no proviene de expectedGoals oficial de SofaScore
+    // ── Issue #13: has_stats explícito por equipo ──
+    has_stats: matches > 0,
 
     // ═══════════════════════════════════════════════════════════
     // ESTADÍSTICAS CONTRA (OPONENTE)
@@ -422,6 +484,12 @@ function buildLeagueStats(standings, refereeStats, leagueInfo = null) {
   let avgGoals = 2.74;
   let avgYellow = 4.0;
   let avgRed = 0.2;
+  let avgCorners = 9.5;
+  let avgShots = 26.0;
+  let avgShotsTarget = 8.5;
+  let homeWinPct = 45.0;
+  let drawPct = 25.0;
+  let awayWinPct = 30.0;
   let homeAdvantage = 1.2;
   let awayDisadvantage = 0.85;
 
@@ -443,37 +511,92 @@ function buildLeagueStats(standings, refereeStats, leagueInfo = null) {
       if (info.redCards != null) {
         avgRed = info.redCards / matchesCount;
       }
+      if (info.cornerKicks != null) {
+        avgCorners = info.cornerKicks / matchesCount;
+      }
+      if (info.shots != null) {
+        avgShots = info.shots / matchesCount;
+      }
+      if (info.shotsOnTarget != null) {
+        avgShotsTarget = info.shotsOnTarget / matchesCount;
+      }
 
-      // Calculate dynamic home/away factors based on league stats
-      const diffWinsRatio = (winsH - winsA) / matchesCount;
-      homeAdvantage = Math.min(1.4, Math.max(1.05, 1.0 + diffWinsRatio));
-      awayDisadvantage = Math.min(0.95, Math.max(0.65, 1.0 - diffWinsRatio));
+      // ── Issue #9: 1X2 reales de la liga ──
+      homeWinPct = (winsH / matchesCount) * 100;
+      drawPct = (draws / matchesCount) * 100;
+      awayWinPct = (winsA / matchesCount) * 100;
+
+      // ── Issue #9: Factor local/visitante derivado por goles cuando estén disponibles, o por victorias ──
+      const homeGoals = info.homeTeamGoals ?? null;
+      const awayGoals = info.awayTeamGoals ?? null;
+      if (homeGoals != null && awayGoals != null && (homeGoals + awayGoals) > 0) {
+        const totalG = homeGoals + awayGoals;
+        homeAdvantage = Math.min(1.4, Math.max(1.05, (homeGoals / (totalG / 2))));
+        awayDisadvantage = Math.min(0.95, Math.max(0.65, (awayGoals / (totalG / 2))));
+      } else {
+        const diffWinsRatio = (winsH - winsA) / matchesCount;
+        homeAdvantage = Math.min(1.4, Math.max(1.05, 1.0 + diffWinsRatio));
+        awayDisadvantage = Math.min(0.95, Math.max(0.65, 1.0 - diffWinsRatio));
+      }
     }
   }
 
-  // Fallback to standings for matches/goals if leagueInfo wasn't present or complete
+  // Fallback to standings for matches/goals/1X2 if leagueInfo wasn't present or complete
   if (totalMatches === 0 && standings && standings.standings) {
     let totalGoalsFor = 0;
+    let totalHomeWins = 0;
+    let totalAwayWins = 0;
+    let totalDraws = 0;
+    let homeGoalsTotal = 0;
+    let awayGoalsTotal = 0;
+    let hasHomeAwayBreakdown = false;
+
     for (const group of standings.standings) {
       if (group.rows) {
         for (const row of group.rows) {
           totalMatches += row.matches || 0;
           totalGoalsFor += row.scoresFor || 0;
+          if (row.home) {
+            hasHomeAwayBreakdown = true;
+            totalHomeWins += row.home.wins || 0;
+            totalDraws += row.home.draws || 0;
+            homeGoalsTotal += row.home.scoresFor || 0;
+          }
+          if (row.away) {
+            totalAwayWins += row.away.wins || 0;
+            awayGoalsTotal += row.away.scoresFor || 0;
+          }
         }
       }
     }
-    // standings matches count is double of actual games played (each match is row for home team and row for away team, or standings rows matches sum up total team-matches, which is 2 * actual matches)
     const actualMatches = totalMatches / 2;
     if (actualMatches > 0) {
       avgGoals = totalGoalsFor / actualMatches;
+      if (hasHomeAwayBreakdown && (totalHomeWins + totalAwayWins + totalDraws) > 0) {
+        const countedMatches = totalHomeWins + totalAwayWins + totalDraws;
+        homeWinPct = (totalHomeWins / countedMatches) * 100;
+        drawPct = (totalDraws / countedMatches) * 100;
+        awayWinPct = (totalAwayWins / countedMatches) * 100;
+        if (homeGoalsTotal > 0 && awayGoalsTotal > 0) {
+          const expectedPerSide = (homeGoalsTotal + awayGoalsTotal) / 2;
+          homeAdvantage = Math.min(1.4, Math.max(1.05, homeGoalsTotal / expectedPerSide));
+          awayDisadvantage = Math.min(0.95, Math.max(0.65, awayGoalsTotal / expectedPerSide));
+        }
+      }
     }
   }
 
   return {
     avg_goals_per_game: avgGoals,
+    avg_corners_per_game: avgCorners,
     avg_yellow_cards_per_game: avgYellow,
     avg_red_cards_per_game: avgRed,
     avg_cards_per_game: avgYellow + avgRed,
+    avg_shots_per_game: avgShots,
+    avg_shots_target_per_game: avgShotsTarget,
+    home_win_pct: homeWinPct,
+    draw_pct: drawPct,
+    away_win_pct: awayWinPct,
     home_advantage_factor: homeAdvantage,
     away_disadvantage_factor: awayDisadvantage,
     ...refereeStats,
@@ -653,7 +776,7 @@ function buildSherlockPayload(extractedData) {
         // ═══════════════════════════════════════════════════════════
         // POSESIÓN
         // ═══════════════════════════════════════════════════════════
-        possession_pct: 50,
+        possession_pct: null,
         possession_lost: 0,
         possession_lost_per_game: 0,
 
@@ -729,13 +852,16 @@ function buildSherlockPayload(extractedData) {
         // ═══════════════════════════════════════════════════════════
         // RATING
         // ═══════════════════════════════════════════════════════════
-        avg_rating: 6.5,
+        avg_rating: null,  // Issue #3: null, no 6.5
 
         // ═══════════════════════════════════════════════════════════
         // xG / xGA
         // ═══════════════════════════════════════════════════════════
-        xg_per_game: 0,
-        xga_per_game: 0,
+        xg_per_game: null,
+        xga_per_game: null,
+        xg_is_imputed: true,  // Issue #4: sin xG real
+        // Issue #13: sin datos de equipo
+        has_stats: false,
 
         // ═══════════════════════════════════════════════════════════
         // ESTADÍSTICAS CONTRA
@@ -922,7 +1048,7 @@ function buildSherlockPayload(extractedData) {
         // ═══════════════════════════════════════════════════════════
         // POSESIÓN
         // ═══════════════════════════════════════════════════════════
-        possession_pct: 50,
+        possession_pct: null,
         possession_lost: 0,
         possession_lost_per_game: 0,
 
@@ -998,13 +1124,15 @@ function buildSherlockPayload(extractedData) {
         // ═══════════════════════════════════════════════════════════
         // RATING
         // ═══════════════════════════════════════════════════════════
-        avg_rating: 6.5,
+        avg_rating: null,
 
         // ═══════════════════════════════════════════════════════════
         // xG / xGA
         // ═══════════════════════════════════════════════════════════
-        xg_per_game: 0,
-        xga_per_game: 0,
+        xg_per_game: null,
+        xga_per_game: null,
+        xg_is_imputed: true,
+        has_stats: false,
 
         // ═══════════════════════════════════════════════════════════
         // ESTADÍSTICAS CONTRA
@@ -1098,6 +1226,12 @@ function buildSherlockPayload(extractedData) {
     bookmaker: "",
   };
 
+  // ── Issue #11: normalizar temporada ──
+  const rawSeason = match.season?.year || match.season?.name || null;
+  const normalizedSeason = rawSeason
+    ? String(rawSeason).replace(/^(\d{2})\/(\d{2})$/, (_, a, b) => `20${a}/20${b}`)
+    : rawSeason;
+
   return {
     sport: "football",
     home: home,
@@ -1107,9 +1241,25 @@ function buildSherlockPayload(extractedData) {
     competition: competition,
     generate_llm_analysis: false,
     user_context: "",
+    // ── Issue #13: has_stats a nivel partido y por equipo ──
     has_real_stats: !!(homeStats && awayStats),
+    home_has_stats: home.has_stats ?? !!(homeStats),
+    away_has_stats: away.has_stats ?? !!(awayStats),
     start_timestamp: match.startTimestamp,
-    season: match.season?.year || match.season?.name || null,
+    // ── Issue #11: enviar match_date en UTC y extractedAt ──
+    match_date: match.startTimestamp
+      ? new Date(match.startTimestamp * 1000).toISOString()
+      : null,
+    extracted_at: new Date().toISOString(),
+    season: normalizedSeason,
+    // ── Issue #10: IDs de torneo y temporada ──
+    tournament_id: match.tournament?.id || null,
+    unique_tournament_id: match.tournament?.uniqueTournament?.id || null,
+    season_id: extractedData.seasonId || null,
+    country: match.tournament?.uniqueTournament?.category?.country?.name || null,
+    // ── Issue #12: no descartar alineaciones y rachas descargadas ──
+    lineups: extractedData.lineups || null,
+    team_streaks: extractedData.teamStreaks || null,
   };
 }
 

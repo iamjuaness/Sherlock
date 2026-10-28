@@ -841,6 +841,66 @@ function sendProgress(progressData) {
     .catch(() => {});
 }
 
+
+/** Normaliza texto: minúsculas, sin tildes (NFD), trim, espacios múltiples a uno */
+function normalizeText(str) {
+  if (!str) return "";
+  return String(str)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+/**
+ * 1) Extrae información plana del evento según SofaScore.
+ * Si falta startTimestamp, loguea warning con event.id y no descarta el partido.
+ */
+function extractEventInfo(event) {
+  if (!event) return {};
+
+  let matchDate = null;
+  if (event.startTimestamp) {
+    try {
+      matchDate = new Date(event.startTimestamp * 1000).toISOString();
+    } catch (e) {
+      console.warn(`[Watson] Error calculando matchDate para evento ${event.id}:`, e);
+    }
+  } else {
+    console.warn(`[Watson] Warning: Falta startTimestamp en evento ${event.id || event.customId}`);
+  }
+
+  return {
+    eventId: event.id,
+    customId: event.customId,
+    slug: event.slug,
+    startTimestamp: event.startTimestamp,
+    matchDate,
+    homeShort: event.homeTeam?.shortName || event.homeTeam?.name || "",
+    awayShort: event.awayTeam?.shortName || event.awayTeam?.name || "",
+    tournamentId: event.tournament?.uniqueTournament?.id,
+    tournamentName: event.tournament?.uniqueTournament?.name,
+    seasonId: event.season?.id,
+    seasonYear: event.season?.year,
+    round: event.roundInfo?.round,
+    status: event.status?.type,
+  };
+}
+
+/**
+ * 2) Clave de comparación buildMatchKey(info)
+ * Concatenar fecha YYYY-MM-DD + local + visitante con lógica común normalizada.
+ */
+function buildMatchKey(info) {
+  const dateStr = info.matchDate
+    ? info.matchDate.slice(0, 10)
+    : (info.startTimestamp ? new Date(info.startTimestamp * 1000).toISOString().slice(0, 10) : "");
+  const home = normalizeText(info.homeShort || "");
+  const away = normalizeText(info.awayShort || "");
+  return `${dateStr}|${home}|${away}`;
+}
+
 async function handleExtractHistoricalData(data) {
   const { tournamentId, tournamentName, targetSeasonId, baseUrl } = data;
 
@@ -933,9 +993,10 @@ async function handleExtractHistoricalData(data) {
       message: `Temporada ${season.year} (${si + 1}/${seasons.length})`,
     });
 
+    // 1) Cargar listado de páginas con todos los partidos de la temporada
     let page = 0;
     let hasNextPage = true;
-    const seasonEvents = [];
+    const rawSeasonEvents = [];
 
     while (hasNextPage) {
       if (_historicalCancelled) break;
@@ -946,11 +1007,7 @@ async function handleExtractHistoricalData(data) {
         );
         const events = eventsData.events || [];
         hasNextPage = eventsData.hasNextPage === true;
-
-        const finished = events.filter(
-          (e) => e.status && e.status.type === "finished",
-        );
-        seasonEvents.push(...finished);
+        rawSeasonEvents.push(...events);
 
         sendProgress({
           phase: "fetching_events",
@@ -959,9 +1016,8 @@ async function handleExtractHistoricalData(data) {
           totalSeasons: seasons.length,
           page,
           eventsInPage: events.length,
-          finishedInPage: finished.length,
-          totalSeasonEvents: seasonEvents.length,
-          message: `T.${season.year} — pág ${page}: ${finished.length} partidos finalizados`,
+          totalSeasonEvents: rawSeasonEvents.length,
+          message: `T.${season.year} — pág ${page}: ${events.length} partidos obtenidos (${rawSeasonEvents.length} acumulados)`,
         });
 
         page++;
@@ -972,7 +1028,17 @@ async function handleExtractHistoricalData(data) {
       }
     }
 
-    if (seasonEvents.length === 0 && !_historicalCancelled) {
+    // Mapear con extractEventInfo y filtrar terminados para detalle
+    const mappedSeasonEvents = rawSeasonEvents.map((e) => ({
+      raw: e,
+      info: extractEventInfo(e),
+    }));
+
+    const finishedEvents = mappedSeasonEvents.filter(
+      (item) => item.info.status === "finished",
+    );
+
+    if (finishedEvents.length === 0 && !_historicalCancelled) {
       const isCurrentSeason = String(season.id) === currentSeasonId;
 
       if (isCurrentSeason || isSingleSeasonMode) {
@@ -1004,19 +1070,99 @@ async function handleExtractHistoricalData(data) {
       break;
     }
 
-    const enrichedSeasonEvents = seasonEvents.map((e) => ({
-      ...e,
+    const enrichedSeasonEvents = finishedEvents.map((item) => ({
+      ...item.raw,
+      _eventInfo: item.info,
       _seasonYear: season.year,
       _seasonId: season.id,
     }));
 
+    // 3) Comparación con la DB antes de pedir detalles
+    let eventsToProcess = enrichedSeasonEvents;
+    const isForce = Boolean(data.force);
+
+    if (!isForce) {
+      try {
+        const histUrl = new URL(`${baseUrl}/api/v1/history/matches`);
+        histUrl.searchParams.set("competition", tournamentName || "");
+        histUrl.searchParams.set("season", String(season.year));
+        const histRes = await fetch(histUrl.toString());
+
+        if (histRes.ok) {
+          const histData = await histRes.json();
+          const dbMatches = histData.matches || [];
+
+          // Construir sets de comparación DB (id externo y clave normalizada)
+          const dbEventIdSet = new Set(
+            dbMatches
+              .map((m) => String(m.event_id))
+              .filter((id) => id && id !== "null" && id !== "undefined"),
+          );
+          const dbKeySet = new Set(
+            dbMatches.map((m) => m.key).filter(Boolean),
+          );
+
+          const totalInListing = enrichedSeasonEvents.length;
+          const totalInDb = dbMatches.length;
+
+          // Filtrar faltantes: primero por id externo SofaScore, luego por buildMatchKey
+          eventsToProcess = enrichedSeasonEvents.filter((e) => {
+            const info = e._eventInfo;
+            if (info.eventId && dbEventIdSet.has(String(info.eventId))) {
+              return false;
+            }
+            const matchKey = buildMatchKey(info);
+            return !dbKeySet.has(matchKey);
+          });
+
+          const missingCount = eventsToProcess.length;
+          const missingKeys = eventsToProcess.map((e) => buildMatchKey(e._eventInfo));
+
+          console.log(
+            `[Watson-Histórico] T.${season.year} => Total en listado: ${totalInListing}, Total en DB: ${totalInDb}, Faltantes: ${missingCount}`,
+            missingKeys,
+          );
+
+          sendProgress({
+            phase: "incremental_check",
+            seasonYear: season.year,
+            message: `T.${season.year} — Listado: ${totalInListing} | DB: ${totalInDb} | Faltantes: ${missingCount}`,
+            totalInListing,
+            totalInDb,
+            missing: missingCount,
+            missingKeys,
+          });
+
+          if (missingCount === 0) {
+            sendProgress({
+              phase: "season_skipped",
+              seasonIndex: si,
+              totalSeasons: seasons.length,
+              seasonYear: season.year,
+              message: `⏭ T.${season.year} ya completa en DB — 0 faltantes`,
+            });
+            continue;
+          }
+        }
+      } catch (e) {
+        console.warn(`[Histórico] No se pudo consultar DB para diff incremental T.${season.year}:`, e.message);
+      }
+    } else {
+      console.log(`[Watson-Histórico] Modo force activo: reextrayendo todos los ${enrichedSeasonEvents.length} eventos`);
+      sendProgress({
+        phase: "incremental_check",
+        seasonYear: season.year,
+        message: `T.${season.year} — Modo --force: procesando todos los ${enrichedSeasonEvents.length} eventos`,
+      });
+    }
+
     let seasonSaved = 0;
     let seasonErrors = 0;
 
-    for (let ei = 0; ei < enrichedSeasonEvents.length; ei++) {
+    for (let ei = 0; ei < eventsToProcess.length; ei++) {
       if (_historicalCancelled) break;
 
-      const event = enrichedSeasonEvents[ei];
+      const event = eventsToProcess[ei];
       totalProcessed++;
 
       sendProgress({
@@ -1025,7 +1171,7 @@ async function handleExtractHistoricalData(data) {
         seasonIndex: si,
         totalSeasons: seasons.length,
         eventIndex: ei,
-        totalSeasonEvents: enrichedSeasonEvents.length,
+        totalSeasonEvents: eventsToProcess.length,
         eventId: event.id,
         homeTeam: event.homeTeam?.shortName || event.homeTeam?.name,
         awayTeam: event.awayTeam?.shortName || event.awayTeam?.name,

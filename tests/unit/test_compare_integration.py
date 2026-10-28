@@ -86,25 +86,29 @@ def test_value_indicator_ev_treats_push_as_zero_return():
     """
     El bug: EV se calculaba como (p·odds - 1)·(1 - p_push), tratando el push
     como pérdida. El EV correcto es P(win)·(odds-1) - P(loss).
+
+    #42: el pipeline usa final_prob (blend 80/20 calibrado+mercado), NO calibrated_prob.
+    El test verifica que edge_ev usa la probabilidad final correcta.
     """
     prob, odds, push = 45.0, 2.5, 10.0
     v = compare._value_indicator("Over 2.0 Goles", odds, prob, push_p=push)
 
-    p_win, p_push = prob / 100.0, push / 100.0
-    # calibrated_prob puede diferir de model_prob; recalculamos con la que usó.
-    cal = v.calibrated_prob / 100.0
-    expected = cal * (odds - 1.0) - (1.0 - cal - p_push)
+    p_push = push / 100.0
+    # #42: EV usa final_prob (blend calibrado+mercado), no calibrated_prob
+    p_final = v.final_prob / 100.0
+    expected = p_final * (odds - 1.0) - (1.0 - p_final - p_push)
     assert v.edge_ev == pytest.approx(round(expected, 3), abs=2e-3)
 
-    legacy = ((cal * odds) - 1.0) * (1.0 - p_push)
+    # Verificar que NO usa la fórmula legacy del push como pérdida
+    legacy = ((p_final * odds) - 1.0) * (1.0 - p_push)
     assert v.edge_ev != pytest.approx(round(legacy, 3), abs=1e-4)
 
 
 def test_value_indicator_without_push_is_stable():
-    """Sin push, EV sigue siendo (p·odds) - 1."""
+    """Sin push, EV sigue siendo (p·odds) - 1, usando final_prob (#42)."""
     v = compare._value_indicator("Over 2.5 Goles", 2.5, 45.0, push_p=0.0)
-    cal = v.calibrated_prob / 100.0
-    assert v.edge_ev == pytest.approx(round(cal * 2.5 - 1.0, 3), abs=2e-3)
+    p_final = v.final_prob / 100.0
+    assert v.edge_ev == pytest.approx(round(p_final * 2.5 - 1.0, 3), abs=2e-3)
 
 
 def test_value_indicator_fair_odds_consistent():

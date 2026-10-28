@@ -1141,6 +1141,7 @@ async function handleExtractHistorical() {
 
   try {
     const targetSeasonId = els.seasonSelect ? els.seasonSelect.value : "all";
+    const forceReextract = document.getElementById("chkForceHistorical")?.checked || false;
     const result = await chrome.runtime.sendMessage({
       action: "extractHistoricalData",
       data: {
@@ -1148,6 +1149,7 @@ async function handleExtractHistorical() {
         tournamentName: _currentTournamentName,
         targetSeasonId,
         baseUrl,
+        force: forceReextract,
       },
     });
 
