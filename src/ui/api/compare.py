@@ -324,6 +324,8 @@ class FootballTeamStats(BaseModel):
 
 
 class LeagueStats(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
     name:                      str   = Field("",  description="Nombre de la liga")
     avg_goals_per_game:        float = Field(2.5,  description="Promedio total goles liga")
     avg_corners_per_game:      float = Field(9.5,  description="Promedio corners liga")
@@ -898,129 +900,78 @@ def _fair_probabilities_from_odds(*odds_list: float | None) -> list[float]:
 
 def _compute_league_reliability_score(league: "LeagueStats") -> float:
     """
-    Calcula un score de confiabilidad de la liga en rango [0.15, 1.0].
+    Calcula un score de confiabilidad de la liga (LRS) en rango [0.15, 1.0].
 
-    Combina dos fuentes ponderadas por el tamaño de muestra de partidos:
-    A) Coherencia estadística interna (rangos razonables de goles, corners, tarjetas)
-    B) Rendimiento histórico real (acierto + beneficio)
+    1. Base del LRS (LRS_base in [0.15, 0.85]): Determinado exclusivamente por volumen
+       de partidos e integridad de datos:
+       - Volumen de partidos (S_matches in [0.0, 0.50]):
+         S_matches = 0.50 / (1 + exp(-(matches - 150) / 50))
+         (Para matches >= 300, satura cerca de 0.50; con 0 partidos, tiende a ~0.02).
+       - Integridad de datos de la competicion (S_integrity in [0.0, 0.35]):
+         Porcentaje promedio de metricas no nulas disponibles en la liga
+         (xG, tiros a puerta, corners, faltas, tarjetas).
+       - LRS_base = max(0.15, S_matches + S_integrity)
 
-    IMPORTANTE: Si la liga no tiene partidos registrados (historical_matches <= 0)
-    o tiene una muestra ínfima, NO puede obtener un score alto únicamente por
-    tener valores por defecto "coherentes". Se aplica un shrinkage estricto por muestra.
+    2. Ajuste Fino por Desempeno Historico (A_perf in [-0.10, +0.10]):
+       - Condicion estricta: Solo se activa si league.historical_picks >= 50.
+         Si no se cumple, A_perf = 0.0.
+       - Si picks >= 50:
+         A_perf = clip(0.5 * roi, -0.10, +0.10)
+         donde roi se normaliza en escala decimal [-1.0, 1.0+].
+
+    3. Formula final:
+       LRS = clip(LRS_base + A_perf, 0.15, 1.00)
     """
-    # ── Muestra de partidos y penalización por falta de datos ──
     matches = int(getattr(league, "historical_matches", 0) or 0)
     picks = int(getattr(league, "historical_picks", 0) or 0)
 
-    # Factor de confianza por muestra de partidos [0.20, 1.0]
-    # Una liga es "buena" si tiene 600+ partidos y 60+ picks.
-    # Con 0 partidos:   0.20 (penalización máxima, liga no probada)
-    # Con 150 partidos: ~0.40
-    # Con 300 partidos: ~0.60
-    # Con 600+ partidos: 1.0 (muestra suficiente para plena confianza)
-    _MATCH_REF = 600.0  # partidos necesarios para saturar a 1.0
-    if matches <= 0 and picks <= 0:
-        match_confidence = 0.20
-    else:
-        effective_n = max(matches, int(picks * 10.0))  # picks × 10 ≈ partidos equivalentes
-        match_confidence = min(1.0, 0.20 + (effective_n / _MATCH_REF) * 0.80)
+    # -- 1. S_matches: Sigmoide centrada en 150 con escala 50 --
+    z = (matches - 150.0) / 50.0
+    z = max(-50.0, min(50.0, z))
+    s_matches = 0.50 / (1.0 + math.exp(-z))
+    s_matches = max(0.0, min(0.50, s_matches))
 
-    # ── A. Coherencia estadística ─────────────────────────────────
-    stat_score = 1.0
+    # -- 2. S_integrity: Integridad de metricas de la competicion [0.0, 0.35] --
+    def _is_valid_metric(val: Any) -> bool:
+        if val is None:
+            return False
+        try:
+            f = float(val)
+            return not math.isnan(f) and f > 0.0
+        except (ValueError, TypeError):
+            return False
 
-    pct_sum = league.home_win_pct + league.draw_pct + league.away_win_pct
-    if pct_sum > 0:
-        deviation = abs(pct_sum - 100.0) / 100.0
-        stat_score -= min(0.20, deviation * 2.0)
+    has_xg = _is_valid_metric(getattr(league, "avg_xg_per_game", None)) or _is_valid_metric(getattr(league, "avg_xg", None))
+    has_shots_target = _is_valid_metric(getattr(league, "avg_shots_target_per_game", None))
+    has_corners = _is_valid_metric(getattr(league, "avg_corners_per_game", None))
+    has_fouls = _is_valid_metric(getattr(league, "avg_fouls_per_game", None))
+    has_cards = (
+        _is_valid_metric(getattr(league, "avg_cards_per_game", None))
+        or _is_valid_metric(getattr(league, "avg_yellow_cards_per_game", None))
+    )
 
-    g = league.avg_goals_per_game
-    if g < 1.5 or g > 4.5:
-        stat_score -= 0.10
-    elif g < 2.0 or g > 3.8:
-        stat_score -= 0.05
+    metrics_status = [has_xg, has_shots_target, has_corners, has_fouls, has_cards]
+    pct_available = sum(1.0 for m in metrics_status if m) / float(len(metrics_status))
+    s_integrity = max(0.0, min(0.35, 0.35 * pct_available))
 
-    c = league.avg_corners_per_game
-    if c < 6.0 or c > 14.0:
-        stat_score -= 0.08
-    elif c < 7.5 or c > 12.0:
-        stat_score -= 0.03
+    lrs_base = max(0.15, min(0.85, s_matches + s_integrity))
 
-    ha = league.home_advantage_factor
-    if ha < 1.05 or ha > 1.50:
-        stat_score -= 0.07
-
-    if league.avg_yellow_cards_per_game > 0 and league.avg_red_cards_per_game > 0:
-        ratio = league.avg_red_cards_per_game / max(league.avg_yellow_cards_per_game, 0.1)
-        if ratio > 0.15:
-            stat_score -= 0.05
-
-    stat_score = max(0.20, min(1.0, stat_score))
-
-    # ── B. Rendimiento histórico real ────────────────────────────
-    if picks <= 0:
-        # Sin historial de picks: el score depende de la coherencia estadística
-        # escalada estrictamente por la muestra de partidos evaluados.
-        final_score = stat_score * match_confidence
-        # Si tiene gran muestra de partidos (ej. 600+ o 1000+), asegura confianza de liga establecida
-        if matches >= 1000:
-            final_score = max(final_score, 0.70)
-        elif matches >= 600:
-            final_score = max(final_score, 0.60)
-        return round(max(0.15, min(1.0, final_score)), 3)
-
-    N_MIN = 60.0  # número de picks para 50% de peso histórico (liga "buena" = 60+ picks)
-    hist_weight = picks / (picks + N_MIN)   # ∈ [0, 1)
-    stat_weight = 1.0 - hist_weight
-
-    # Componente de acierto:
-    # ACC_REF = 0.42 (realista: la mayoría de picks de valor ronda el 42-55%)
-    accuracy_rate = league.historical_hits / picks
-    ACC_REF  = 0.42          # mínimo aceptable
-    ACC_IDEAL = 0.58         # nivel sobresaliente para value betting
-    acc_score = (accuracy_rate - ACC_REF) / max(ACC_IDEAL - ACC_REF, 0.01)
-    acc_score = max(0.0, min(1.0, acc_score))  # [0, 1]
-
-    # Componente de beneficio: normalizado a picks (ROI por pick).
-    roi_per_pick = league.historical_profit / picks
-    PROFIT_LOW  = -0.20
-    PROFIT_HIGH =  0.25
-    profit_score = (roi_per_pick - PROFIT_LOW) / max(PROFIT_HIGH - PROFIT_LOW, 0.01)
-    profit_score = max(0.0, min(1.0, profit_score))
-
-    # Score histórico combinado (50% acierto, 50% beneficio)
-    hist_score = acc_score * 0.50 + profit_score * 0.50
-    hist_score = max(0.0, min(1.0, hist_score))
-
-    # ── Combinar A + B con shrinkage hacia prior estadístico ──────────────
-    # match_confidence actúa como peso del historial vs el prior estadístico.
-    # Con muestra baja → más peso al stat_score; con muestra alta → más peso al hist.
-    # Fórmula: blended = stat * (1 - conf_hist) + hist * conf_hist
-    #   donde conf_hist satura a 1.0 con 600+ partidos.
-    conf_hist = match_confidence  # ya es [0.20, 1.0]
-    blended = stat_score * (1.0 - conf_hist * hist_weight) + hist_score * (conf_hist * hist_weight)
-    # Piso mínimo: la coherencia estadística siempre aporta algo
-    blended = max(stat_score * 0.30, blended)
-    final_score = min(1.0, max(0.15, blended))
-
-    # ── Respaldo de muestra alta (evitar LRS injustamente bajo con 1000+ partidos y 60+ picks) ──
-    if matches >= 1000 and picks >= 60:
-        if accuracy_rate >= 0.42:
-            final_score = max(final_score, 0.75 + min(0.25, (accuracy_rate - 0.42) * 1.5))
+    # -- 3. A_perf: Ajuste fino por desempeno historico [-0.10, +0.10] --
+    a_perf = 0.0
+    if picks >= 50:
+        raw_roi = getattr(league, "roi", None)
+        if raw_roi is not None and abs(float(raw_roi)) > 1e-6:
+            roi_val = float(raw_roi)
+            if abs(roi_val) > 1.0:
+                roi_val = roi_val / 100.0
         else:
-            final_score = max(final_score, 0.55)
-    elif matches >= 600 and accuracy_rate >= 0.42:
-        if picks >= 60:
-            final_score = max(final_score, 0.68 + min(0.30, (accuracy_rate - 0.42) * 1.5))
-        else:
-            final_score = max(final_score, 0.58)
-    elif matches >= 200 and accuracy_rate >= 0.42:
-        # Liga con muestra media y acierto decente: piso razonable
-        final_score = max(final_score, 0.45)
-    elif matches >= 100 and picks >= 20 and accuracy_rate >= 0.40:
-        # Liga emergente con algo de historial positivo
-        final_score = max(final_score, 0.38)
+            profit = float(getattr(league, "historical_profit", 0.0) or 0.0)
+            roi_val = profit / picks
 
-    return round(max(0.15, min(1.0, final_score)), 3)
+        a_perf = max(-0.10, min(0.10, 0.50 * roi_val))
+
+    lrs = max(0.15, min(1.00, lrs_base + a_perf))
+    return round(lrs, 3)
 
 
 MIN_PICKS_FOR_EMPIRICAL = 10
@@ -1440,90 +1391,62 @@ def get_market_variance_tier(selection: str) -> str:
 
 def get_data_quality_score(selection: str, h: FootballTeamStats, a: FootballTeamStats) -> float:
     """
-    Calcula el score de Confianza de Datos (0 a 100).
-
-    Evalúa 3 pilares indispensables:
-    1. Cobertura de Muestra (40 pts): Partidos jugados por ambos equipos.
-       - Muestra n < 3: castigo severo (no hay significancia).
-       - Muestra n >= 15: máxima puntuación.
-    2. Integridad de Métricas Clave y Avanzadas (35 pts):
-       - Presencia de xG/xGA real (no valores dummy).
-       - Tiros a puerta, faltas, córners y posesión reales.
-       - Ratings de rendimiento de jugadores/equipos.
-    3. Estabilidad del Tipo de Mercado (25 pts):
-       - Mercados de baja varianza (1X2, goles, btts): base 25 pts.
-       - Córners (varianza media): base 18 pts.
-       - Mercados volátiles (tarjetas, tiros, faltas): base 12 pts.
+    Score objetivo de calidad de datos (0 a 100 pts) como suma ponderada lineal:
+    1. xG / xGA Data (25 pts): 25 pts si ambos disponen de xG/xGA reales > 0; 12.5 si solo uno.
+    2. Estadísticas de conteo y presión (35 pts):
+       - Shots & Shots on Target: 15 pts
+       - Córners: 10 pts
+       - Faltas y Tarjetas: 10 pts
+    3. Muestra y segmentación Local/Visitante (25 pts):
+       - min(matches_home, matches_away) >= 5: 25 pts
+       - Entre 2 y 4 partidos: 15 pts
+       - < 2 partidos: 5 pts
+    4. Métricas secundarias / contexto (15 pts):
+       - Posesión, ratings o forma reciente.
     """
     if not h or not a:
         return 0.0
 
-    min_m = min(h.matches_played, a.matches_played)
-    if min_m <= 0:
-        return 0.0
-
-    # ── 1. Cobertura de Muestra (hasta 40 puntos) ─────────────────
-    if min_m >= 15:
-        sample_pts = 40.0
-    elif min_m >= 10:
-        sample_pts = 30.0 + (min_m - 10) * 2.0  # 30 a 40
-    elif min_m >= 5:
-        sample_pts = 18.0 + (min_m - 5) * 2.4   # 18 a 30
-    elif min_m >= 3:
-        sample_pts = 10.0 + (min_m - 3) * 4.0   # 10 a 18
-    else:
-        sample_pts = min_m * 3.0                 # 0 a 9 (muestra crítica)
-
-    # ── 2. Integridad y Riqueza de Métricas (hasta 35 puntos) ──────
-    # Chequear disponibilidad de métricas estadísticas fundamentales
-    metrics_pts = 0.0
-
-    # Presencia de xG/xGA diferenciado y real (Issue #4: xg imputado no puntúa como real)
-    has_xg_h = not getattr(h, "xg_is_imputed", False) and h.xg_per_game is not None and h.xg_per_game > 0.1
-    has_xg_a = not getattr(a, "xg_is_imputed", False) and a.xg_per_game is not None and a.xg_per_game > 0.1
+    # 1. xG / xGA Data (25 pts)
+    has_xg_h = not getattr(h, "xg_is_imputed", False) and (h.xg_per_game or 0.0) > 0 and (h.xga_per_game or 0.0) > 0
+    has_xg_a = not getattr(a, "xg_is_imputed", False) and (a.xg_per_game or 0.0) > 0 and (a.xga_per_game or 0.0) > 0
     if has_xg_h and has_xg_a:
-        metrics_pts += 12.0
+        xg_pts = 25.0
     elif has_xg_h or has_xg_a:
-        metrics_pts += 6.0
-
-    # Tiros y tiros a puerta registrados
-    has_shots = (h.shots_per_game > 0 and a.shots_per_game > 0)
-    has_sot = (h.shots_on_target_per_game > 0 and a.shots_on_target_per_game > 0)
-    if has_shots and has_sot:
-        metrics_pts += 8.0
-    elif has_shots:
-        metrics_pts += 4.0
-
-    # Córners y faltas registradas
-    if h.corners_per_game > 0 and a.corners_per_game > 0:
-        metrics_pts += 5.0
-    if h.fouls_per_game > 0 and a.fouls_per_game > 0:
-        metrics_pts += 5.0
-
-    # Presencia de rating o métricas avanzadas de pase
-    if (h.avg_rating or 0.0) > 0.1 and (a.avg_rating or 0.0) > 0.1:
-        metrics_pts += 5.0
-    elif h.pass_accuracy > 10.0 and a.pass_accuracy > 10.0:
-        metrics_pts += 3.0
-
-    # ── 3. Estabilidad del Tipo de Mercado (hasta 25 puntos) ───────
-    tier = get_market_confidence_tier(selection)
-    if tier == "segmented":
-        market_tier_pts = 25.0
-    elif tier == "hybrid":
-        market_tier_pts = 18.0
+        xg_pts = 12.5
     else:
-        market_tier_pts = 12.0
+        xg_pts = 0.0
 
-    family = _market_family(selection)
-    # Si el mercado depende de métricas de conteo (tiros, tarjetas) y faltan esas métricas, penalizar
-    if family in {"shots", "shots_target"} and not (has_shots and has_sot):
-        metrics_pts = max(0.0, metrics_pts - 10.0)
-    if family == "cards" and (h.yellow_cards_per_game <= 0 or a.yellow_cards_per_game <= 0):
-        metrics_pts = max(0.0, metrics_pts - 8.0)
+    # 2. Conteo y presión (35 pts)
+    shots_pts = 15.0 if (h.shots_per_game > 0 and a.shots_per_game > 0 and h.shots_on_target_per_game > 0 and a.shots_on_target_per_game > 0) else 0.0
+    corners_pts = 10.0 if (h.corners_per_game > 0 and a.corners_per_game > 0) else 0.0
+    fouls_cards_pts = 10.0 if (h.fouls_per_game > 0 and a.fouls_per_game > 0 and h.yellow_cards_per_game > 0 and a.yellow_cards_per_game > 0) else 0.0
+    count_pts = shots_pts + corners_pts + fouls_cards_pts
 
-    total_dq = sample_pts + metrics_pts + market_tier_pts
-    return round(max(5.0, min(100.0, total_dq)), 1)
+    # 3. Muestra y segmentación Local/Visitante (25 pts)
+    m_split = min(h.matches_home or 0, a.matches_away or 0)
+    if m_split >= 5:
+        split_pts = 25.0
+    elif m_split >= 2:
+        split_pts = 15.0
+    else:
+        split_pts = 5.0
+
+    # 4. Métricas secundarias / contexto (15 pts)
+    has_possession = (h.possession_pct is not None and a.possession_pct is not None)
+    has_rating = ((h.avg_rating or 0.0) > 0 and (a.avg_rating or 0.0) > 0)
+    has_form = bool(getattr(h, "recent_form", None) or getattr(h, "recent_form_stats", None) or getattr(a, "recent_form", None) or getattr(a, "recent_form_stats", None))
+    sec_pts = 0.0
+    if has_possession:
+        sec_pts += 5.0
+    if has_rating:
+        sec_pts += 5.0
+    if has_form or (h.pass_accuracy > 0 and a.pass_accuracy > 0):
+        sec_pts += 5.0
+    sec_pts = min(15.0, sec_pts)
+
+    total_dq = xg_pts + count_pts + split_pts + sec_pts
+    return round(max(0.0, min(100.0, total_dq)), 1)
 
 def _calculate_display_score(v: ValueIndicator) -> float:
     if v.calibrated_prob is None or v.edge_ev is None:
@@ -1750,6 +1673,7 @@ def is_underdog_pick(v: Any) -> bool:
     if isinstance(v, dict):
         odds = v.get("odds")
         edge = v.get("edge", 0)
+        edge_ev = v.get("edge_ev")
         dq = v.get("data_quality_score")
         stake = v.get("stake_units")
         h2h_hr = v.get("h2h_hit_rate")
@@ -1759,6 +1683,7 @@ def is_underdog_pick(v: Any) -> bool:
     else:
         odds = getattr(v, "odds", None)
         edge = getattr(v, "edge", 0)
+        edge_ev = getattr(v, "edge_ev", None)
         dq = getattr(v, "data_quality_score", None)
         stake = getattr(v, "stake_units", None)
         h2h_hr = getattr(v, "h2h_hit_rate", None)
@@ -1779,16 +1704,21 @@ def is_underdog_pick(v: Any) -> bool:
     if emp_hr is not None and emp_samp >= 5 and emp_hr < 20.0:
         return False
 
-    if odds is None or odds <= 2.50 or odds > 4.50:
+    # Rango de cuotas: (2.80, 8.00]
+    if odds is None or odds <= 2.80 or odds > 8.00:
         return False
 
-    if (edge or 0) < 5:
+    # Expected Value (EV): edge_ev >= 0.050 (5%) o edge >= 5.0%
+    ev_val = edge_ev if edge_ev is not None else 0.0
+    edge_val = edge if edge is not None else 0.0
+    if ev_val < 0.050 and edge_val < 5.0:
         return False
 
-    if dq is not None and dq < 50:
+    if dq is not None and dq < 50.0:
         return False
 
-    if stake is not None and stake < 1.0:
+    # Permitir stakes fraccionados (>= 0.25)
+    if stake is not None and stake < 0.25:
         return False
 
     return True
@@ -1801,17 +1731,19 @@ def _calculate_stake_units(
     lrs: float | None,
 ) -> float:
     """
-    Stake cuantitativo basado en Fractional Kelly (1/8 Kelly con cap del 3% del bankroll).
-    Retorna unidades escaladas (0.0 = no jugable, hasta 3.0u).
+    Stake cuantitativo basado en Fractional Kelly (máximo 3% del capital = 3.0u).
+    Retorna unidades escaladas continuamente entre [0.25, 3.00] unidades si edge_ev >= 0.020.
+    Si edge_ev < 0.020, retorna 0.0.
     """
-    if edge_ev < 0.025 or kelly_fraction <= 0 or odds <= 1.0:
+    if edge_ev < 0.020 or kelly_fraction <= 0 or odds <= 1.0:
         return 0.0
 
     prob_est = (edge_ev + 1.0) / odds
+    fraction_divisor = 8.0 if market_family in {"corners", "cards", "shots", "shots_target", "fouls"} else 4.0
     stake_frac, edge_pct = calculate_fractional_kelly(
         calibrated_prob=prob_est,
         odds=odds,
-        fraction_divisor=8.0,
+        fraction_divisor=fraction_divisor,
         max_stake_cap=0.03,
     )
 
@@ -1819,25 +1751,13 @@ def _calculate_stake_units(
         return 0.0
 
     raw_units = stake_frac * 100.0
+    _lrs = lrs if lrs is not None else 0.50
 
-    _lrs = lrs or 0.50
-    if _lrs >= 0.65:
-        hard_max = 3.0
-    elif _lrs >= 0.50:
-        hard_max = 2.5
-    elif _lrs >= 0.35:
-        hard_max = 2.0
-    else:
-        hard_max = 1.5
-
-    if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
-        hard_max = min(hard_max, 2.5)
-
-    clamped = max(0.0, min(hard_max, raw_units))
-    if clamped <= 0:
-        return 0.0
-    stake = round(clamped * 4) / 4
-    return max(0.25, stake)
+    # Escalar el stake continuamente entre [0.25, 3.00] unidades:
+    # stake = min(3.0, max(0.25, raw_stake * LRS))
+    scaled = raw_units * _lrs
+    stake = min(3.0, max(0.25, scaled))
+    return round(round(stake * 4) / 4, 2)
 
 def _calculate_kelly_fraction(
     calibrated_prob: float,
@@ -1931,12 +1851,6 @@ def _value_indicator(
         league_name=league_name,
         predicted_at_utc=pred_ts,
     )
-
-    # Recorte heurístico de respaldo: SOLO cuando no hay curva entrenada.
-    if not calibration_is_active():
-        raw_implied_pre = (1.0 / odds) * 100.0
-        if calibrated_p - raw_implied_pre >= 20.0:
-            calibrated_p *= 0.82
 
     raw_implied = (1.0 / odds) * 100.0
     if market_novig_pct is not None and market_novig_pct > 0.0:
@@ -2160,25 +2074,34 @@ def _value_indicator(
 def estimate_empirical_bayes_prior_n(
     league_variance: float,
     league_mean: float,
-    baseline_prior_n: float = 5.0,
+    team_matches: int = 10,
+    data_quality_score: float | None = None,
+    baseline_prior_n: float = 6.0,
     min_prior_n: float = 2.0,
-    max_prior_n: float = 12.0,
+    max_prior_n: float = 14.0,
 ) -> float:
     """
-    league_variance: varianza observada de la métrica (goles/tarjetas/corners)
-                      entre partidos de esta liga.
-    league_mean:     media de la misma métrica.
-
-    Ligas con dispersión relativa (varianza/media, índice de Fano) alta
-    respecto a lo esperado bajo Poisson (Fano=1) son más "caóticas" ->
-    prior_n sube (confiamos menos en pocos partidos del equipo).
-    Ligas con Fano < 1 (más estables que Poisson puro) -> prior_n baja.
+    Estima dinámicamente prior_n para Empirical Bayes shrinkage:
+    - Fano Factor F = league_variance / max(league_mean, 0.1)
+    - Factor de calidad de datos DQ_adj in [0.8, 1.4]:
+        DQ_adj = 1.0 + (1.0 - clip(data_quality_score, 0, 100) / 100.0) * 0.4
+    - Factor de muestra del equipo N_adj in [0.8, 1.3]:
+        N_adj = max(0.8, min(1.3, 10.0 / max(team_matches, 1)))
+    - prior_n = baseline_prior_n * F * DQ_adj * N_adj acotado a [min_prior_n, max_prior_n].
     """
     if league_mean <= 0:
-        return baseline_prior_n
-    fano = league_variance / league_mean
-    prior_n = baseline_prior_n * fano
-    return round(max(min_prior_n, min(max_prior_n, prior_n)), 2)
+        return round(float(np.clip(baseline_prior_n, min_prior_n, max_prior_n)), 2)
+
+    fano = league_variance / max(league_mean, 0.1)
+
+    dq_val = 50.0 if data_quality_score is None else float(np.clip(data_quality_score, 0.0, 100.0))
+    dq_adj = 1.0 + (1.0 - (dq_val / 100.0)) * 0.4
+
+    n_matches = max(int(team_matches), 1)
+    n_adj = max(0.8, min(1.3, 10.0 / float(n_matches)))
+
+    prior_n = baseline_prior_n * fano * dq_adj * n_adj
+    return round(float(np.clip(prior_n, min_prior_n, max_prior_n)), 2)
 
 def _compute_team_goals_lambda(
     attacker: FootballTeamStats,
@@ -2187,6 +2110,7 @@ def _compute_team_goals_lambda(
     is_home: bool,
     general: bool = False,
     db: Any = None,
+    data_quality_score: float | None = None,
 ) -> float:
     avg_team_goals = league.avg_goals_per_game / 2.0
 
@@ -2278,6 +2202,7 @@ def _compute_team_corners_lambda(
     is_home: bool,
     general: bool = False,
     db: Any = None,
+    data_quality_score: float | None = None,
 ) -> tuple[float, float]:
     """Retorna (mu, r) de la distribución Binomial Negativa para corners del equipo.
 
@@ -2319,8 +2244,14 @@ def _compute_team_corners_lambda(
     corners_mean = league.avg_corners_per_game
     corners_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "corners", corners_mean, db=db)
     n = max(m_count, 1)
-    alpha_prior_c, beta_prior_c = fit_gamma_prior_from_league([avg_team_corners, corners_mean, max(corners_var, 0.1)])
-    lam = update_gamma_poisson(alpha_prior_c, beta_prior_c, lam * n, n)
+    prior_n_c = estimate_empirical_bayes_prior_n(
+        corners_var, corners_mean,
+        team_matches=n,
+        data_quality_score=data_quality_score,
+        baseline_prior_n=5.0,
+    )
+    shrink_w_c = prior_n_c / (prior_n_c + n)
+    lam = lam * (1.0 - shrink_w_c) + avg_team_corners * shrink_w_c
 
     # ── Issue #28: Factor de localía por métrica de corners ──
     # local genera más corners que visitante (~+10-15% de promedio de liga)
@@ -2346,6 +2277,7 @@ def _compute_team_cards_lambda(
     is_home: bool,
     general: bool = False,
     db: Any = None,
+    data_quality_score: float | None = None,
 ) -> float:
     if general:
         actual_matches = max(team.matches_played, 1)
@@ -2364,7 +2296,12 @@ def _compute_team_cards_lambda(
     # Dynamic prior_n estimation using Empirical Bayes
     cards_mean = league_cards_avg
     cards_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "cards", cards_mean, db=db)
-    prior_n = estimate_empirical_bayes_prior_n(cards_var, cards_mean, baseline_prior_n=10.0)
+    prior_n = estimate_empirical_bayes_prior_n(
+        cards_var, cards_mean,
+        team_matches=actual_matches,
+        data_quality_score=data_quality_score,
+        baseline_prior_n=10.0,
+    )
 
     # 1. Fuerza de disciplina del equipo normalizada contra la media de liga
     red_card_weight = 2.0
@@ -2433,6 +2370,7 @@ def _compute_team_shots_lambda(
     is_home: bool,
     general: bool = False,
     db: Any = None,
+    data_quality_score: float | None = None,
 ) -> tuple[float, float]:
     """Retorna (mu, r) de la distribución Binomial Negativa para tiros del equipo.
 
@@ -2475,9 +2413,14 @@ def _compute_team_shots_lambda(
 
     shots_mean = league.avg_shots_per_game
     shots_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "shots", shots_mean, db=db)
-    prior_n = estimate_empirical_bayes_prior_n(shots_var, shots_mean, baseline_prior_n=5.0)
-
     n = max(m_count, 1)
+    prior_n = estimate_empirical_bayes_prior_n(
+        shots_var, shots_mean,
+        team_matches=n,
+        data_quality_score=data_quality_score,
+        baseline_prior_n=5.0,
+    )
+
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_shots * shrink_w
     mu = max(lam, 1.0)
@@ -2497,6 +2440,7 @@ def _compute_team_shots_target_lambda(
     is_home: bool,
     general: bool = False,
     db: Any = None,
+    data_quality_score: float | None = None,
 ) -> tuple[float, float]:
     avg_team_sot = league.avg_shots_target_per_game / 2.0
 
@@ -2533,9 +2477,14 @@ def _compute_team_shots_target_lambda(
 
     sot_mean = league.avg_shots_target_per_game
     sot_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "shots_target", sot_mean, db=db)
-    prior_n = estimate_empirical_bayes_prior_n(sot_var, sot_mean, baseline_prior_n=5.0)
-
     n = max(m_count, 1)
+    prior_n = estimate_empirical_bayes_prior_n(
+        sot_var, sot_mean,
+        team_matches=n,
+        data_quality_score=data_quality_score,
+        baseline_prior_n=5.0,
+    )
+
     shrink_w = prior_n / (prior_n + n)
     lam = lam * (1.0 - shrink_w) + avg_team_sot * shrink_w
     mu = max(lam, 0.5)
@@ -4737,8 +4686,12 @@ async def compare_football(
 
     use_general = _use_general_stats(req)  # True para partidos >= 2026-01-01
 
-    h_lam = _compute_team_goals_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
-    a_lam = _compute_team_goals_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
+    # ── Tarea 2: data_quality_score general para shrinkage bayesiano ──
+    _dq_h = get_data_quality_score("goles", h, a) if h and a else None
+    _dq_a = _dq_h  # simétrico: calidad del dato es del partido completo
+
+    h_lam = _compute_team_goals_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db, data_quality_score=_dq_h)
+    a_lam = _compute_team_goals_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db, data_quality_score=_dq_a)
     h_lam_corners, h_r_corners, a_lam_corners, a_r_corners = _compute_corners_lambda(h, a, req.league_stats, general=use_general, db=db)
     lam_corners = h_lam_corners + a_lam_corners
     h_lam_cards, h_r_cards, a_lam_cards, a_r_cards = _compute_cards_lambda(h, a, req.league_stats, general=use_general, db=db)
@@ -4750,14 +4703,14 @@ async def compare_football(
 
     h_goals_lam   = h_lam
     a_goals_lam   = a_lam
-    h_corners_lam, _h_corners_r = _compute_team_corners_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
-    a_corners_lam, _a_corners_r = _compute_team_corners_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
-    h_cards_lam, _h_cards_r   = _compute_team_cards_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
-    a_cards_lam, _a_cards_r   = _compute_team_cards_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
-    h_shots_lam, _h_shots_r = _compute_team_shots_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
-    a_shots_lam, _a_shots_r = _compute_team_shots_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
-    h_shots_target_lam, _h_shots_target_r = _compute_team_shots_target_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db)
-    a_shots_target_lam, _a_shots_target_r = _compute_team_shots_target_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db)
+    h_corners_lam, _h_corners_r = _compute_team_corners_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db, data_quality_score=_dq_h)
+    a_corners_lam, _a_corners_r = _compute_team_corners_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db, data_quality_score=_dq_a)
+    h_cards_lam, _h_cards_r   = _compute_team_cards_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db, data_quality_score=_dq_h)
+    a_cards_lam, _a_cards_r   = _compute_team_cards_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db, data_quality_score=_dq_a)
+    h_shots_lam, _h_shots_r = _compute_team_shots_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db, data_quality_score=_dq_h)
+    a_shots_lam, _a_shots_r = _compute_team_shots_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db, data_quality_score=_dq_a)
+    h_shots_target_lam, _h_shots_target_r = _compute_team_shots_target_lambda(h, a, req.league_stats, is_home=True,  general=use_general, db=db, data_quality_score=_dq_h)
+    a_shots_target_lam, _a_shots_target_r = _compute_team_shots_target_lambda(a, h, req.league_stats, is_home=False, general=use_general, db=db, data_quality_score=_dq_a)
 
     # ── Issue #22: Ajustar rho desde verosimilitud conjunta sobre historial de la liga ──
     # Si hay DB disponible, extraemos partidos históricos de AnalysisHistory y ajustamos rho

@@ -141,7 +141,7 @@ def test_soft_failure_does_not_set_quality_sentinel():
 
 
 def test_low_probability_blocks_binary_market():
-    v = make_pick(selection="btts_yes", calibrated_prob=50.0)
+    v = make_pick(selection="btts_yes", calibrated_prob=49.0)
     assert is_publishable_pick(v) is False
 
 

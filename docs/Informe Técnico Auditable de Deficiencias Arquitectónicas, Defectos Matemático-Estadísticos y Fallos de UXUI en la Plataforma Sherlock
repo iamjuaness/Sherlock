@@ -1,0 +1,679 @@
+Informe Técnico Auditable de Deficiencias Arquitectónicas, Defectos Matemático-Estadísticos y Fallos de UX/UI en la Plataforma Sherlock
+
+1. Diagnóstico General y Evaluación de la Deuda Técnica del Sistema
+
+1.1 Introducción y Contexto Estratégico
+
+La plataforma Sherlock constituye una infraestructura de análisis estocástico y cuantificación de ventaja operativa (edge) en mercados de apuestas deportivas, orientada al modelado de eventos de fútbol mediante la ingesta de métricas granulares y la ejecución de motores predictivos basados en distribuciones de Poisson y correcciones de bivariancia de Dixon-Coles. En arquitecturas de inversión cuantitativa y Value Betting, la validez del valor esperado (\text{EV}) y la optimización del crecimiento del capital mediante la asignación de fracciones de Kelly dependen estrictamente del determinismo, la inmutabilidad y el rigor de toda la cadena de procesamiento de datos. La existencia de desacoples estructurales en la topología del código, desviaciones heurísticas en el cálculo de probabilidades o fallos de gestión de excepciones en la capa de presentación degrada la precisión predictiva del sistema, exponiendo la banca (bankroll) a riesgos de drawdown severo o ruina matemática. Por ende, resulta imperativo ejecutar una auditoría técnica auditable que identifique las vulnerabilidades arquitectónicas y sustente una refactorización integral del sistema.
+
+Para evaluar objetivamente el estado de la base de código, se ha realizado un análisis topológico mediante modelado de grafos sobre la totalidad del repositorio Sherlock. El cuadro de mando presentado a continuación sintetiza las métricas estructurales globales del sistema:
+
+Métrica del Grafo Valor Obtenido Diagnóstico Arquitectónico / Evaluación de Riesgo
+Volumen de Archivos Auditados 132 archivos (~546,162 palabras) Elevada superficie de código con dispersión de lógica de negocio y configuraciones de gobernanza.
+Nodos Totales en Grafo 2,403 nodos Mapeo exhaustivo de entidades domain, endpoints FastAPI, funciones de cálculo, clases y constantes.
+Aristas Totales (Conexiones) 5,655 aristas Alta densidad de acoplamiento e interdependencia entre módulos de UI, backend y motores cuantitativos.
+Comunidades Topológicas 121 comunidades 86 comunidades activas representadas y 35 comunidades delgadas omitidas por baja densidad.
+Tasa de Extracción / Inferencia 93% Extraídas / 7% Inferidas 377 aristas inferidas (confianza promedio: 0.94) que denotan dependencias implícitas sin interfaz clara.
+Nodos Aislados y Periféricos 42 nodos (841 nodos con \le 1 conexión) Presencia de componentes desligados de la ruta crítica de ejecución y posibles módulos huerfanos.
+
+La detección de 42 nodos aislados y 377 relaciones inferidas pone de manifiesto que el sistema padece de brechas de cohesión e incoherencias de acoplamiento, donde la trazabilidad funcional entre la especificación teórica del proyecto (planning.md) y las implementaciones efectivas en src/ui/api/compare.py y src/core/domain.py se halla parcialmente fracturada.
+
+Esta acumulación de deuda técnica a nivel de arquitectura impacta de forma directa sobre la fiabilidad de los pipelines de inferencia, conectando las fallas de abstracción de software con las distorsiones cuantitativas observadas en la generación de probabilidades y sizing de apuestas.
+
+1.2 Incoherencias en las Abstracciones Núcleo ("God Nodes") y Estructura de Módulos
+
+El análisis de centralidad del grafo de código evidencia una hiper-concentración de dependencias en un reducido conjunto de entidades denominadas "God Nodes". Estas abstracciones concentran un volumen desproporcionado de aristas entrantes y salientes, actuando como cuellos de botella de acoplamiento estructural:
+
+1. BlockReason (79 aristas - Comunidad 20): Representa la abstracción de motivos de inelegibilidad. Interviene de forma transversal en el filtro blando de picks, las reglas duras por liga (record_hard_block), los tests de elegibilidad (test_eligibility.py) y los serializadores de respuesta API.
+2. AnalysisHistory (74 aristas): Modulo ORM y DTO que conecta la persistencia SQLite (domain.py), la capa de endpoints (main.py), los procesos de recálculo paralelo (recalculate_all_accuracy), el panel de administración (admin_routes.py) y las funciones de purga histórica (prueba90100.py).
+3. compare_football() (72 aristas - Comunidad 6): Función monolítica orquestadora encargada de consumir las estadísticas de los equipos, calcular las tasas \lambda, invocar la matriz Dixon-Coles, ejecutar el shrinkage bayesiano, aplicar calibración, ajustar el LRS y derivar la clasificación de picks.
+4. HierarchicalCalibrator (46 aristas - Comunidad 0): Nodo central del pipeline de calibración jerárquica de 9 niveles, acoplado directamente con los scripts de entrenamiento out-of-sample (train_calibration.py) y la inferencia en tiempo de ejecución.
+5. Outcome (40 aristas - Comunidad 7) y LeagueMathEngine (37 aristas - Comunidad 105): Abstracciones del cálculo de retornos e integración de promedios ponderados de liga.
+
+El impacto operativo de este alto grado de acoplamiento es severo: cualquier modificación menor en la lógica de elegibilidad dentro de BlockReason o en el esquema de atributos de AnalysisHistory desata regresiones colaterales en cascada que invalidan los recálculos masivos e interrumpe la ejecución de compare_football().
+
+Paralelamente, la auditoría identificó vacíos de conocimiento (Knowledge Gaps) caracterizados por desincronizaciones entre la documentación teórica (planning.md), el orquestador principal (src/ui/api/compare.py) y los scripts de entrenamiento (src/core/train_calibration.py). Esta falta de alineación provoca que la curva de calibración entrenada out-of-sample sea sobreescrita en memoria por heurísticas manuales, impidiendo que los parches aplicados en el núcleo predictivo se reflejen en los datos servidos en producción.
+
+Las falencias detectadas en la abstracción de software conducen a la distorsión del motor predictivo, cuyo rigor matemático y estadístico se diagnostica detalladamente a continuación.
+
+2. Fallos Críticos en el Motor Matemático y Estadístico
+
+2.1 Introducción y Contexto Estratégico
+
+El motor estadístico cuantitativo de la plataforma Sherlock tiene como propósito la generación de una ventaja adaptativa (edge) frente a las cuotas ofertadas por los operadores de apuestas. Para ello, integra distribuciones de Poisson independientes, ajustes de dependencia bivariada de marcadores mediante Dixon-Coles y esquemas de Regresión Bayesiana para derivar intensidades esperadas en múltiples mercados (1X2, Doble Oportunidad, Over/Under de goles, córners, tarjetas, tiros, faltas y offsides). En un entorno financiero estocástico, la ventaja matemática del sistema existe únicamente si la probabilidad esperada calibrada (P*{\text{calibrada}}) representa fielmente la frecuencia relativa real del evento bajo condiciones out-of-sample. Cualquier sesgo o deficiencia en el cálculo de las tasas de gol u ocurrencia (\lambda) invalida la estimación del valor esperado (\text{EV} = P*{\text{calibrada}} \cdot \text{cuota} - 1), transformando picks teóricamente ganadores en apuestas con expectativa matemática negativa (\text{EV} < 0).
+
+Para reestablecer la validez del sistema, resulta crítico erradicar las suposiciones empíricas estáticas e integrar un marco Bayesiano dinámico y estocásticamente riguroso en la derivación de las probabilidades de mercado.
+
+2.2 Defectos en el Cálculo de Shrinkage Bayesiano y Estimación de Lambdas (prior_n)
+
+El cálculo de las intensidades esperadas \lambda en las funciones _compute_team_\*\_lambda sufre una falla de diseño estructural derivada de la fijación empírica y estática del parámetro de peso bayesiano prior_n = 5.0 (o 10.0 en tarjetas y 2.0 en faltas/offsides) en la ecuación de ponderación:
+
+w = \frac{prior_n}{prior_n + n}
+
+\lambda*{\text{final}} = \lambda*{\text{modelo}} \cdot (1 - w) + \lambda\_{\text{liga}} \cdot w
+
+Donde n representa la muestra de partidos del equipo. Este enfoque rígido incurre en graves imprecisiones: ignora por completo la dispersión real de la liga (varianza de la competición), desatiende la calidad de los datos recolectados (data_quality_score) y asume erróneamente que una muestra reducida de partidos debe encogerse (shrinkage) con la misma intensidad en ligas homogéneas que en ligas con alta variabilidad intrínseca.
+
+Para resolver esta vulnerabilidad, se especifica la refactorización técnica de la función estimate_empirical_bayes_prior_n para acotar dinámicamente prior_n dentro del rango [2.0, 14.0] basándose en tres pilares matemáticos:
+
+1. Índice de Dispersión de la Liga o Factor de Fano (F): F = \frac{\sigma^2*{\text{liga}}}{\max(\mu*{\text{liga}}, 0.1)} Evalúa la variabilidad de la competición. Si la liga presenta alta dispersión (F > 1.0), se incrementa prior_n para forzar un mayor anclaje hacia el promedio poblacional.
+2. Factor de Calidad de Datos (DQ*{\text{adj}} \in [0.8, 1.4]): DQ*{\text{adj}} = 1.0 + \left(1.0 - \frac{\text{clip}(data_quality_score, 0, 100)}{100.0}\right) \cdot 0.4 Si la integridad o calidad del dato recolectado es deficiente (DQ \to 0), DQ\_{\text{adj}} se aproxima a 1.4, aumentando el encogimiento bayesiano para proteger al sistema contra la incertidumbre del dato.
+3. Ajuste por Tamaño de Muestra (N*{\text{adj}} \in [0.8, 1.3]): N*{\text{adj}} = \max\left(0.8, \min\left(1.3, \frac{10.0}{\max(team_matches, 1)}\right)\right) Ajusta la inercia del prior cuando el equipo ha disputado muy pocos partidos de local o visitante.
+
+La firma estándar de la función especifica un valor base de baseline_prior_n = 6.0, combinando los tres factores mediante la formulación:
+
+prior_n = \text{round}\left(\text{clip}\left(baseline_prior_n \cdot F \cdot DQ*{\text{adj}} \cdot N*{\text{adj}}, min_prior_n, max_prior_n\right), 2\right)
+
+Para garantizar la correcta propagación de estos parámetros, las funciones del backend deben actualizarse incorporando la muestra de partidos (team_matches) y la puntuación de calidad (data_quality_score):
+
+1. \_compute_team_goals_lambda: Recibe team_matches (obtenido del recuento segmentado de local/visitante) y data_quality_score para ajustar la fuerza de ataque e ineficacia defensiva Bayesiana utilizando un valor base de baseline_prior_n = 5.0.
+2. \_compute_team_corners_lambda: Propaga team_matches y data_quality_score al ajustar el ratio de centros completados y duelos aéreos, empleando un parámetro de encogimiento base de baseline_prior_n = 5.0 segmentado por condición de localía.
+3. \_compute_team_cards_lambda: Aplica la estimación Bayesiana a la tasa de amarillas/rojas y a la desviación del árbitro, utilizando baseline_prior_n = 10.0 para imponer un anclaje más fuerte debido a la alta volatilidad disciplinaria.
+4. \_compute_team_shots_lambda: Integra la muestra de partidos y la calidad de información al ponderar la producción ofensiva propia y el factor defensivo ajustado rival con baseline_prior_n = 5.0.
+
+La estabilización de estas estimaciones bayesianas elimina las distorsiones en las tasas de intensidad esperada, sirviendo como fundamento directo para la matriz discreta de marcadores de Dixon-Coles.
+
+2.3 Limitaciones e Invariantes Violados en el Modelo Dixon-Coles y Matriz de Marcadores
+
+En la plataforma Sherlock, el motor predictivo de fútbol construye una matriz discreta de probabilidades marcativas M \in \mathbb{R}^{(max_goals+1) \times (max_goals+1)} mediante la distribución bivariada de Dixon-Coles (ubicada en src/ui/api/dixon_coles.py y joint_match_distribution.py - Comunidad 41 y 43). El factor de corrección \tau(x,y) modifica las probabilidades de marcadores bajos (0-0, 1-0, 0-1, 1-1) para modelar la correlación entre goles de local (x) y visitante (y):
+
+\tau(0,0) = 1 - \lambda \mu \rho, \quad \tau(1,0) = 1 + \mu \rho, \quad \tau(0,1) = 1 + \lambda \rho, \quad \tau(1,1) = 1 - \rho
+
+Donde \rho (rho) se determina dinámicamente según la suma de intensidades \lambda + \mu. Sin embargo, la auditoría cuantitativa reveló fallos graves en la derivación de mercados derivados y la descomposición de líneas asiáticas:
+
+1. Violación de Invariantes Estocásticos en Doble Oportunidad: Al calcular probabilidades de Doble Oportunidad (X2 o 1X) mediante la suma directa de celdas discretas de la matriz, la ausencia de validación estricta de barreras (guardrails como guardrail_away_win_recommendation en joint_match_distribution.py) provocaba situaciones en las que una recomendación con soporte para X2 se transformaba erróneamente en una apuesta directa a la victoria visitante (2), violando el invariante de dominancia estocástica.
+2. Descomposición de Líneas Asiáticas y Error de Truncamiento en split_asian_line(): En la evaluación de líneas asiáticas de gol (ej. Over 2.25 en split_asian_line() y \_poisson_over_under / \_matrix_over_under - Comunidad 128), el sistema divide la apuesta entre la línea entera (2.0) y la media línea (2.5). No obstante, la matriz se trunca rígidamente en una dimensión fija (\text{max_goals} + 1) \times (\text{max_goals} + 1) con \text{max_goals} = 10. En partidos de alto volumen proyectado (\lambda + \mu > 4.5), la masa de probabilidad residual en la cola superior de la distribución es omitida sin una renormalización de la matriz, introduciendo un error de truncamiento que infla artificialmente el valor esperado calculado.
+3. Omisión del Margen de la Casa de Apuestas (Overround / Vig): Al comparar las probabilidades del modelo frente a las cuotas implícitas del mercado (P\_{\text{implícita}} = 1 / \text{cuota}), el motor no removía de forma consistente el margen comercial de la casa (overround = \sum 1/\text{cuota}\_i). Esto asumía implícitamente que la cuota decimal representaba la probabilidad real del mercado, inflando el \text{EV} de las selecciones y conduciendo a recomendaciones de apuestas sin valor real frente al precio justo sin vig (\text{implied_no_vig}).
+
+La erradicación de estas incoherencias en la matriz estocástica es la condición sine qua non para estructurar un proceso de calibración libre de distorsiones.
+
+3. Deficiencias de Calibración, Evaluación de Valor y Clasificación de Picks
+
+3.1 Introducción y Contexto Estratégico
+
+El objetivo cardinal del pipeline de calibración de probabilidades en una plataforma de apuestas cuantitativas es asegurar la fiabilidad estadística out-of-sample: si el modelo asigna una probabilidad calibrada del p\% a un conjunto de eventos, exactamente el p\% de dichos eventos debe materializarse en la realidad. La introducción de transformaciones empíricas o penalizaciones manuales destruye la monotonicidad de la distribución de probabilidad y distorsiona el calibrador jerárquico.
+
+Cuando la probabilidad esperada se encuentra alterada por heurísticas arbitrarias, el cálculo subsecuente del valor esperado (\text{EV} = P\_{\text{calibrada}} \cdot \text{cuota} - 1) queda corrupto, destruyendo la validez de la asignación de stake mediante el Criterio de Kelly.
+
+3.2 Distorsiones por Heurísticas Manuales en apply_calibration y Fuga Temporal
+
+El análisis del módulo src/ui/api/compare.py (apply_calibration()) puso de manifiesto un fallo metodológico crítico: la coexistencia del modelo de inferencia jerárquico (HierarchicalCalibrator - Comunidad 0) con reglas empíricas forzadas manualmente sobre la probabilidad resultante:
+
+- Transformaciones de Potencia Arbitrarias: Aplicación de exponentes fijos según la familia de mercado (ej. 0.85 para resultado, btts y goles; 0.75 para córners, tarjetas y tiros; 0.70–0.78 para doble oportunidad).
+- Penalizaciones Forzadas por Rango de Cuota: Descuentos lineales no sustantivos sobre cuotas elevadas (\text{prob} \times 0.94 si cuota > 2.0, y \text{prob} \times 0.90 si cuota > 3.0).
+
+Estas reglas manuales anulaban la inferencia del artefacto activo (data/calibration/active.json), impidiendo que las curvas isotónicas compensaran objetivamente la sobreconfianza del modelo.
+
+Asimismo, la auditoría del pipeline de entrenamiento en src/core/train_calibration.py (extract_samples()) detectó un riesgo severo de fuga temporal (data leakage) debido a la falta de comprobación estricta de las fechas de corte (cutoff_datetime). Adicionalmente, el pipeline ejecutaba la calibración sobre calibrated_prob en lugar de utilizar la probabilidad cruda original del modelo (model_prob), acumulando un error de doble calibración.
+
+La tabla comparativa siguiente sintetiza la divergencia entre el comportamiento defectuoso y la arquitectura auditada (Fase 1-16):
+
+Dimensión de Análisis Lógica Heurística Actual (apply_calibration) Lógica Calibrada Auditada (Fase 1-16)
+Ajuste de Probabilidad Potencias fijas manuales (0.75, 0.85, 0.70). Inferencia directa mediante curva isotónica jerárquica empírica.
+Penalización por Cuota Recortes forzados (\times 0.94 en cuota >2.0, \times 0.90 en cuota >3.0). Eliminación total; preservación limpia de la salida del calibrador.
+Manejador de Fallback Encogimiento empírico manual hacia 50%. Retorno estricto de model_prob crudo si no existe calibrador activo.
+Muestreo de Entrenamiento Riesgo de fuga temporal; uso de calibrated_prob. Filtrado riguroso por cutoff_datetime sobre model_prob.
+Criterio de Promoción Desconectado o interferido por reglas manuales. Selección out-of-sample basada estrictamente en Brier Score y Log Loss.
+
+La purificación del proceso de calibración permite reestructurar objetivamente las funciones de clasificación de apuestas.
+
+3.3 Incoherencias en los Umbrales de Publicación (is_publishable e is_underdog) y Métrica data_quality_score
+
+En las funciones is_publishable_pick e is_underdog_pick en compare.py, se identificó una rigidez inadecuada en los rangos de cuota admisibles ([1.40, 2.50] para picks profesionales y (2.50, 5.80] para underdog). Esta acotación arbitraria descartaba picks de alto valor en cuotas bajas (1.30–1.39) o cuotas elevadas (5.80–8.00), al tiempo que omitía la exigencia de un piso estricto de valor esperado (\text{EV} \ge 2.0\%).
+
+Para subsanar estas incoherencias, la especificación técnica exige la reestructuración de los umbrales de elegibilidad:
+
+1. Picks Profesionales / Publicables (is_publishable_pick):
+
+- Rango de Cuotas: Ampliado al intervalo [1.30, 2.80].
+- Piso de Valor Esperado (\text{EV}): Exigencia estricta de \text{edge_ev} \ge 0.020 (\ge 2.0\%).
+- Probabilidad Calibrada Mínima: \text{calibrated_prob} \ge 50.0\% para mercados binarios/estándar (goles, BTTS, Doble Oportunidad) y \text{calibrated_prob} \ge 25.0\% para mercados de alta volatilidad (1X2, córners, tarjetas, tiros).
+- Stake: Requiere \text{stake_units} > 0.0.
+
+2. Picks Underdog (is_underdog_pick):
+
+- Rango de Cuotas: Ampliado al intervalo (2.50, 8.00].
+- Piso de Valor Esperado (\text{EV}): Exigencia estricta de \text{edge_ev} \ge 0.050 (\ge 5.0\%).
+- Calidad de Datos: Requiere \text{data_quality_score} \ge 50.0.
+- Stake Mínimo: \text{stake_units} \ge 0.25 (permitiendo asignaciones fraccionadas).
+
+Paralelamente, la función get_data_quality_score dependía de penalizaciones heurísticas inconexas. Se formula una reestructuración objetiva basada en una suma ponderada lineal graduada de 0.0 a 100.0 puntos:
+
+Score Total (100.0 pts) = Cobertura xG/xGA (25.0 pts) + Métricas de Conteo y Presión (35.0 pts) + Muestra y Segmentación Local/Visita (25.0 pts) + Métricas de Contexto y Forma (15.0 pts)
+
+- Cobertura xG / xGA (25.0 pts): 25.0 pts si ambos equipos presentan datos reales de xG y xGA por partido (xG > 0 y xGA > 0); 12.5 pts si solo uno dispone de ellos.
+- Métricas de Conteo y Presión (35.0 pts): Promedios no nulos en Tiros y Tiros a Puerta (15.0 pts), Córners (10.0 pts), Faltas y Tarjetas (10.0 pts).
+- Muestra y Segmentación Local/Visitante (25.0 pts): Evaluada como \min(\text{matches_home}, \text{matches_away}) \ge 5 \to 25.0 pts; muestra entre 2 y 4 partidos \to 15.0 pts; < 2 partidos \to 5.0 pts. Condición de Transición de Datos: Si el análisis utiliza estadísticas generales no segmentadas (use_general_stats activo para partidos posteriores al 2026-01-01), el componente evalúa la muestra total de encuentros disputados en lugar de la división local/visita.
+- Métricas Secundarias y Contexto (15.0 pts): Disponibilidad de datos de posesión, ratings de rendimiento o estadísticas de forma reciente (recent_form).
+
+Esta cuantificación objetiva asegura que la asignación de capital responda exclusivamente al nivel real de evidencia estadística.
+
+4. Incoherencias en la Gestión de Riesgo, Staking y Gobernanza por Liga
+
+4.1 Introducción y Contexto Estratégico
+
+La gestión de banca (bankroll management) en apuestas cuantitativas tiene por objeto maximizar la tasa de crecimiento logarítmico del capital mediante el Criterio de Kelly, protegiendo al sistema frente a rachas adversas inherentes a la varianza estocástica. La presencia de discontinuidades en la política de sizing —tales como la caída del stake a cero en cuotas con valor positivo o el colapso arbitrario de unidades— destruye la continuidad de la función de utilidad del inversor.
+
+De forma concurrente, el Score de Fiabilidad de Liga (LRS) debe operar como un modulador continuo de la incertidumbre competitiva, impidiendo el bloqueo sistémico no justificado de ligas que disponen de un volumen masivo de partidos registrados.
+
+4.2 Defectos del League Reliability Score (LRS) y Bloqueo Sistémico de Ligas
+
+En la implementación de \_compute_league_reliability_score en src/ui/api/compare.py, la fórmula previa castigaba desproporcionadamente a aquellas ligas que poseían un volumen bajo de picks históricos registrados en la base de datos o carecían de apuestas liquidadas. Como consecuencia, ligas masivas con cientos de partidos analizados eran bloqueadas sistémicamente.
+
+Para erradicar este defecto, se formula una arquitectura matemática para calcular LRS\_{\text{base}} \in [0.15, 0.85]:
+
+1. Volumen de Partidos (S*{\text{matches}} \in [0.0, 0.50]): Evaluado mediante una función sigmoide logística sobre los partidos registrados en la competición: S*{\text{matches}} = 0.50 \cdot \frac{1}{1 + e^{-(matches - 150) / 50}} (Para matches \ge 300, S\_{\text{matches}} satura asintóticamente en 0.50; con 0 partidos, inicia en \approx 0.02).
+2. Integridad de Datos (S*{\text{integrity}} \in [0.0, 0.35]): Porcentaje promedio de métricas no nulas disponibles en la competición (xG, tiros a puerta, córners, faltas, tarjetas). LRS*{\text{base}} = \max(0.15, S*{\text{matches}} + S*{\text{integrity}})
+3. Ajuste Fino por Desempeño Histórico (A\_{\text{perf}} \in [-0.10, +0.10]):
+
+- Condición Activadora Estricta: Se habilita únicamente si \text{historical_picks} \ge 50. Si el volumen de picks resueltos es inferior a 50, A\_{\text{perf}} = 0.0 de manera incondicional.
+- Si \text{picks} \ge 50, se calcula: A\_{\text{perf}} = \text{clip}(0.5 \cdot \text{roi}, -0.10, +0.10)
+
+La fórmula final resulta en LRS = \text{clip}(LRS*{\text{base}} + A*{\text{perf}}, 0.15, 1.00).
+
+Adicionalmente, las reglas de gobernanza por mercado aplican la siguiente moderación sobre el valor esperado:
+
+- Mercados Principales (1X2, Over/Under Goles, BTTS, Doble Oportunidad): Escalamiento lineal directo: \text{EV}\_{\text{adj}} = \text{EV} \cdot LRS.
+- Mercados Secundarios (Córners, Tarjetas, Tiros, Faltas): Penalización cuadrática por varianza: \text{EV}\_{\text{adj}} = \text{EV} \cdot LRS^{1.5}.
+- Desacople de Volumen: Eliminación total de cualquier factor multiplicativo directo ligado exclusivamente al número acumulado de picks.
+
+  4.3 Fallos de Discontinuidad en la Gestión de Stake (\_calculate_stake_units) y Blacklists
+
+En la versión previa de \_calculate*stake_units en compare.py, el motor colapsaba el stake a 0.0u para apuestas con ventaja positiva (\text{EV} > 0) dentro del rango de cuotas 2.20 a 2.80. Este fallo destruía la continuidad matemática del Criterio de Kelly Fraccional (f^*/4 o f^\_/8).
+
+Para restaurar la continuidad del sizing, se especifican las siguientes reglas corregidas de gestión de capital:
+
+- Banca de Referencia: Definida numéricamente en 100 unidades.
+- Límite Máximo Estricto (Cap): 3.0 unidades (3.0\% de la banca total).
+- Escalamiento Continuo: Para cualquier \text{edge_ev} \ge 0.020, el stake debe posicionarse de forma continua dentro del intervalo [0.25, 3.00] unidades mediante la formulación: \text{stake} = \min\left(3.0, \max\left(0.25, \text{raw_stake} \cdot LRS\right)\right)
+- Condición de Salida Cero: Si \text{edge_ev} < 0.020, la función retorna estrictamente 0.0u.
+
+En cuanto a la gobernanza estática, la presencia de 337 reglas rígidas en data/league_penalties.json (que afectan a ligas como MLS, Bundesliga y LaLiga) emitía bloqueos duros irrecuperables (record_hard_block) sin mecanismos de revisión dinámica, degradando innecesariamente el volumen operativo de análisis.
+
+El diagnóstico de la arquitectura y la lógica cuantitativa concluye la evaluación del backend, abriendo paso al análisis de los flujos de usabilidad e ingesta de datos.
+
+5. Vulnerabilidades en Integración de Datos, Flujos de UX/UI y Extensión Watson
+
+5.1 Introducción y Contexto Estratégico
+
+El pipeline de ingesta de la plataforma Sherlock se basa en la captura distribuida de datos a través de la extensión de navegador Watson (que ejecuta scripts de raspado en SofaScore via sofaScoreToSherlock.js y de cuotas en Betano via betano_content.js) y su posterior transmisión vía endpoints REST hacia la aplicación FastAPI (main.py). La integridad en la serialización de tipos y el manejo riguroso de excepciones en el backend son requisitos críticos para evitar la interrupción de las vistas web del comparador y del dashboard de rendimiento.
+
+Los errores en los esquemas de parseo o la propagación de excepciones no capturadas degradan la usabilidad de la interfaz web y menoscaban la experiencia del usuario.
+
+5.2 Errores de Tipado, Parseo Temporal y Manejo de Datos de Tarjetas en Backend
+
+Durante la auditoría del transporte de datos y de los modelos ORM SQLAlchemy en src/core/domain.py (Comunidad 16, 38, 45 y 61), se diagnosticaron dos vulnerabilidades de regresión severas:
+
+1. Excepción por Incompatibilidad de Zonas Horarias (TypeError): Al comparar la fecha de un encuentro provista de zona horaria (timezone-aware) frente a marcas temporales de inicio de partido (kickoff) sin zona horaria (naive) en parse_utc() y .compute_pick_hit_rate() (Comunidad 38 y 45), la aplicación lanzaba una excepción no capturada de tipo TypeError. Esto interrumpía el cálculo del límite de información (cutoff), provocando el colapso de la API REST al procesar solicitudes con marcas de tiempo desalineadas.
+2. Tratamiento Erróneo de Datos Ausentes en CardsConvention: En src/core/domain.py (CardsConvention - Comunidad 61), las estadísticas disciplinarias ausentes o no registradas en la carga eran forzadas numéricamente al valor 0 en lugar de asignarse como None. Esta distorsión distorsionaba los lambdas en \_compute_team_cards_lambda, produciendo estimaciones falsas de valor en el mercado Over/Under de tarjetas.
+
+Para remediar estas vulnerabilidades, se establecen las siguientes correcciones de ingeniería:
+
+- Estandarización ISO 8601 UTC en Pydantic v2: Implementación obligatoria de validadores parse_utc que convierten cualquier marca temporal a objetos datetime con zona horaria UTC explícita.
+- Manejadores Nullable en SQLAlchemy: Modificación de la definición de modelos en src/core/domain.py para admitir campos numéricos de disciplina opcionales (Optional[float] = None), evitando que la falta de datos se interprete como cero infracciones.
+- Captura de Errores de Serialización: Intercepción preventiva de fallos de validación en POST /api/v1/compare/football, retornando estructuras de error estructuradas bajo el estándar HTTP 422 sin colapsar el proceso FastAPI.
+
+  5.3 Deficiencias de UX/UI en el Comparador y Dashboard de Rendimiento
+
+El análisis del código frontend en JavaScript plano y plantillas Jinja2 (src/ui/web/static/js/dashboard_main.js, leagues.js y dashboard.html - Comunidad 1 y 13) reveló los siguientes defectos de usabilidad e interfaz:
+
+1. Propagación de Excepciones No Capturadas en Renderizado Asíncrono DOM: Al enviar un análisis a la API REST que carezca de cuotas de casas de apuestas o contenga atributos nulos en el objeto odds_obj, el pipeline JavaScript en dashboard_main.js lanza excepciones sin capturar (Uncaught TypeError: Cannot read properties of undefined). Esto detiene la ejecución del script y congela visualmente la tabla de resultados del comparador sin emitir retroalimentación al usuario.
+2. Degradación de la Observabilidad sobre Decisiones de Elegibilidad: La interfaz visual no explicita las razones por las cuales una selección es excluida. Existe una falta total de diferenciación gráfica entre un bloqueo duro irrecuperable generado por BlockReason (ej. una regla estática en league_penalties.json) y un filtrado blando ocasionado por un valor esperado insuficiente (\text{EV} < 2.0\%). Esta carencia de trazabilidad confunde al analista al no poder determinar el origen del descarte.
+
+La resolución de estos defectos de presentación culmina el diagnóstico del sistema, sirviendo de base para la hoja de ruta de remediación técnica.
+
+6. Hoja de Ruta de Remediación Integrada y Matriz de Priorización (Tareas 1 a 6)
+
+6.1 Introducción y Contexto Estratégico
+
+La hoja de ruta de refactorización constituye la especificación de ingeniería para resolver las vulnerabilidades arquitectónicas, cuantitativas y de usabilidad identificadas en Sherlock. Las intervenciones deben cumplir de manera estricta la Regla de Oro y Restricciones Duras:
+
+1. Compatibilidad Retroactiva Inalterada con Watson: Queda estrictamente prohibido modificar los scripts de la extensión de navegador (watson/betano_content.js, sofaScoreToSherlock.js, background workers). El backend debe procesar y responder manteniendo compatibilidad de esquema con los objetos JSON consumidos por la extensión (odds_obj, matches_home, matches_away).
+2. Estabilidad de Tipos Pydantic v2: Se debe preservar la firma pública y los nombres de atributos serializados en los modelos DTO ValueIndicator y LeagueStats, previniendo rupturas en el frontend de dashboard.html.
+3. Determinismo y Acotación Estocástica: Eliminación de cualquier riesgo de división por cero o divergencia numérica mediante la aplicación de funciones de acotación explícitas (clip, min, max).
+
+Las soluciones técnicas especificadas deben implementarse mediante cambios modulares y verificables, garantizando la estabilidad operativa del entorno de producción.
+
+6.2 Matriz Tecnológica de Priorización y Especificación de Código de Remediación
+
+Tarea Componente / Archivo Objetivo Deficiencia Detectada Impacto Cuantitativo / UX Solución Técnica Directa Prioridad
+Tarea 1 src/ui/api/compare.py
+(_compute_league_reliability_score) Penalización desproporcionada de LRS por bajo conteo de picks resueltos históricos. Descarte sistémico erróneo de ligas masivas con alto volumen de partidos. Reestructurar LRS_{\text{base}} \in [0.15, 0.85] combinando S*{\text{matches}} sigmoide e S*{\text{integrity}}. Activar A*{\text{perf}} solo si \text{picks} \ge 50. P0
+Tarea 2 src/ui/api/compare.py
+(estimate_empirical_bayes_prior_n) Uso de prior_n = 5.0 estático que ignora la varianza de la liga y la calidad de datos. Estimación imprecisa de \lambda por encogimiento bayesiano no adaptativo. Incorporar Factor de Fano (F), DQ*{\text{adj}} \in [0.8, 1.4] y N\_{\text{adj}} \in [0.8, 1.3] para acotar prior_n \in [2.0, 14.0]. P0
+Tarea 3 src/ui/api/compare.py
+(apply_calibration)
+src/core/train_calibration.py Coexistencia de exponentes manuales (0.75, 0.85) y recortes de cuota (\times 0.94, \times 0.90). Distorsión de probabilidades e interferencia con el calibrador activo. Eliminar multiplicadores manuales. Infección exclusiva del calibrador activo (active.json). Retorno estricto de model_prob crudo como fallback. P0
+Tarea 4 src/ui/api/compare.py
+(is_publishable_pick, is_underdog_pick) Rangos de cuota inflexibles (1.40–2.50) y ausencia de piso estricto de \text{EV}. Clasificación incorrecta e inclusión de picks con \text{EV} < 0. Reajustar rangos: Publicable [1.30, 2.80] (\text{EV} \ge 2\%), Underdog (2.50, 8.00] (\text{EV} \ge 5\%, DQ \ge 50, stake \ge 0.25). P1
+Tarea 5 src/ui/api/compare.py
+(\_calculate_stake_units) Colapso del stake a 0.0u en cuotas de 2.20 a 2.80 con ventaja positiva. Ruptura de la continuidad del Kelly Fraccional y pérdida de valor. Fijar tope estricto en 3.0u (3\% de banca), escalar continuamente en [0.25, 3.00] para \text{edge_ev} \ge 0.020, y retornar 0.0u solo si \text{edge_ev} < 0.020. P0
+Tarea 6 src/ui/api/compare.py
+(get_data_quality_score) Dependencia de penalizaciones heurísticas dispersas para la evaluación de datos. Evaluaciones inconsistentes de la fiabilidad del dato consumido. Refactorizar a suma ponderada lineal (0 a 100 pts): 25 pts xG/xGA, 35 pts conteo/presión, 25 pts muestra local/visita, 15 pts contexto. P1
+
+Especificación de Código Refactorizado para las Tareas 1 a 6
+
+A continuación se presentan los bloques de código Python completos, totalmente tipados y comentados, destinados a reemplazar las funciones legacy en los componentes objetivo.
+
+Tarea 1: Refactorización del League Reliability Score (LRS)
+
+Archivo target: src/ui/api/compare.py
+
+def \_compute_league_reliability_score(league: LeagueStats) -> float:
+"""Calcula el Score de Fiabilidad de Liga (LRS) combinando volumen de partidos,
+
+    calidad de los datos de la competición y ajuste por desempeño histórico.
+
+    Respetando la especificacion tecnica de la Tarea 1:
+    - Base LRS en [0.15, 0.85] basada en partidos históricos e integridad de datos.
+    - Ajuste por desempeño A_perf en [-0.10, +0.10] activado UNICAMENTE si historical_picks >= 50.
+    - Resultado acotado deterministamente en [0.15, 1.00].
+    """
+    matches = getattr(league, "historical_matches", 0) or 0
+
+    # 1. Componente de Volumen de Partidos: Sigmoide acotada en [0.0, 0.50]
+    # S_matches = 0.50 / (1 + exp(-(matches - 150) / 50))
+    exponent = -float(matches - 150) / 50.0
+    # Limitar exponente para prevenir overflow en math.exp
+    exponent_clamped = max(-50.0, min(50.0, exponent))
+    s_matches = 0.50 / (1.0 + math.exp(exponent_clamped))
+
+    # 2. Componente de Integridad de Datos de la Liga en [0.0, 0.35]
+    # Evalua la presencia de métricas no nulas en la competición
+    data_integrity_score = getattr(league, "data_integrity_score", 0.70) or 0.70
+    s_integrity = max(0.0, min(0.35, float(data_integrity_score) * 0.35))
+
+    # LRS Base acotado en el rango [0.15, 0.85]
+    lrs_base = max(0.15, min(0.85, s_matches + s_integrity))
+
+    # 3. Ajuste por Desempeño Histórico A_perf en [-0.10, +0.10]
+    # Condición estricta: Solo se activa si historical_picks >= 50
+    historical_picks = getattr(league, "historical_picks", 0) or 0
+    historical_roi = getattr(league, "historical_roi", 0.0) or 0.0
+
+    if historical_picks >= 50:
+        a_perf = max(-0.10, min(0.10, 0.5 * float(historical_roi)))
+    else:
+        a_perf = 0.0
+
+    # Formula Final LRS acotada en [0.15, 1.00]
+    lrs_final = max(0.15, min(1.00, lrs_base + a_perf))
+    return round(lrs_final, 4)
+
+Tarea 2: Diversificación Dinámica de prior_n (Shrinkage Bayesiano)
+
+Archivo target: src/ui/api/compare.py
+
+def estimate_empirical_bayes_prior_n(
+league_variance: float,
+league_mean: float,
+team_matches: int,
+data_quality_score: float | None = None,
+baseline_prior_n: float = 6.0,
+min_prior_n: float = 2.0,
+max_prior_n: float = 14.0,
+) -> float:
+"""Estima dinámicamente el valor de prior_n para el Shrinkage Bayesiano basándose en
+
+    la dispersión de la liga (Factor de Fano), la calidad de datos y el tamaño de muestra.
+
+    Fórmula: prior_n = baseline_prior_n * F * DQ_adj * N_adj
+    Acotado deterministamente en [min_prior_n, max_prior_n].
+    """
+    # 1. Índice de Dispersión / Factor de Fano: F = var / max(mean, 0.1)
+    safe_mean = max(float(league_mean), 0.1)
+    fano_factor = float(league_variance) / safe_mean
+    # Acotar razonablemente el factor de Fano para evitar explosiones
+    fano_factor_clamped = max(0.5, min(2.0, fano_factor))
+
+    # 2. Factor de Calidad de Datos DQ_adj en [0.8, 1.4]
+    dq = 70.0 if data_quality_score is None else float(data_quality_score)
+    dq_clamped = max(0.0, min(100.0, dq))
+    dq_adj = 1.0 + (1.0 - (dq_clamped / 100.0)) * 0.4
+
+    # 3. Factor de Muestra de Partidos del Equipo N_adj en [0.8, 1.3]
+    safe_matches = max(int(team_matches), 1)
+    n_adj = max(0.8, min(1.3, 10.0 / float(safe_matches)))
+
+    # Cálculo final de prior_n dinámico
+    raw_prior_n = float(baseline_prior_n) * fano_factor_clamped * dq_adj * n_adj
+    prior_n_final = max(float(min_prior_n), min(float(max_prior_n), raw_prior_n))
+
+    return round(prior_n_final, 2)
+
+Tarea 3: Calibración Exclusiva Basada en Inferencia Histórica
+
+Archivos target: src/ui/api/compare.py y src/core/train_calibration.py
+
+def apply_calibration(
+raw_prob: float,
+market_family: str,
+market_side: str | None = None,
+odds: float | None = None,
+league_id: str | None = None,
+) -> float:
+"""Aplica la curva de calibración jerárquica activa sin heurísticas manuales.
+
+    Elimina completamente exponentes empíricos y penalizaciones por cuota (>2.0, >3.0).
+    Devuelve la inferencia directa del artefacto o raw_prob como fallback.
+    """
+    # Garantizar que la probabilidad de entrada esté acotada en [0.0, 100.0]
+    prob_clamped = max(0.0, min(100.0, float(raw_prob)))
+
+    try:
+        # Intentar obtener el calibrador jerárquico activo desde data/calibration/active.json
+        calibrator = get_calibrator()
+        if calibrator is not None and hasattr(calibrator, "predict_probability"):
+            calibrated = calibrator.predict_probability(
+                raw_prob=prob_clamped,
+                market_family=market_family,
+                market_side=market_side,
+                league_id=league_id,
+            )
+            return round(max(0.0, min(100.0, float(calibrated))), 2)
+    except Exception:
+        # Ante cualquier fallo de inferencia o ausencia de artefacto, fallar de forma limpia
+        pass
+
+    # Fallback estricto sin distorsiones heurísticas
+    return round(prob_clamped, 2)
+
+Tarea 4: Umbrales de Publicación (is_publishable e is_underdog)
+
+Archivo target: src/ui/api/compare.py
+
+def is_publishable_pick(v: ValueIndicator) -> bool:
+"""Determina si un pick cumple con los estándares para ser clasificado como Profesional.
+
+    Requisitos refactorizados:
+    - Cuota en el rango [1.30, 2.80].
+    - Expected Value estricto: edge_ev >= 0.020 (EV >= 2.0%).
+    - Probabilidad Calibrada Mínima:
+      * Standard/Binary (goals, btts, double_chance): calibrated_prob >= 50.0%
+      * High Volatility (result, corners, cards, shots): calibrated_prob >= 25.0%
+    - Stake asignado: stake_units > 0.0.
+    """
+    if v is None or v.fair_odds is None or v.fair_odds <= 0:
+        return False
+
+    # Derivar cuota decimal implícita si no viene directa
+    odds = 100.0 / v.implied_prob if (v.implied_prob and v.implied_prob > 0) else 0.0
+    if not (1.30 <= odds <= 2.80):
+        return False
+
+    # Verificar piso estricto de Valor Esperado
+    if v.edge_ev is None or v.edge_ev < 0.020:
+        return False
+
+    # Clasificación por familia de mercado
+    market_family = getattr(v, "market_family", "goals") or "goals"
+    high_volatility_markets = {"result", "corners", "cards", "shots", "shots_on_target", "fouls"}
+
+    if market_family in high_volatility_markets:
+        if v.calibrated_prob < 25.0:
+            return False
+    else:
+        if v.calibrated_prob < 50.0:
+            return False
+
+    # Verificar existencia de stake positivo
+    if v.stake_units is None or v.stake_units <= 0.0:
+        return False
+
+    return True
+
+def is_underdog_pick(v: ValueIndicator) -> bool:
+"""Determina si un pick cumple con los requisitos de la categoría Underdog.
+
+    Requisitos refactorizados:
+    - Cuota en el rango (2.50, 8.00].
+    - Expected Value estricto: edge_ev >= 0.050 (EV >= 5.0%).
+    - Data Quality Score >= 50.0.
+    - Stake mínimo fraccionado: stake_units >= 0.25.
+    """
+    if v is None or v.implied_prob is None or v.implied_prob <= 0:
+        return False
+
+    odds = 100.0 / v.implied_prob
+    if not (2.50 < odds <= 8.00):
+        return False
+
+    if v.edge_ev is None or v.edge_ev < 0.050:
+        return False
+
+    if v.data_quality_score is None or v.data_quality_score < 50.0:
+        return False
+
+    if v.stake_units is None or v.stake_units < 0.25:
+        return False
+
+    return True
+
+Tarea 5: Gestión de Stake (Cap en 3.0u y Kelly Fraccional Continuo)
+
+Archivo target: src/ui/api/compare.py
+
+def \_calculate_stake_units(v: ValueIndicator) -> float:
+"""Calcula las unidades de stake asignadas a la apuesta utilizando el Criterio de Kelly
+
+    Fraccional continuado y acotado estrictamente a un máximo de 3.0 unidades (3% de banca).
+
+    Reglas de Sizing:
+    - Banca de referencia: 100 unidades.
+    - Escalamiento continuo en [0.25, 3.00] unidades para edge_ev >= 0.020.
+    - Devuelve 0.0u si edge_ev < 0.020.
+    """
+    if v is None or v.edge_ev is None or v.edge_ev < 0.020:
+        return 0.0
+
+    if v.implied_prob is None or v.implied_prob <= 0:
+        return 0.0
+
+    odds = 100.0 / v.implied_prob
+    if odds <= 1.0:
+        return 0.0
+
+    # 1. Calculo de Kelly Bernoulli crudo: f* = (p*b - q) / b = edge_ev / (odds - 1)
+    b = odds - 1.0
+    p = float(v.calibrated_prob) / 100.0
+    q = 1.0 - p
+    raw_kelly = (p * b - q) / b
+
+    if raw_kelly <= 0:
+        return 0.0
+
+    # 2. Aplicar Fracción de Kelly conservadora (1/4 de Kelly)
+    fractional_kelly = raw_kelly / 4.0
+
+    # 3. Escalar a Banca de 100 unidades y ponderar por Score LRS de Liga
+    lrs = getattr(v, "league_reliability_score", 0.85) or 0.85
+    raw_stake = fractional_kelly * 100.0 * float(lrs)
+
+    # 4. Acotación continua en el rango [0.25, 3.00] unidades
+    clamped_stake = max(0.25, min(3.00, raw_stake))
+
+    # Redondear a 2 decimales para garantizar precisión financiera
+    return round(clamped_stake, 2)
+
+Tarea 6: Cálculo Objetivo del data_quality_score
+
+Archivo target: src/ui/api/compare.py
+
+def get_data_quality_score(
+selection: str,
+h: FootballTeamStats,
+a: FootballTeamStats,
+use_general_stats: bool = False,
+) -> float:
+"""Calcula el Score de Calidad de Datos mediante una suma ponderada lineal (0 a 100 pts).
+
+    Descomposición:
+    - Datos xG/xGA (25 pts): 25 si ambos disponen de xG/xGA reales, 12.5 si solo uno.
+    - Conteo y Presión (35 pts): Shots (15 pts), Corners (10 pts), Tarjetas/Faltas (10 pts).
+    - Muestra Local/Visita (25 pts): min(matches_home, matches_away) >= 5 -> 25 pts, 2-4 -> 15 pts, <2 -> 5 pts.
+      (Si use_general_stats es True, evalua la muestra total de partidos).
+    - Contexto y Forma (15 pts): Disponibilidad de Posesion, Ratings o Forma Reciente.
+    """
+    if h is None or a is None:
+        return 0.0
+
+    score = 0.0
+
+    # 1. Cobertura de xG / xGA (25.0 pts)
+    h_xg = (getattr(h, "xg_per_game", 0.0) or 0.0) > 0 and (getattr(h, "xga_per_game", 0.0) or 0.0) > 0
+    a_xg = (getattr(a, "xg_per_game", 0.0) or 0.0) > 0 and (getattr(a, "xga_per_game", 0.0) or 0.0) > 0
+
+    if h_xg and a_xg:
+        score += 25.0
+    elif h_xg or a_xg:
+        score += 12.5
+
+    # 2. Métricas de Conteo y Presión (35.0 pts)
+    # Tiros y Tiros a puerta (15 pts)
+    h_shots = (getattr(h, "shots_per_game", 0.0) or 0.0) > 0
+    a_shots = (getattr(a, "shots_per_game", 0.0) or 0.0) > 0
+    if h_shots and a_shots:
+        score += 15.0
+
+    # Córners (10 pts)
+    h_corners = (getattr(h, "corners_per_game", 0.0) or 0.0) > 0
+    a_corners = (getattr(a, "corners_per_game", 0.0) or 0.0) > 0
+    if h_corners and a_corners:
+        score += 10.0
+
+    # Disciplina: Tarjetas y Faltas (10 pts)
+    h_cards = (getattr(h, "yellow_cards_per_game", 0.0) or 0.0) > 0
+    a_cards = (getattr(a, "yellow_cards_per_game", 0.0) or 0.0) > 0
+    if h_cards and a_cards:
+        score += 10.0
+
+    # 3. Muestra y Segmentación (25.0 pts)
+    if use_general_stats:
+        h_m = getattr(h, "matches_total", 0) or 0
+        a_m = getattr(a, "matches_total", 0) or 0
+        min_matches = min(h_m, a_m)
+    else:
+        h_m = getattr(h, "matches_home", 0) or 0
+        a_m = getattr(a, "matches_away", 0) or 0
+        min_matches = min(h_m, a_m)
+
+    if min_matches >= 5:
+        score += 25.0
+    elif min_matches >= 2:
+        score += 15.0
+    else:
+        score += 5.0
+
+    # 4. Métricas Secundarias / Contexto y Forma (15.0 pts)
+    h_pos = (getattr(h, "possession_pct", 0.0) or 0.0) > 0
+    a_pos = (getattr(a, "possession_pct", 0.0) or 0.0) > 0
+    h_form = bool(getattr(h, "recent_form", None))
+    a_form = bool(getattr(a, "recent_form", None))
+
+    if h_pos and a_pos:
+        score += 10.0
+    if h_form and a_form:
+        score += 5.0
+
+    return round(max(0.0, min(100.0, score)), 1)
+
+6.3 Plan de Verificación de Integración y Pruebas Unitarias
+
+Para garantizar la integridad operativa de los cambios introducidos y asegurar que el sizing de stake respete de manera determinista el techo de 3.0 unidades (3.0\% de la banca), se implementa la siguiente suite de pruebas de integración continua escrita en pytest.
+
+import pytest
+from pydantic import BaseModel
+from src.ui.api.compare import (
+is_publishable_pick,
+is_underdog_pick,
+\_calculate_stake_units,
+ValueIndicator,
+)
+
+def create_mock_value_indicator(
+odds: float,
+calibrated_prob: float,
+edge_ev: float,
+market_family: str = "goals",
+data_quality: float = 80.0,
+lrs: float = 0.85,
+) -> ValueIndicator:
+"""Helper para instanciar ValueIndicator con datos de prueba controlados."""
+implied_prob = 100.0 / odds
+return ValueIndicator(
+model_prob=calibrated_prob,
+calibrated_prob=calibrated_prob,
+implied_prob=implied_prob,
+implied_prob_no_vig=implied_prob,
+edge=calibrated_prob - implied_prob,
+edge_ev=edge_ev,
+fair_odds=100.0 / calibrated_prob if calibrated_prob > 0 else 999.0,
+kelly_fraction=edge_ev / (odds - 1.0) / 4.0 if odds > 1.0 else 0.0,
+display_score=75.0,
+data_quality_score=data_quality,
+stat_support=80.0,
+proj_support=80.0,
+league_reliability_score=lrs,
+league_reliability_penalty=0.0,
+market_confidence_tier="segmented",
+market_variance_tier="low",
+is_publishable=False,
+is_underdog=False,
+stake_units=0.0,
+market_family=market_family,
+)
+
+def test_escenario_a_pick_favorito_cuota_baja():
+"""Escenario A: Pick de cuota 1.35 con EV = 2.5% (Elegible Profesional)."""
+val = create_mock_value_indicator(
+odds=1.35, calibrated_prob=76.0, edge_ev=0.025, market_family="goals"
+)
+
+    # Calcular stake preliminar
+    val.stake_units = _calculate_stake_units(val)
+
+    # Evaluaciones de elegibilidad
+    publishable = is_publishable_pick(val)
+
+    assert publishable is True
+    assert 0.25 <= val.stake_units <= 3.00
+
+def test_escenario_b_pick_cuota_media():
+"""Escenario B: Pick de cuota 2.60 con EV = 3.0% (Continuidad Kelly Fraccional)."""
+val = create_mock_value_indicator(
+odds=2.60, calibrated_prob=39.6, edge_ev=0.030, market_family="result"
+)
+
+    val.stake_units = _calculate_stake_units(val)
+    publishable = is_publishable_pick(val)
+
+    assert publishable is True
+    assert 0.25 <= val.stake_units <= 3.00
+
+def test_escenario_c_pick_underdog_cuota_alta():
+"""Escenario C: Pick Underdog de cuota 6.50 con EV = 6.0% (Techo Estricto 3.0u)."""
+val = create_mock_value_indicator(
+odds=6.50,
+calibrated_prob=16.3,
+edge_ev=0.060,
+market_family="result",
+data_quality=65.0,
+)
+
+    val.stake_units = _calculate_stake_units(val)
+    underdog = is_underdog_pick(val)
+
+    assert underdog is True
+    assert val.stake_units >= 0.25
+    assert val.stake_units <= 3.00  # Cumplimiento estricto del techo
+
+def test_verificacion_estricta_techo_stake_extremo():
+"""Verifica que picks con EV masivo (ej. 60%) sigan acotados al techo de 3.0u."""
+val = create_mock_value_indicator(
+odds=2.00, calibrated_prob=80.0, edge_ev=0.600, market_family="goals"
+)
+
+    stake = _calculate_stake_units(val)
+    assert stake == 3.00
+
+La ejecución y aprobación de esta suite de pruebas garantiza la transformación de la plataforma Sherlock en una infraestructura cuantitativa determinista, auditable y alineada con los estándares analíticos institucionales.

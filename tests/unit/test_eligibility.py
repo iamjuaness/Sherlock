@@ -82,30 +82,30 @@ def test_odds_boundaries_are_inclusive():
     assert evaluate_soft_filters(good_snapshot(odds=2.50)) == frozenset()
 
 
-def test_binary_market_requires_60_percent():
+def test_binary_market_requires_50_percent():
     assert BlockReason.PROB_BELOW_THRESHOLD in evaluate_soft_filters(
-        good_snapshot(market_family="result", prob=59.9)
+        good_snapshot(market_family="result", prob=49.9)
     )
     assert evaluate_soft_filters(
-        good_snapshot(market_family="result", prob=60.0)
+        good_snapshot(market_family="result", prob=50.0)
     ) == frozenset()
 
 
-def test_high_variance_market_requires_only_20_percent():
+def test_high_variance_market_requires_only_25_percent():
     assert evaluate_soft_filters(
-        good_snapshot(market_family="cards", prob=20.0)
+        good_snapshot(market_family="cards", prob=25.0)
     ) == frozenset()
     assert BlockReason.PROB_BELOW_THRESHOLD in evaluate_soft_filters(
-        good_snapshot(market_family="cards", prob=19.9)
+        good_snapshot(market_family="cards", prob=24.9)
     )
 
 
-def test_default_market_requires_35_percent():
+def test_default_market_requires_25_percent():
     assert evaluate_soft_filters(
-        good_snapshot(market_family="generic", prob=35.0)
+        good_snapshot(market_family="generic", prob=25.0)
     ) == frozenset()
     assert BlockReason.PROB_BELOW_THRESHOLD in evaluate_soft_filters(
-        good_snapshot(market_family="generic", prob=34.9)
+        good_snapshot(market_family="generic", prob=24.9)
     )
 
 
@@ -119,7 +119,7 @@ def test_threshold_families_match_the_legacy_sets():
 
 @pytest.mark.parametrize("edge,prob,expected", [
     (None, 65.0, BlockReason.EDGE_MISSING),
-    (2.4, 65.0, BlockReason.EDGE_TOO_LOW),
+    (1.9, 65.0, BlockReason.EDGE_TOO_LOW),
     (25.1, 65.0, BlockReason.EDGE_TOO_HIGH),
 ])
 def test_edge_bounds(edge, prob, expected):

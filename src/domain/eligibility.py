@@ -151,12 +151,12 @@ HIGH_VARIANCE_FAMILIES: frozenset[str] = frozenset(
 class PublicationThresholds:
     """Umbrales de publicación, versionados y en un solo sitio."""
 
-    min_odds: float = 1.40
-    max_odds: float = 2.50
-    min_prob_binary: float = 60.0
-    min_prob_high_variance: float = 20.0
-    min_prob_default: float = 35.0
-    min_edge: float = 2.5
+    min_odds: float = 1.30
+    max_odds: float = 2.80
+    min_prob_binary: float = 50.0
+    min_prob_high_variance: float = 25.0
+    min_prob_default: float = 25.0
+    min_edge: float = 2.0
     min_edge_high_threshold: float = 10.0
     max_edge: float = 25.0  # Techo global de edge
     max_edge_high_prob_threshold: float = 67.0  # Excepción: prob calibrada >= 67% permite edge > 25%

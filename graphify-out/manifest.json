@@ -24,9 +24,9 @@
     "semantic_hash": ""
   },
   "data/league_penalties.json": {
-    "mtime": 1792984105.1133213,
-    "seen": 1793133249.3994987,
-    "ast_hash": "6a70c8d5c3219534c41850ffc55c87cd",
+    "mtime": 1793464835.918784,
+    "seen": 1793484326.671324,
+    "ast_hash": "d41d8cd98f00b204e9800998ecf8427e",
     "semantic_hash": ""
   },
   "data/market_correlation.json": {
@@ -150,9 +150,9 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "src/domain/eligibility.py": {
-    "mtime": 1793453569.870859,
-    "seen": 1793454220.6075165,
-    "ast_hash": "13a5258768daf82fd41ee19f1a76572f",
+    "mtime": 1793484091.6428783,
+    "seen": 1793484326.7053437,
+    "ast_hash": "7f5646f1ccc88c8b0b202e2fc32a200b",
     "semantic_hash": ""
   },
   "src/domain/risk.py": {
@@ -204,9 +204,9 @@
     "semantic_hash": "d41d8cd98f00b204e9800998ecf8427e"
   },
   "src/ui/api/compare.py": {
-    "mtime": 1793454097.245824,
-    "seen": 1793454220.615231,
-    "ast_hash": "02a35f4641b0fc1c86ff12f3cce132b7",
+    "mtime": 1793484272.4200408,
+    "seen": 1793484326.723435,
+    "ast_hash": "6fe787eb26a3278e2c0f81acee6490dc",
     "semantic_hash": ""
   },
   "src/ui/api/main.py": {
@@ -300,16 +300,16 @@
     "semantic_hash": "daaec630ff9655bd10e980db70610e7f"
   },
   "tests/unit/test_eligibility.py": {
-    "mtime": 1792502609.9459672,
-    "seen": 1792558568.139632,
-    "ast_hash": "313d7f6404c1fe02b7417182a4b1cc1c",
+    "mtime": 1793484292.0052145,
+    "seen": 1793484326.7327592,
+    "ast_hash": "a870ce34f9000d187003345752f1bd82",
     "semantic_hash": ""
   },
   "tests/unit/test_eligibility_wiring.py": {
-    "mtime": 1788227749.0154622,
-    "seen": 1789829184.0376103,
-    "ast_hash": "1507e7f76d0892664e410f25798354d1",
-    "semantic_hash": "1507e7f76d0892664e410f25798354d1"
+    "mtime": 1793484315.4661222,
+    "seen": 1793484326.7327635,
+    "ast_hash": "7a0d0ad79f0bf7d649752a1b65e02fe2",
+    "semantic_hash": ""
   },
   "tests/unit/test_risk.py": {
     "mtime": 1790349199.8495486,
@@ -430,12 +430,6 @@
     "seen": 1789829184.0376477,
     "ast_hash": "b762728b38aea886fd5c2a3577d39215",
     "semantic_hash": "b762728b38aea886fd5c2a3577d39215"
-  },
-  "docs/AUDITORIA_INTEGRAL_Y_PLAN_DE_MEJORA.md": {
-    "mtime": 1787344290.0,
-    "seen": 1789829184.0376494,
-    "ast_hash": "cb292ee46723a355753da1da2187f077",
-    "semantic_hash": "cb292ee46723a355753da1da2187f077"
   },
   "src/ui/web/templates/dashboard.html": {
     "mtime": 1789283004.061224,
@@ -570,15 +564,15 @@
     "semantic_hash": ""
   },
   "data/calibration/history/cal-v2-20260730T235959Z.json": {
-    "mtime": 1793200647.7561784,
-    "seen": 1793417602.1677015,
-    "ast_hash": "0696e47492cd7f82052bc1d95486133d",
+    "mtime": 1793454869.8240502,
+    "seen": 1793462493.910006,
+    "ast_hash": "63e94fbc553c6452e0469b929297cb16",
     "semantic_hash": ""
   },
   "data/calibration/history/cal-v2-20260830T235959Z.json": {
-    "mtime": 1793203375.3671403,
-    "seen": 1793417602.1677072,
-    "ast_hash": "a5151ef581712fc627499e5d49416750",
+    "mtime": 1793455200.7967825,
+    "seen": 1793462493.910011,
+    "ast_hash": "e603fbb981b7c46298cd98e20df1cf93",
     "semantic_hash": ""
   },
   "src/core/backtesting.py": {
@@ -786,9 +780,9 @@
     "semantic_hash": ""
   },
   "planning.md": {
-    "mtime": 1793198344.3523033,
-    "seen": 1793199652.044325,
-    "ast_hash": "42404ef7742291d1ee603b3c783fa401",
+    "mtime": 1793484274.5191941,
+    "seen": 1793484326.753317,
+    "ast_hash": "b3ebb765ac6f6977f3fb9257bbb53a7e",
     "semantic_hash": ""
   },
   "tests/unit/test_prefill_corners.py": {
@@ -855,6 +849,48 @@
     "mtime": 1793199495.1738336,
     "seen": 1793199652.0311708,
     "ast_hash": "f61bb7e2c54ea49f4282bb6fd2407db0",
+    "semantic_hash": ""
+  },
+  "tests/unit/test_league_reliability.py": {
+    "mtime": 1793462505.094777,
+    "seen": 1793484326.7334607,
+    "ast_hash": "daa91ecc6ade58530672c1474e774896",
+    "semantic_hash": ""
+  },
+  "src/services/notebooklm_service.py": {
+    "mtime": 1793476408.949861,
+    "seen": 1793484326.718787,
+    "ast_hash": "56d4c2b041eba77f422534decebc5afa",
+    "semantic_hash": ""
+  },
+  ".agents/rules/all.md": {
+    "mtime": 1793480782.8214805,
+    "seen": 1793484326.7518167,
+    "ast_hash": "5441c06e6450fe309d4ce2d22087e3c2",
+    "semantic_hash": ""
+  },
+  ".agents/skills/caveman/README.md": {
+    "mtime": 1793477335.7286549,
+    "seen": 1793484326.7521596,
+    "ast_hash": "c6565f2f610ce9f2bab13b09009d8c2b",
+    "semantic_hash": ""
+  },
+  ".agents/skills/caveman/SKILL.md": {
+    "mtime": 1793477335.7436268,
+    "seen": 1793484326.7521634,
+    "ast_hash": "56b2f9db32197569a4a53b69bd8e859d",
+    "semantic_hash": ""
+  },
+  ".agents/skills/notebooklm/SKILL.md": {
+    "mtime": 1793476767.3409584,
+    "seen": 1793484326.7521665,
+    "ast_hash": "bfe4217ff4ebf62f660631e73831d679",
+    "semantic_hash": ""
+  },
+  ".agents/skills/ponytail/SKILL.md": {
+    "mtime": 1793477607.9304402,
+    "seen": 1793484326.7521691,
+    "ast_hash": "dae32e38e36e21f64615f36f9dc8f06d",
     "semantic_hash": ""
   }
 }
