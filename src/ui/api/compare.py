@@ -51,6 +51,23 @@ from src.domain.market_taxonomy import (
 )
 # ── Portfolio: control de sobreexposición simultánea por jornada ──
 from src.domain.portfolio import apply_portfolio_exposure_cap
+from src.core.math.dixon_coles import (
+    tau as dc_tau,
+    build_dixon_coles_matrix,
+    solve_dixon_coles_mle,
+)
+from src.core.math.bayesian import (
+    fit_gamma_prior_from_league,
+    update_gamma_poisson,
+)
+from src.core.math.calibration import (
+    normalize_categorical_market,
+    PlattCalibrator,
+    IsotonicCalibrator,
+)
+from src.core.math.kelly import (
+    calculate_fractional_kelly,
+)
 
 load_dotenv()
 
@@ -1784,19 +1801,25 @@ def _calculate_stake_units(
     lrs: float | None,
 ) -> float:
     """
-    Stake puro basado en Kelly fraccional con caps de seguridad.
-    Devuelve unidades de 1.0 a 3.0. 0.0 = no jugable.
-
-    La penalización de LRS se aplica sobre el hard_max (no sobre kelly_fraction),
-    para no colapsar la escala de unidades.
+    Stake cuantitativo basado en Fractional Kelly (1/8 Kelly con cap del 3% del bankroll).
+    Retorna unidades escaladas (0.0 = no jugable, hasta 3.0u).
     """
-    if edge_ev < 0.025 or kelly_fraction <= 0:
+    if edge_ev < 0.025 or kelly_fraction <= 0 or odds <= 1.0:
         return 0.0
 
-    # Kelly fraccional directo: 0.25 Kelly -> 1u por cada 4% del bankroll
-    raw_stake = kelly_fraction * 100.0
+    prob_est = (edge_ev + 1.0) / odds
+    stake_frac, edge_pct = calculate_fractional_kelly(
+        calibrated_prob=prob_est,
+        odds=odds,
+        fraction_divisor=8.0,
+        max_stake_cap=0.03,
+    )
 
-    # Cap máximo según calidad de la liga (penaliza el techo, no la base)
+    if stake_frac <= 0.0:
+        return 0.0
+
+    raw_units = stake_frac * 100.0
+
     _lrs = lrs or 0.50
     if _lrs >= 0.65:
         hard_max = 3.0
@@ -1805,19 +1828,15 @@ def _calculate_stake_units(
     elif _lrs >= 0.35:
         hard_max = 2.0
     else:
-        hard_max = 1.5  # liga muy poco probada: máximo 1.5u
+        hard_max = 1.5
 
     if market_family in {"corners", "cards", "shots", "shots_target", "fouls"}:
         hard_max = min(hard_max, 2.5)
 
-    # #52: Eliminación del piso artificial forzado de 1.0u.
-    # Si la banca/Kelly sugiere 0.25u o 0.5u, no se infla a 1.0u.
-    # Redondeo en incrementos de 0.25u o 0.5u con mínimo de 0.25u si raw_stake > 0.
-    raw_clamped = max(0.0, min(hard_max, raw_stake))
-    if raw_clamped <= 0:
+    clamped = max(0.0, min(hard_max, raw_units))
+    if clamped <= 0:
         return 0.0
-    # Redondeo a cuartos (0.25, 0.5, 0.75, 1.0, 1.25, ...)
-    stake = round(raw_clamped * 4) / 4
+    stake = round(clamped * 4) / 4
     return max(0.25, stake)
 
 def _calculate_kelly_fraction(
@@ -2209,12 +2228,13 @@ def _compute_team_goals_lambda(
         def_rate = actual_def_g
 
     # ── Issue #20: Un solo shrinkage Bayesiano hacia la media de liga ──
-    total_sample_n = min(att_n, def_n)
-    prior_n = estimate_empirical_bayes_prior_n(goals_var, goals_mean, baseline_prior_n=5.0)
-    shrink_w = prior_n / (prior_n + total_sample_n)
+    # Empirical Bayes Gamma-Poisson shrinkage for attack and defense rates
+    alpha_prior, beta_prior = fit_gamma_prior_from_league([avg_team_goals, goals_mean, max(goals_var, 0.1)])
+    post_att_rate = update_gamma_poisson(alpha_prior, beta_prior, att_rate * att_n, att_n)
+    post_def_rate = update_gamma_poisson(alpha_prior, beta_prior, def_rate * def_n, def_n)
 
-    att_str = (att_rate / max(avg_team_goals, 0.1)) * (1.0 - shrink_w) + 1.0 * shrink_w
-    def_weakness = (def_rate / max(avg_team_goals, 0.1)) * (1.0 - shrink_w) + 1.0 * shrink_w
+    att_str = post_att_rate / max(avg_team_goals, 0.1)
+    def_weakness = post_def_rate / max(avg_team_goals, 0.1)
 
     # ── Issue #18: Factor de localía derivado de la liga incorporado directamente al lambda ──
     home_factor = league.home_advantage_factor if is_home else league.away_disadvantage_factor
@@ -2296,14 +2316,11 @@ def _compute_team_corners_lambda(
         m_count = team.matches_played
     else:
         m_count = team.matches_home if is_home else team.matches_away
-
     corners_mean = league.avg_corners_per_game
     corners_var = _estimate_league_variance(getattr(league, "name", "Desconocida"), "corners", corners_mean, db=db)
-    prior_n = estimate_empirical_bayes_prior_n(corners_var, corners_mean, baseline_prior_n=5.0)
-
     n = max(m_count, 1)
-    shrink_w = prior_n / (prior_n + n)
-    lam = lam * (1.0 - shrink_w) + avg_team_corners * shrink_w
+    alpha_prior_c, beta_prior_c = fit_gamma_prior_from_league([avg_team_corners, corners_mean, max(corners_var, 0.1)])
+    lam = update_gamma_poisson(alpha_prior_c, beta_prior_c, lam * n, n)
 
     # ── Issue #28: Factor de localía por métrica de corners ──
     # local genera más corners que visitante (~+10-15% de promedio de liga)
@@ -2391,8 +2408,8 @@ def _compute_team_cards_lambda(
         lam *= ref_modifier
 
     # 6. Shrinkage final al promedio de liga
-    shrink_w = prior_n / (prior_n + actual_matches)
-    lam = lam * (1.0 - shrink_w) + avg_team_cards * shrink_w
+    alpha_prior_cd, beta_prior_cd = fit_gamma_prior_from_league([avg_team_cards, cards_mean, max(cards_var, 0.1)])
+    lam = update_gamma_poisson(alpha_prior_cd, beta_prior_cd, lam * actual_matches, actual_matches)
 
     # ── Issue #28: Factor de localía para tarjetas (visitante recibe más amarillas) ──
     # El equipo visitante suele cometer más faltas y recibir más tarjetas (~+8%)
@@ -2622,23 +2639,9 @@ def _dc_score_matrix(
     else:
         rho_used = 0.0
 
-    home_probs = [_poisson_pmf(h_lam, i) for i in range(max_goals + 1)]
-    away_probs = [_poisson_pmf(a_lam, j) for j in range(max_goals + 1)]
-
-    matrix: list[list[float]] = []
-    for i in range(max_goals + 1):
-        row = []
-        for j in range(max_goals + 1):
-            p = home_probs[i] * away_probs[j]
-            p *= _dc_tau(i, j, h_lam, a_lam, rho_used)
-            row.append(p)
-        matrix.append(row)
-
-    total = sum(sum(row) for row in matrix)
-    if total <= 0:
-        uniform = 1.0 / ((max_goals + 1) ** 2)
-        matrix = [[uniform for _ in range(max_goals + 1)] for _ in range(max_goals + 1)]
-        return matrix, rho_used
+    mat_np = build_dixon_coles_matrix(h_lam, a_lam, rho_used, max_goals=max_goals)
+    matrix = mat_np.tolist()
+    return matrix, rho_used
 
     matrix = [[p / total for p in row] for row in matrix]
     return matrix, rho_used
@@ -2840,7 +2843,7 @@ def _compute_team_fouls_lambda(
     duel_factor = 1.0 + (team.duels_total_per_game - 45.0) * 0.003  # 45 es referencia
 
     # NUEVO: Posesión rival (más posesión rival = más faltas para recuperar)
-    opp_possession = opponent.possession_pct if opponent.possession_pct > 0 else 50.0
+    opp_possession = opponent.possession_pct if (opponent.possession_pct is not None and opponent.possession_pct > 0) else 50.0
     opp_factor = max(opp_possession / 50.0, 0.5)
 
     lam = gen_str * opp_factor * physical_intensity * duel_factor
@@ -2883,7 +2886,7 @@ def _compute_team_offsides_lambda(
     avg_team_offsides = avg_league_offsides / 2.0
     gen_str = team.offside_per_game if team.offside_per_game > 0 else avg_team_offsides
 
-    team_possession = team.possession_pct if team.possession_pct > 0 else 50.0
+    team_possession = team.possession_pct if (team.possession_pct is not None and team.possession_pct > 0) else 50.0
     pos_factor = max(team_possession / 50.0, 0.5)
 
     # NUEVO: Contraataques aumentan offsides (línea defensiva alta del rival)
@@ -4131,29 +4134,31 @@ def _rate_pick_quality(v: ValueIndicator, h, a, proj: list[ProjectedLine]) -> tu
     stat_support, proj_support = _explicit_market_support(selection, h, a, proj, vi=v)
     strategic_score = _frontend_style_strategic_score(v)
 
-    # ── FILTROS DUROS DE SEGURIDAD (FASE 1) ──
-    if odds is None or odds <= 1.01:
-        return -1, stat_support, proj_support, strategic_score
-
-    if prob < 56:
-        return -1, stat_support, proj_support, strategic_score
-
-    if edge < 1.8:
-        return -1, stat_support, proj_support, strategic_score
-
+    # ── SCORE DE CALIDAD (siempre se calcula; NO veta publicación) ──
+    # quality_score es puramente métrica analítica. Los umbrales internos
+    # (prob, edge, stat_support, proj_support) ahora restan puntos al score
+    # en vez de vetar el pick. Solo blacklist, correlación y ausencia de
+    # valor (EV/edge/stake) pueden bloquear un pick.
     family = _market_family(selection)
-    min_stat = 53 if family in {"cards", "corners", "shots"} else 52
-    if stat_support < min_stat:
-        return -1, stat_support, proj_support, strategic_score
 
-    if proj_support < 48:
-        return -1, stat_support, proj_support, strategic_score
-
-    # ── SCORE BASE DE SEGURIDAD (FASE 2) ──
     score = 0
     score += _probability_band_score(prob)
+
+    # Penalizaciones graduales (bajan el score, no vetan)
+    if odds is None or odds <= 1.01:
+        score -= 20
+    if prob < 56:
+        score -= max(0, int((56 - prob) * 0.5))
+    if edge < 1.8:
+        score -= max(0, int((1.8 - edge) * 5))
+    min_stat = 53 if family in {"cards", "corners", "shots"} else 52
     score += int((stat_support - 50) * 0.85)
+    if stat_support < min_stat:
+        score -= 10
     score += int((proj_support - 50) * 0.65)
+    if proj_support < 48:
+        score -= 8
+
     score += _market_risk_weight(selection)
     score += _odds_risk_penalty(odds)
 
@@ -4171,13 +4176,8 @@ def _rate_pick_quality(v: ValueIndicator, h, a, proj: list[ProjectedLine]) -> tu
     league = getattr(v, "_league_ref", None)  # inyectado opcionalmente
     if league is not None:
         reliability = _compute_league_reliability_score(league)
-        # Reducir el score proporcionalmente a la falta de confiabilidad
         if reliability < 0.5:
             score = int(score * (0.5 + reliability))  # máx penalización del 50%
-
-    # Castigo definitivo si el strategic_score salió negativo
-    if strategic_score < 0:
-        return -1, stat_support, proj_support, strategic_score
 
     return score, stat_support, proj_support, strategic_score
 
@@ -4805,11 +4805,22 @@ async def compare_football(
     matrix, _ = _dc_score_matrix(h_lam, a_lam, rho=fitted_rho)
     markets = _sum_score_matrix_1x2_and_markets(matrix)
 
-    h_prob_raw = markets["home_win_pct"] / 100.0
-    d_prob_raw = markets["draw_pct"]     / 100.0
-    a_prob_raw = markets["away_win_pct"] / 100.0
-    p_btts_yes = markets["btts_yes_pct"] / 100.0
-    p_btts_no  = markets["btts_no_pct"]  / 100.0
+    # Exact categorical market normalization
+    norm_1x2 = normalize_categorical_market({
+        "home": markets["home_win_pct"] / 100.0,
+        "draw": markets["draw_pct"] / 100.0,
+        "away": markets["away_win_pct"] / 100.0,
+    })
+    h_prob_raw = norm_1x2["home"]
+    d_prob_raw = norm_1x2["draw"]
+    a_prob_raw = norm_1x2["away"]
+
+    norm_btts = normalize_categorical_market({
+        "yes": markets["btts_yes_pct"] / 100.0,
+        "no": markets["btts_no_pct"] / 100.0,
+    })
+    p_btts_yes = norm_btts["yes"]
+    p_btts_no = norm_btts["no"]
 
     h_prob = h_prob_raw
     d_prob = d_prob_raw
@@ -5447,12 +5458,9 @@ async def compare_football(
                 )
 
         q_score, s_support, p_support, strat_score = _rate_pick_quality(v, h, a, projected_lines)
-        # Para underdogs (cuota > 2.50), _rate_pick_quality puede devolver -1 por sus
-        # filtros de prob rígidos (< 56%) que no aplican a esta categoría. En ese caso
-        # usamos score_pick_quality que evalúa la calidad sin esos filtros de prob estándar.
-        is_potential_underdog = v.odds is not None and v.odds > 2.50
-        if is_potential_underdog and q_score < 0:
-            q_score = score_pick_quality(v)
+        # quality_score siempre se almacena como métrica analítica.
+        # Ya no es gate de publicación; el pick se muestra si tiene valor
+        # (EV/edge/stake) y no está bloqueado por blacklist o correlación.
         v.quality_score   = q_score
         v.strategic_score = strat_score
         v.stat_support    = round(s_support, 1)

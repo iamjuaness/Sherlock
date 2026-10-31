@@ -305,6 +305,11 @@ def _extract_picks_from_analysis(
             "is_value": is_value,
             "is_publishable": is_pub,
             "is_underdog": is_und,
+            # Métricas analíticas — no afectan visibilidad del pick
+            "quality_score": p.get("quality_score"),
+            "strategic_score": p.get("strategic_score"),
+            "stat_support": p.get("stat_support"),
+            "proj_support": p.get("proj_support"),
             "raw_pick": p,
         })
 
@@ -701,6 +706,10 @@ def export_picks_file(
                 "Beneficio (u)": p_dict.get("profit") if st_norm in ("won", "lost", "push") else None,
                 "Categoría": p_dict.get("category"),
                 "Cuenta en Rentabilidad": "Sí" if p_dict.get("count_in_profitability") else "No",
+                "Quality Score": raw_pick.get("quality_score"),
+                "Score Estrategia": raw_pick.get("strategic_score"),
+                "Respaldo Stats (%)": raw_pick.get("stat_support"),
+                "Respaldo Proyección (%)": raw_pick.get("proj_support"),
             })
 
     df_picks = pd.DataFrame(rows)

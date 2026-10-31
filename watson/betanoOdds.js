@@ -57,25 +57,62 @@ function buildWordSet(variants) {
 }
 
 /**
+ * Patrones para identificar categorías juveniles, reservas o femeninas.
+ */
+const SECONDARY_CATEGORY_REGEX =
+  /\b(sub\s*[-]?\s*\d+|u\s*[-]?\s*\d{1,2}|under\s*\d{1,2}|youth|juvenil|reserves?|reserva|women|femenil|fem|femenino|ladies)\b/i;
+
+/**
+ * Verifica si un texto o conjunto de textos contiene indicios de categorías secundarias.
+ */
+function hasSecondaryCategoryMarker(text) {
+  if (!text) return false;
+  return SECONDARY_CATEGORY_REGEX.test(text);
+}
+
+/**
  * Elige el mejor evento de Betano dado un listado de resultados de /api/search/
  * (o de nuestro fallback de liga, ver fetchBetanoLeagueEvents).
  *
- * IMPORTANTE (fix): antes se aceptaba un evento con bestScore >= 2 aunque
- * esas 2+ coincidencias vinieran TODAS del mismo lado (ej. "universidad" +
- * "catolica" matcheando solo al rival, cuando el equipo local real no tiene
- * nada que ver). Esto causaba falsos positivos con nombres ambiguos que se
- * repiten en varios países (Universidad Católica CHI/ECU, River Plate, etc).
- * Ahora exigimos homeHit AND awayHit obligatoriamente — no basta el score.
+ * Filtra divisiones inferiores/juveniles/femeninas a menos que la búsqueda original
+ * las requiera expresamente.
  */
 function pickBestBetanoEvent(events, homeVariants, awayVariants) {
   const homeWords = buildWordSet(homeVariants);
   const awayWords = buildWordSet(awayVariants);
 
+  // Verificar si la búsqueda original solicitaba explícitamente alguna categoría secundaria
+  const originalQueryHasCategory = [...(homeVariants || []), ...(awayVariants || [])].some((v) =>
+    hasSecondaryCategoryMarker(v)
+  );
+
   let best = null;
-  let bestScore = 0;
+  let bestScore = -Infinity;
 
   (events || []).forEach((ev) => {
-    const label = normalizeTeamName(ev.label || ev.labelLatin || "");
+    // Analizar todos los campos disponibles del evento de Betano
+    const fieldsToInspect = [
+      ev.label,
+      ev.labelLatin,
+      ev.name,
+      ev.shortName,
+      ev.url,
+      ev.league,
+      ev.tournament,
+      ev.category,
+      ev.region
+    ].filter(Boolean);
+
+    const fullEventText = fieldsToInspect.join(" ");
+    const isSecondaryCategory = hasSecondaryCategoryMarker(fullEventText);
+
+    // Si el evento es juvenil/femenino/reserva y el partido buscado NO lo es: descartar tajantemente
+    if (isSecondaryCategory && !originalQueryHasCategory) {
+      console.log(`[Watson Betano] Descartado por categoría secundaria (${ev.label || ev.url})`);
+      return;
+    }
+
+    const label = normalizeTeamName(ev.label || ev.labelLatin || ev.name || "");
     let score = 0;
     let homeHit = false;
     let awayHit = false;
@@ -98,6 +135,11 @@ function pickBestBetanoEvent(events, homeVariants, awayVariants) {
 
     score += 2; // bonus por matchear ambos lados
 
+    // Priorizar eventos de primera división o eventos principales si no tienen sufijos de categoría
+    if (!isSecondaryCategory) {
+      score += 5;
+    }
+
     if (score > bestScore) {
       bestScore = score;
       best = ev;
@@ -110,11 +152,15 @@ function pickBestBetanoEvent(events, homeVariants, awayVariants) {
 /** Extrae { slug, id } desde el campo "url" que devuelve /api/search/ (o el fallback de liga) */
 function extractSlugIdFromEvent(ev) {
   if (ev.url) {
-    const m = ev.url.match(/\/cuotas-de-partido\/([^\/]+)\/(\d+)/);
+    // Soporta /cuotas-de-partido/<slug>/<id>/ y variantes con parámetros o sin slash final
+    const m = ev.url.match(/(?:\/cuotas-de-partido\/|\/match-odds\/|\/event\/)([^\/\?]+)\/(\d+)/i) ||
+              ev.url.match(/\/([^\/\?]+)\/(\d+)(?:\/|\?|$)/);
     if (m) return { slug: m[1], id: m[2] };
   }
-  if (ev.filter && ev.filter.eventId) {
-    const slugGuess = (ev.label || "")
+  if (ev.id || (ev.filter && ev.filter.eventId)) {
+    const eventId = ev.id || ev.filter.eventId;
+    const rawSlug = ev.slug || ev.url || ev.label || ev.name || "";
+    const slugGuess = rawSlug
       .toLowerCase()
       .replace(/\s*\|.*$/, "")
       .normalize("NFD")
@@ -122,7 +168,7 @@ function extractSlugIdFromEvent(ev) {
       .replace(/[^a-z0-9\s-]/g, "")
       .trim()
       .replace(/\s+/g, "-");
-    return { slug: slugGuess, id: ev.filter.eventId };
+    return { slug: slugGuess, id: String(eventId) };
   }
   return null;
 }
@@ -417,8 +463,12 @@ async function fetchBetanoOddsForTeams(homeTeam, awayTeam, leagueName) {
       triedTerms.add(term);
       try {
         const events = await fetchBetanoSearch(term);
+        console.log(`[Watson Betano] Búsqueda "${term}" devolvió ${events.length} eventos:`, events.map(e => ({ label: e.label, url: e.url })));
         best = pickBestBetanoEvent(events, homeVariants, awayVariants);
-        if (best) break;
+        if (best) {
+          console.log(`[Watson Betano] Evento seleccionado para "${term}":`, { label: best.label, url: best.url });
+          break;
+        }
       } catch (e) {
         console.warn(
           `[Watson] Búsqueda de Betano falló para "${term}":`,
@@ -432,7 +482,11 @@ async function fetchBetanoOddsForTeams(homeTeam, awayTeam, leagueName) {
       if (leagueFallbackUrl) {
         try {
           const leagueEvents = await fetchBetanoLeagueEvents(leagueFallbackUrl);
+          console.log(`[Watson Betano Fallback Liga] Eventos recuperados: ${leagueEvents.length}`);
           best = pickBestBetanoEvent(leagueEvents, homeVariants, awayVariants);
+          if (best) {
+            console.log(`[Watson Betano Fallback Liga] Evento seleccionado:`, { label: best.label, url: best.url });
+          }
         } catch (e) {
           console.warn("[Watson] Fallback de liga de Betano falló:", e.message);
         }

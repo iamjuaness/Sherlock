@@ -1,96 +1,92 @@
-## 1. Datos e ingesta (Watson)
+Eres un Ingeniero Cuantitativo Senior y Desarrollador Backend especializado en Python, SciPy y Modelado Estadístico para Mercados Deportivos.
 
-| #   | Problema                                                                              | Corregir                                                      |
-| --- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| 1   | xG casero con categorías solapadas y coeficientes fijos                               | Usar xG real por partido o ajustar coeficientes con regresión |
-| 2   | `expectedGoals` se promedia al fusionar periodos (queda a la mitad)                   | Sumarlo, no promediarlo                                       |
-| 3   | Dato ausente = 0 y defaults del modelo (xg 1.5, corners 4.5, posesión 50, rating 6.5) | Usar `null` y bandera de dato ausente                         |
-| 4   | xG imputado desde goles cuenta como real en la calidad de datos                       | Separar xG real de imputado                                   |
-| 5   | Sin standings inventa 50/25/25; `matches=0` se vuelve 1                               | Marcar "sin datos" y no calcular                              |
-| 6   | Totales enviados como "por juego" (`shots_inside_box`, `big_chances_created`, etc.)   | Convertir a por partido en el mapeador                        |
-| 7   | `matches_home/away` aproximados; vallas invictas en un solo lado                      | Tomarlos de standings por localía                             |
-| 8   | Estadísticas solo `overall`, sin localía, rival ni decaimiento                        | Calcular desde partidos individuales                          |
-| 9   | `league_stats` incompleto (corners, tiros, faltas, 1X2) y localía por victorias       | Calcular promedios de liga desde tu base; localía por goles   |
-| 10  | Liga identificada solo por nombre                                                     | Enviar IDs de torneo, temporada y país                        |
-| 11  | Sin `extractedAt` ni `match_date` UTC; temporada "25/26"                              | Enviar ambos y normalizar la temporada                        |
-| 12  | Alineaciones y rachas se descargan y se descartan                                     | Enviarlas y usarlas, o desactivar la descarga                 |
-| 13  | Guarda de "sin datos" depende de valores falsos (50 y 6.5)                            | Campo explícito `has_stats` por equipo                        |
-| 14  | Resultados: `normaltime \|\| 0` sin estado del evento; rojas sin doble amarilla       | Validar que el evento terminó y contar `yellowRed`            |
-| 15  | `/result` empareja por prefijo de 5 letras y descarta fuera de ventana                | Emparejar por `eventId`                                       |
-| 16  | Line shopping mezcla reglas de liquidación distintas                                  | Comparar solo mercados equivalentes                           |
-| 17  | Líneas de cuota por defecto                                                           | Usar las líneas reales de la casa                             |
+Tu objetivo es refactorizar el motor matemático y probabilístico de Sherlock en el repositorio `iamjuaness/Sherlock`, eliminando heurísticas arbitrarias, sumas fijas de porcentajes y multiplicadores empíricos, y reemplazándolos por un motor cuantitativo riguroso y modular.
 
-## 2. Modelo
+---
 
-| #   | Problema                                                                                      | Corregir                                                     |
-| --- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------ |
-| 18  | Sin localía en el lambda general; parche 70/30 con % de liga por defecto                      | Añadir factor local por liga y quitar el parche              |
-| 19  | 1X2, doble oportunidad y BTTS usan la matriz DC; Over/Under de goles un Poisson independiente | Derivar todo de la misma matriz                              |
-| 20  | xG como prior de fuerza fija (β≈5) y doble shrinkage                                          | Ponderar goles y xG por varianza y aplicar un solo shrinkage |
-| 21  | `recent_form` no existe: el ajuste por forma nunca se aplica                                  | Definir el campo o eliminar el código                        |
-| 22  | rho de Dixon-Coles heurístico; no hay ajuste por rival ni tiempo                              | Ajustar rho y fuerzas con verosimilitud conjunta             |
-| 23  | Dispersión de conteos casi Poisson (`var/4` y piso)                                           | Varianza = Fano × media por equipo                           |
-| 24  | Equipos de conteo independientes                                                              | Modelar correlación entre local y visitante                  |
-| 25  | `_estimate_league_variance` consulta tablas legacy                                            | Estimar desde `AnalysisHistory`                              |
-| 26  | Sesgos en corners (Under bajo y Over alto)                                                    | Revisar el nivel (media) de los lambdas por liga             |
-| 27  | Faltas, offsides y tarjetas con constantes y doble shrinkage                                  | Reemplazar por estimación con datos                          |
-| 28  | Conteos simétricos local/visitante                                                            | Aplicar factores de liga por métrica                         |
-| 29  | Módulos legacy (`math_engine`, `count_models`) con fallbacks y subcadenas                     | Consolidar o eliminar                                        |
-| 30  | Optimizador de parámetros no evalúa el modelo real                                            | Evaluar el modelo completo con rolling origin                |
+### 1. RESTRICCIONES DE ARQUITECTURA Y COMPATIBILIDAD
 
-## 3. Calibración y taxonomía
+1. **Preservación de Esquemas:** No modifiques los esquemas Pydantic públicos de respuesta en `src/ui/api/compare.py` (`FootballCompareResponse`, `ValueIndicator`, `MatchAnalysis`). La API hacia Watson y la UI debe responder exactamente con las mismas llaves y tipos.
+2. **Modularización:** Toda la lógica matemática pura debe ubicarse en `src/core/math/`. No dejes optimizadores numéricos ni solvers implementados directamente dentro de endpoints de FastAPI o controladores.
+3. **Control Numérico:** Asegúrate de que todas las matrices y probabilidades sumen exactamente 1.0 (dentro de tolerancia flotante `1e-6`) y prevén divisiones por cero (`epsilon = 1e-9`).
+4. **Dependencias:** Utiliza las librerías científicas ya instaladas en el entorno (`numpy`, `scipy.optimize`, `scipy.stats`, `scikit-learn`).
 
-| #   | Problema                                                                                   | Corregir                                                          |
-| --- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| 31  | Claves distintas en entrenamiento y ejecución (`home_draw` vs `1x`, `core_2_5` vs `"2.5"`) | Usar las funciones de la taxonomía en ambos                       |
-| 32  | "Tiros a Pta" cae en `shots`; "Over 12.5 Corners" cae en doble oportunidad                 | Añadir "pta" y evaluar corners antes que doble oportunidad        |
-| 33  | Líneas de cuarto sin bucket; "-" y "+" como lado                                           | Ampliar buckets y exigir "over/under" explícito                   |
-| 34  | Probabilidades calibradas por lado no suman 1                                              | Renormalizar o derivar el lado contrario                          |
-| 35  | 798 segmentos, ~16 picks/partido, bins de 8 a 10                                           | Ponderar por partido y reducir segmentos                          |
-| 36  | Solo ~5% de filas con resultado tiene picks                                                | Recalcular probabilidades retrospectivas                          |
-| 37  | Validación con otra configuración y claves distintas                                       | Validar el mismo artefacto y camino de inferencia                 |
-| 38  | Compuerta agregada, sin poda, intervalo ni comparación con el vigente                      | Podar por segmento, bootstrap por partido, comparar con el activo |
-| 39  | `force` escribe directo en `active.json`; escritura no atómica                             | Escribir a ruta candidata y renombrar                             |
-| 40  | Versiones del modelo mezcladas                                                             | Guardar `model_version` y entrenar con la vigente                 |
-| 41  | Evalúa todo el universo                                                                    | Evaluar en la región de decisión                                  |
+---
 
-## 4. Valor, filtros, riesgo y correlación
+### 2. TAREAS ESPECÍFICAS DE IMPLEMENTACIÓN
 
-| #   | Problema                                                                                             | Corregir                                                                                                                                                                                                                                                        |
-| --- | ---------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 42  | Tres probabilidades distintas (cruda, calibrada, final)                                              | Una sola para EV, edge, Kelly y elegibilidad                                                                                                                                                                                                                    |
-| 43  | Mezcla con el mercado fija 80/20; módulo de fiabilidad sin usar                                      | Usar el módulo o calibrar el peso                                                                                                                                                                                                                               |
-| 44  | No-vig de doble oportunidad mal calculado; proporcional                                              | Normalizar por mercado; método de potencia                                                                                                                                                                                                                      |
-| 45  | Hueco entre probabilidad mínima y tope de edge                                                       | Rediseñar los umbrales juntos                                                                                                                                                                                                                                   |
-| 46  | Bloqueo por H2H con una sola muestra                                                                 | Exigir n ≥ 8 o usar solo el shrinkage                                                                                                                                                                                                                           |
-| 47  | Unidades de probabilidad mezcladas (% y fracción)                                                    | Una sola unidad en todo el pipeline                                                                                                                                                                                                                             |
-| 48  | Soportes "110 −" y `_team_strength_score` con totales                                                | Usar probabilidades del modelo                                                                                                                                                                                                                                  |
-| 49  | Cuatro puntajes superpuestos y gates fijos                                                           | Unificar en uno                                                                                                                                                                                                                                                 |
-| 50  | Veto por hit rate con 5–10 partidos y "temporada" = año calendario                                   | Quitar el veto o exigir muestra y temporada real                                                                                                                                                                                                                |
-| 51  | Línea de mejor EV (maldición del ganador)                                                            | Descontar incertidumbre al elegir                                                                                                                                                                                                                               |
-| 52  | Incertidumbre contada varias veces en el stake; piso de 1u                                           | Aplicarla una sola vez                                                                                                                                                                                                                                          |
-| 53  | LRS y Kelly con 5 picks o ROI de 60; acierto sin ajustar por cuota                                   | Mínimos de muestra y comparar con la cuota                                                                                                                                                                                                                      |
-| 54  | `risk.py` no carga el JSON (TypeError tragado); tres sistemas de stake y tres Kelly                  | Arreglar el constructor y dejar uno solo                                                                                                                                                                                                                        |
-| 55  | `max_picks_per_match` y `max_total_stake` sin aplicar                                                | Eliminarlos por completo, para limitar esto se usa la correlacion entre picks.                                                                                                                                                                                  |
-| 56  | Gobernanza con umbrales dentro del ruido; CLV nunca disponible                                       | Usar CLV y mínimos de muestra reales                                                                                                                                                                                                                            |
-| 57  | Multiplicadores de gobernanza distintos entre módulos; `min_edge_add` sin aplicar                    | Unificar tabla                                                                                                                                                                                                                                                  |
-| 58  | Correlación con valor absoluto; recorte fijo ×0.25; orden voraz                                      | Usar signo, ajuste proporcional y orden por EV                                                                                                                                                                                                                  |
-| 59  | Matriz de correlación global, sin líneas, estática, con identidades lógicas                          | Calcular desde la matriz de marcadores y por línea                                                                                                                                                                                                              |
-| 60  | Pares `shotstarget_*` inalcanzables; faltas/offsides sin cobertura                                   | Arreglar clasificación y añadir familias                                                                                                                                                                                                                        |
-| 61  | Umbrales 0.3/0.2 por defecto; los sugeridos nunca se leen                                            | Decidir y leer de un solo lugar                                                                                                                                                                                                                                 |
-| 62  | Motor de reglas: error deja pasar el pick; clave desconocida bloquea todo; `NameError` en modo lista | Fallar cerrado, validar claves, importar bien                                                                                                                                                                                                                   |
-| 63  | Sofascore no manda promedio de corners en la liga                                                    | Para solucionar esto debemos calcular el promedio de corners de la liga con los datos que hay en la BD, por temporada para validar los calculos para un partido de Liga MX, Apertura para un partido que se vaya a jugar hoy el promedio de corners es de 10.94 |
+#### Tarea 1: Crear `src/core/math/dixon_coles.py`
 
-## 5. Liquidación, recálculo y operación
+- Implementa la función de factor de ajuste $\tau(x, y, \lambda, \mu, \rho)$:
+  - $\tau(0, 0) = 1 - \lambda \mu \rho$
+  - $\tau(0, 1) = 1 + \lambda \rho$
+  - $\tau(1, 0) = 1 + \mu \rho$
+  - $\tau(1, 1) = 1 - \rho$
+  - $\tau(x, y) = 1.0$ para cualquier otro marcador.
+- Implementa la función de ponderación por decaimiento temporal exponencial:
+  $$\phi(t) = \exp(-\xi \cdot t)$$
+  donde $t$ es la antigüedad en días y $\xi = 0.0055$ por defecto.
+- Implementa `solve_dixon_coles_mle(matches, teams, xi=0.0055)`:
+  - Optimiza parámetros de ataque ($\alpha$), defensa ($\beta$), ventaja de localía ($\gamma$) y dependencia ($\rho$) minimizando la Log-Verosimilitud Negativa ponderada con `scipy.optimize.minimize(method='L-BFGS-B')`.
+  - Aplica la restricción de identificabilidad: $\sum \alpha_i = 0$ (o media 1 en escala original).
+- Implementa `build_dixon_coles_matrix(lambda_h, mu_a, rho, max_goals=10)`:
+  - Genera la matriz bivariada $(max\_goals + 1) \times (max\_goals + 1)$.
+  - Normaliza la matriz para que $\sum_{x,y} P(X=x, Y=y) = 1.0$.
 
-| #   | Problema                                                                  | Corregir                                                                       |
-| --- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 64  | Tres copias de la liquidación; tarjetas ausentes = 0                      | Usar solo `settlement.py` (fail-closed)                                        |
-| 65  | Convención de tarjetas inconsistente (roja ×2 vs ×1)                      | Una convención explícita                                                       |
-| 66  | Half-win vale 0.5 en calibración y 1.0 en estadísticas                    | Unificar                                                                       |
-| 67  | `calculate_pick_profit` con `stake` y firma de 2 argumentos               | Corregir la firma o la llamada                                                 |
-| 68  | Recálculo paralelo y secuencial difieren; reglas sin cuotas; posible fuga | Un solo camino con corte temporal                                              |
-| 69  | CLV (cuotas de cierre) sin usar como validación                           | Registrarlo y medir con él                                                     |
-| 70  | CORS abierto, borrado sin autenticación, ruta duplicada, estado global    | Autenticación, orígenes y rutas únicas                                         |
-| 71  | Dos clasificaciones de familia por pick                                   | Una sola (la taxonomía)                                                        |
-| 72  | `max_picks_per_match` y `max_total_stake` aplicados                       | Eliminarlos por completo, para limitar esto se usa la correlacion entre picks. |
+#### Tarea 2: Crear `src/core/math/bayesian.py`
+
+- Elimina los valores hardcodeados de pseudo-muestras (`prior_n = 5, 10, 2`).
+- Implementa la inferencia conjugada Gamma-Poisson con Empirical Bayes:
+  - `fit_gamma_prior_from_league(historical_series)`:
+    - Calcula la media muestral ($\mu$) y varianza muestral ($\sigma^2$) de la liga.
+    - Si $\sigma^2 > \mu$, deriva:
+      $$\beta = \frac{\mu}{\sigma^2 - \mu}, \quad \alpha = \mu \cdot \beta$$
+    - Si $\sigma^2 \le \mu$ (subdispersión o equidipersión), usa prior defensivo no informativo ($\beta = 2.0, \alpha = 2 \mu$).
+  - `update_gamma_poisson(alpha_prior, beta_prior, observed_events, matches_played)`:
+    - Retorna el valor esperado a posteriori:
+      $$\lambda_{\text{post}} = \frac{\alpha_{\text{prior}} + \text{observed\_events}}{\beta_{\text{prior}} + \text{matches\_played}}$$
+
+#### Tarea 3: Crear `src/core/math/calibration.py`
+
+- Elimina cualquier transformación de potencia artificial (`p ** 0.85` o `p ** 0.75`).
+- Implementa dos calibradores con interfaz unificada (`fit` y `predict`/`predict_proba`):
+  - `PlattCalibrator`: Regresión logística sobre log-odds:
+    $$\text{logit}(p) = \ln\left(\frac{p}{1 - p}\right)$$
+  - `IsotonicCalibrator`: Envoltura robusta alrededor de `sklearn.isotonic.IsotonicRegression(out_of_bounds="clip", y_min=0.001, y_max=0.999)`.
+- Implementa `normalize_categorical_market(prob_dict)`:
+  - Garantiza que cualquier conjunto de eventos exhaustivos y mutuamente excluyentes (ej. `{"home": p1, "draw": p2, "away": p3}` o `{"over": p1, "under": p2}`) sea reescalado para sumar exactamente $1.0$.
+
+#### Tarea 4: Crear `src/core/math/kelly.py`
+
+- Elimina la cascada de 5 multiplicadores discretos en `_calculate_stake_units`.
+- Implementa `calculate_fractional_kelly(calibrated_prob, odds, fraction_divisor=8.0, max_stake_cap=0.03)`:
+  - Calcula el edge esperado: $b = \text{odds} - 1$, $q = 1 - p$.
+  - Si $(p \cdot \text{odds} - 1) \le 0$, retorna `stake = 0.0`.
+  - Si hay edge positivo:
+    $$f^* = \frac{p \cdot b - q}{b}$$
+    $$\text{stake} = \min\left(\max\left(0.0, \frac{f^*}{\text{fraction\_divisor}}\right), \text{max\_stake\_cap}\right)$$
+  - Retorna `(stake_fraction, edge_pct)`.
+
+#### Tarea 5: Refactorizar `src/ui/api/compare.py`
+
+- Importa y delega en los módulos de `src/core/math/`:
+  - En `_compute_team_goals_lambda`, `_compute_team_corners_lambda` y `_compute_team_cards_lambda`: retira todas las sumas/restas de porcentajes fijos ($\pm 8\%$ por Big Chances, $\pm 15\%$ por arquero, etc.). Sustitúyelas por la contracción Bayesiana Gamma-Poisson de eventos por partido ponderada por la media de la liga.
+  - Reemplaza `_default_dc_rho` por el $\rho$ derivado u optimizado de la liga.
+  - Utiliza `build_dixon_coles_matrix` para obtener las probabilidades 1X2 y Over/Under.
+  - Pasa las probabilidades crudas por `normalize_categorical_market` y el calibrador.
+  - Reemplaza `_calculate_stake_units` por el cálculo de Fractional Kelly (1/8 de Kelly, cap 3%).
+
+#### Tarea 6: Pruebas Unitarias
+
+- Crea `tests/test_quantitative_math.py` con pruebas para:
+  1. Que la matriz de Dixon-Coles sume 1.0 y $\tau$ corrija correctamente los marcadores $(0,0)$, $(1,0)$, $(0,1)$ y $(1,1)$.
+  2. Que `update_gamma_poisson` contraiga equipos con $n=1$ hacia la media de la liga y dé mayor peso al equipo cuando $n \ge 25$.
+  3. Que `normalize_categorical_market` garantice sumatoria unitaria.
+  4. Que `calculate_fractional_kelly` retorne 0 cuando cuota $\times$ probabilidad $\le 1.0$ y respete estrictamente el límite superior del 3%.
+  5. Que el endpoint `/compare/football` procese una solicitud mock y retorne un `FootballCompareResponse` válido.
+
+---
+
+### 3. FORMATO DE ENTREGA
+
+Implementa los cambios por completo sin crear un plan de impelemntacion extra.

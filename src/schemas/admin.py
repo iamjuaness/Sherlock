@@ -165,6 +165,11 @@ class PickItemOut(BaseModel):
     is_value: bool = False
     is_publishable: bool = False
     is_underdog: bool = False
+    # Métricas analíticas (no influyen en si el pick se publica o no)
+    quality_score: Optional[int] = None
+    strategic_score: Optional[int] = None
+    stat_support: Optional[float] = None
+    proj_support: Optional[float] = None
 
 
 class PickDetailOut(BaseModel):

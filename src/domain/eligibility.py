@@ -525,13 +525,11 @@ def evaluate_soft_filters(
     ):
         fails.add(BlockReason.EMPIRICAL_HIT_RATE_TOO_LOW)
 
-    # ── Score de Calidad Integral (Diferenciado por Categoría) ──
-    # Descarta automáticamente picks que no alcanzan el estándar de calidad
-    # (55 para estándar / valor profesional, 45 para underdogs).
-    if snapshot.quality_score is not None:
-        min_q = thresholds.min_quality_score_underdog if snapshot.is_underdog else thresholds.min_quality_score_standard
-        if snapshot.quality_score < min_q:
-            fails.add(BlockReason.QUALITY_SCORE_TOO_LOW)
+    # ── Score de Calidad Integral ──
+    # NOTA: quality_score ya NO bloquea picks. Se calcula y almacena únicamente
+    # como métrica de análisis de datos posterior. Los picks solo se bloquean
+    # por blacklist, correlación o ausencia de valor (EV/edge/stake).
+    # La verificación QUALITY_SCORE_TOO_LOW se ha eliminado intencionadamente.
 
     return frozenset(fails)
 
