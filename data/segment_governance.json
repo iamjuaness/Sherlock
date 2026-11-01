@@ -96,15 +96,15 @@
     "league:premier league|family:shots|side:over|bucket:low": "blocked",
     "league:premier league|family:shots|side:under": "blocked",
     "league:premier league|family:shots|side:under|bucket:low": "blocked",
-    "league:primera a|family:btts": "blocked",
-    "league:primera a|family:btts|side:no": "blocked",
-    "league:primera a|family:btts|side:no|bucket:no_line": "blocked",
-    "league:primera a|family:btts|side:yes": "blocked",
-    "league:primera a|family:btts|side:yes|bucket:no_line": "blocked",
-    "league:primera a|family:corners|side:over|bucket:core": "blocked",
-    "league:primera a|family:double_chance|side:home_away": "blocked",
-    "league:primera a|family:double_chance|side:home_away|bucket:no_line": "blocked",
-    "league:primera a|family:goals|side:under|bucket:core_2_5": "blocked",
+    "league:Primera A|family:btts": "blocked",
+    "league:Primera A|family:btts|side:no": "blocked",
+    "league:Primera A|family:btts|side:no|bucket:no_line": "blocked",
+    "league:Primera A|family:btts|side:yes": "blocked",
+    "league:Primera A|family:btts|side:yes|bucket:no_line": "blocked",
+    "league:Primera A|family:corners|side:over|bucket:core": "blocked",
+    "league:Primera A|family:double_chance|side:home_away": "blocked",
+    "league:Primera A|family:double_chance|side:home_away|bucket:no_line": "blocked",
+    "league:Primera A|family:goals|side:under|bucket:core_2_5": "blocked",
     "league:primera división|family:btts": "blocked",
     "league:primera nacional|family:btts": "blocked",
     "league:primera nacional|family:corners": "blocked",
@@ -361,20 +361,20 @@
     "league:premier league|family:result|side:away|bucket:no_line": "reduced",
     "league:premier league|family:shots": "reduced",
     "league:premier league|family:shots|side:over|bucket:high": "reduced",
-    "league:primera a|family:cards|side:over": "reduced",
-    "league:primera a|family:cards|side:over|bucket:high_5_5_plus": "reduced",
-    "league:primera a|family:cards|side:under": "reduced",
-    "league:primera a|family:cards|side:under|bucket:high_5_5_plus": "reduced",
-    "league:primera a|family:corners": "reduced",
-    "league:primera a|family:corners|side:over": "reduced",
-    "league:primera a|family:corners|side:under": "reduced",
-    "league:primera a|family:corners|side:under|bucket:low": "reduced",
-    "league:primera a|family:double_chance|side:draw_away": "reduced",
-    "league:primera a|family:double_chance|side:draw_away|bucket:no_line": "reduced",
-    "league:primera a|family:goals|side:over|bucket:low_0_5_1_5": "reduced",
-    "league:primera a|family:goals|side:under": "reduced",
-    "league:primera a|family:result|side:draw": "reduced",
-    "league:primera a|family:result|side:draw|bucket:no_line": "reduced",
+    "league:Primera A|family:cards|side:over": "reduced",
+    "league:Primera A|family:cards|side:over|bucket:high_5_5_plus": "reduced",
+    "league:Primera A|family:cards|side:under": "reduced",
+    "league:Primera A|family:cards|side:under|bucket:high_5_5_plus": "reduced",
+    "league:Primera A|family:corners": "reduced",
+    "league:Primera A|family:corners|side:over": "reduced",
+    "league:Primera A|family:corners|side:under": "reduced",
+    "league:Primera A|family:corners|side:under|bucket:low": "reduced",
+    "league:Primera A|family:double_chance|side:draw_away": "reduced",
+    "league:Primera A|family:double_chance|side:draw_away|bucket:no_line": "reduced",
+    "league:Primera A|family:goals|side:over|bucket:low_0_5_1_5": "reduced",
+    "league:Primera A|family:goals|side:under": "reduced",
+    "league:Primera A|family:result|side:draw": "reduced",
+    "league:Primera A|family:result|side:draw|bucket:no_line": "reduced",
     "league:primera nacional|family:double_chance": "reduced",
     "league:pro league|family:cards|side:over": "reduced",
     "league:pro league|family:corners": "reduced",
@@ -689,15 +689,15 @@
     "league:premier league|family:result|side:draw|bucket:no_line": "watch",
     "league:premier league|family:result|side:home": "watch",
     "league:premier league|family:result|side:home|bucket:no_line": "watch",
-    "league:primera a|family:cards": "watch",
-    "league:primera a|family:double_chance|side:home_draw": "watch",
-    "league:primera a|family:double_chance|side:home_draw|bucket:no_line": "watch",
-    "league:primera a|family:goals": "watch",
-    "league:primera a|family:goals|side:over": "watch",
-    "league:primera a|family:result|side:away": "watch",
-    "league:primera a|family:result|side:away|bucket:no_line": "watch",
-    "league:primera a|family:result|side:home": "watch",
-    "league:primera a|family:result|side:home|bucket:no_line": "watch",
+    "league:Primera A|family:cards": "watch",
+    "league:Primera A|family:double_chance|side:home_draw": "watch",
+    "league:Primera A|family:double_chance|side:home_draw|bucket:no_line": "watch",
+    "league:Primera A|family:goals": "watch",
+    "league:Primera A|family:goals|side:over": "watch",
+    "league:Primera A|family:result|side:away": "watch",
+    "league:Primera A|family:result|side:away|bucket:no_line": "watch",
+    "league:Primera A|family:result|side:home": "watch",
+    "league:Primera A|family:result|side:home|bucket:no_line": "watch",
     "league:primera división|family:double_chance": "watch",
     "league:primera división|family:goals": "watch",
     "league:primera división|family:result": "watch",
@@ -801,9 +801,9 @@
     "league:mls|family:result": "active",
     "league:mls|family:shots": "active",
     "league:mls|family:shots|side:under": "active",
-    "league:primera a": "active",
-    "league:primera a|family:double_chance": "active",
-    "league:primera a|family:result": "active",
+    "league:Primera A": "active",
+    "league:Primera A|family:double_chance": "active",
+    "league:Primera A|family:result": "active",
     "league:primera división": "active",
     "league:pro league": "active",
     "league:saudi pro league": "active",
@@ -1248,47 +1248,47 @@
       "calibration_gap": 0.211777,
       "auto": true
     },
-    "league:primera a|family:btts": {
+    "league:Primera A|family:btts": {
       "n_samples": 280.0,
       "calibration_gap": 0.175514,
       "auto": true
     },
-    "league:primera a|family:btts|side:no": {
+    "league:Primera A|family:btts|side:no": {
       "n_samples": 140.0,
       "calibration_gap": 0.183128,
       "auto": true
     },
-    "league:primera a|family:btts|side:no|bucket:no_line": {
+    "league:Primera A|family:btts|side:no|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.183128,
       "auto": true
     },
-    "league:primera a|family:btts|side:yes": {
+    "league:Primera A|family:btts|side:yes": {
       "n_samples": 140.0,
       "calibration_gap": 0.168757,
       "auto": true
     },
-    "league:primera a|family:btts|side:yes|bucket:no_line": {
+    "league:Primera A|family:btts|side:yes|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.168757,
       "auto": true
     },
-    "league:primera a|family:corners|side:over|bucket:core": {
+    "league:Primera A|family:corners|side:over|bucket:core": {
       "n_samples": 71.0,
       "calibration_gap": 0.218648,
       "auto": true
     },
-    "league:primera a|family:double_chance|side:home_away": {
+    "league:Primera A|family:double_chance|side:home_away": {
       "n_samples": 140.0,
       "calibration_gap": 0.151972,
       "auto": true
     },
-    "league:primera a|family:double_chance|side:home_away|bucket:no_line": {
+    "league:Primera A|family:double_chance|side:home_away|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.151972,
       "auto": true
     },
-    "league:primera a|family:goals|side:under|bucket:core_2_5": {
+    "league:Primera A|family:goals|side:under|bucket:core_2_5": {
       "n_samples": 50,
       "calibration_gap": 0.2,
       "auto": false
@@ -2573,72 +2573,72 @@
       "calibration_gap": 0.145123,
       "auto": true
     },
-    "league:primera a|family:cards|side:over": {
+    "league:Primera A|family:cards|side:over": {
       "n_samples": 125.0,
       "calibration_gap": 0.131568,
       "auto": true
     },
-    "league:primera a|family:cards|side:over|bucket:high_5_5_plus": {
+    "league:Primera A|family:cards|side:over|bucket:high_5_5_plus": {
       "n_samples": 125.0,
       "calibration_gap": 0.131568,
       "auto": true
     },
-    "league:primera a|family:cards|side:under": {
+    "league:Primera A|family:cards|side:under": {
       "n_samples": 125.0,
       "calibration_gap": 0.109688,
       "auto": true
     },
-    "league:primera a|family:cards|side:under|bucket:high_5_5_plus": {
+    "league:Primera A|family:cards|side:under|bucket:high_5_5_plus": {
       "n_samples": 125.0,
       "calibration_gap": 0.109688,
       "auto": true
     },
-    "league:primera a|family:corners": {
+    "league:Primera A|family:corners": {
       "n_samples": 247.0,
       "calibration_gap": 0.11696,
       "auto": true
     },
-    "league:primera a|family:corners|side:over": {
+    "league:Primera A|family:corners|side:over": {
       "n_samples": 126.0,
       "calibration_gap": 0.144397,
       "auto": true
     },
-    "league:primera a|family:corners|side:under": {
+    "league:Primera A|family:corners|side:under": {
       "n_samples": 121.0,
       "calibration_gap": 0.116306,
       "auto": true
     },
-    "league:primera a|family:corners|side:under|bucket:low": {
+    "league:Primera A|family:corners|side:under|bucket:low": {
       "n_samples": 88.0,
       "calibration_gap": 0.132773,
       "auto": true
     },
-    "league:primera a|family:double_chance|side:draw_away": {
+    "league:Primera A|family:double_chance|side:draw_away": {
       "n_samples": 140.0,
       "calibration_gap": 0.101878,
       "auto": true
     },
-    "league:primera a|family:double_chance|side:draw_away|bucket:no_line": {
+    "league:Primera A|family:double_chance|side:draw_away|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.101878,
       "auto": true
     },
-    "league:primera a|family:goals|side:over|bucket:low_0_5_1_5": {
+    "league:Primera A|family:goals|side:over|bucket:low_0_5_1_5": {
       "n_samples": 60.0,
       "calibration_gap": 0.121183,
       "auto": true
     },
-    "league:primera a|family:goals|side:under": {
+    "league:Primera A|family:goals|side:under": {
       "n_samples": 130.0,
       "calibration_gap": 0.146692,
       "auto": true
     },
-    "league:primera a|family:result|side:draw": {
+    "league:Primera A|family:result|side:draw": {
       "n_samples": 140.0,
       "calibration_gap": 0.1302,
       "auto": true
     },
-    "league:primera a|family:result|side:draw|bucket:no_line": {
+    "league:Primera A|family:result|side:draw|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.1302,
       "auto": true
@@ -4213,47 +4213,47 @@
       "calibration_gap": 0.076229,
       "auto": true
     },
-    "league:primera a|family:cards": {
+    "league:Primera A|family:cards": {
       "n_samples": 250.0,
       "calibration_gap": 0.0865,
       "auto": true
     },
-    "league:primera a|family:double_chance|side:home_draw": {
+    "league:Primera A|family:double_chance|side:home_draw": {
       "n_samples": 140.0,
       "calibration_gap": 0.078579,
       "auto": true
     },
-    "league:primera a|family:double_chance|side:home_draw|bucket:no_line": {
+    "league:Primera A|family:double_chance|side:home_draw|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.078579,
       "auto": true
     },
-    "league:primera a|family:goals": {
+    "league:Primera A|family:goals": {
       "n_samples": 260.0,
       "calibration_gap": 0.078069,
       "auto": true
     },
-    "league:primera a|family:goals|side:over": {
+    "league:Primera A|family:goals|side:over": {
       "n_samples": 130.0,
       "calibration_gap": 0.063477,
       "auto": true
     },
-    "league:primera a|family:result|side:away": {
+    "league:Primera A|family:result|side:away": {
       "n_samples": 140.0,
       "calibration_gap": 0.069014,
       "auto": true
     },
-    "league:primera a|family:result|side:away|bucket:no_line": {
+    "league:Primera A|family:result|side:away|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.069014,
       "auto": true
     },
-    "league:primera a|family:result|side:home": {
+    "league:Primera A|family:result|side:home": {
       "n_samples": 140.0,
       "calibration_gap": 0.079115,
       "auto": true
     },
-    "league:primera a|family:result|side:home|bucket:no_line": {
+    "league:Primera A|family:result|side:home|bucket:no_line": {
       "n_samples": 140.0,
       "calibration_gap": 0.079115,
       "auto": true
@@ -4773,17 +4773,17 @@
       "calibration_gap": 0.04589,
       "auto": true
     },
-    "league:primera a": {
+    "league:Primera A": {
       "n_samples": 1886.0,
       "calibration_gap": 0.042076,
       "auto": true
     },
-    "league:primera a|family:double_chance": {
+    "league:Primera A|family:double_chance": {
       "n_samples": 429.0,
       "calibration_gap": 0.049802,
       "auto": true
     },
-    "league:primera a|family:result": {
+    "league:Primera A|family:result": {
       "n_samples": 420.0,
       "calibration_gap": 0.049276,
       "auto": true

@@ -48,4 +48,4 @@ def test_line_buckets():
 
 def test_market_group_key():
     key = market_group_key("Primera A", "goals", "under", "core_2_5")
-    assert key == "league:primera a|family:goals|side:under|bucket:core_2_5"
+    assert key == "league:Primera A|family:goals|side:under|bucket:core_2_5"

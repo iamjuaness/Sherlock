@@ -36,12 +36,8 @@ function mapSofaScoreToSherlockTeamStats(
       draws = teamStanding.draws ?? 0;
       losses = teamStanding.losses ?? 0;
       if (teamStanding.home) {
-        matchesHome = isHome
-          ? (teamStanding.home.matches ?? null)
-          : null;
-        matchesAway = !isHome
-          ? (teamStanding.away?.matches ?? null)
-          : null;
+        matchesHome = isHome ? (teamStanding.home.matches ?? null) : null;
+        matchesAway = !isHome ? (teamStanding.away?.matches ?? null) : null;
       }
     }
   }
@@ -64,10 +60,20 @@ function mapSofaScoreToSherlockTeamStats(
 
   // Aproximar home/away si no vinieron de standings
   if (matchesHome === null) {
-    matchesHome = matches > 0 ? (isHome ? Math.ceil(matches / 2) : Math.floor(matches / 2)) : 0;
+    matchesHome =
+      matches > 0
+        ? isHome
+          ? Math.ceil(matches / 2)
+          : Math.floor(matches / 2)
+        : 0;
   }
   if (matchesAway === null) {
-    matchesAway = matches > 0 ? (isHome ? Math.floor(matches / 2) : Math.ceil(matches / 2)) : 0;
+    matchesAway =
+      matches > 0
+        ? isHome
+          ? Math.floor(matches / 2)
+          : Math.ceil(matches / 2)
+        : 0;
   }
 
   // ── Issue #7: Tomar clean sheets de standings (home / away) si están disponibles ──
@@ -90,9 +96,12 @@ function mapSofaScoreToSherlockTeamStats(
   // Fallback si los standings no traen cleanSheets por localía:
   // distribuir proporcionalmente o dejar en 0 en lugar de asignarlas todas al lado actual
   if (cleanSheetsHome === null) {
-    cleanSheetsHome = cleanSheetsTotal > 0 && matches > 0 && matchesHome > 0
-      ? Math.round((cleanSheetsTotal * matchesHome) / matches)
-      : (isHome ? cleanSheetsTotal : 0);
+    cleanSheetsHome =
+      cleanSheetsTotal > 0 && matches > 0 && matchesHome > 0
+        ? Math.round((cleanSheetsTotal * matchesHome) / matches)
+        : isHome
+          ? cleanSheetsTotal
+          : 0;
   }
   if (cleanSheetsAway === null) {
     cleanSheetsAway = Math.max(0, cleanSheetsTotal - cleanSheetsHome);
@@ -353,7 +362,7 @@ function mapSofaScoreToSherlockTeamStats(
     // ── Issue #4: indicar si el xG es real o imputado ──
     xg_per_game: xgPerGame > 0 ? xgPerGame : null,
     xga_per_game: xgaPerGame > 0 ? xgaPerGame : null,
-    xg_is_imputed: !hasRealXg,  // true = no proviene de expectedGoals oficial de SofaScore
+    xg_is_imputed: !hasRealXg, // true = no proviene de expectedGoals oficial de SofaScore
     // ── Issue #13: has_stats explícito por equipo ──
     has_stats: matches > 0,
 
@@ -529,10 +538,13 @@ function buildLeagueStats(standings, refereeStats, leagueInfo = null) {
       // ── Issue #9: Factor local/visitante derivado por goles cuando estén disponibles, o por victorias ──
       const homeGoals = info.homeTeamGoals ?? null;
       const awayGoals = info.awayTeamGoals ?? null;
-      if (homeGoals != null && awayGoals != null && (homeGoals + awayGoals) > 0) {
+      if (homeGoals != null && awayGoals != null && homeGoals + awayGoals > 0) {
         const totalG = homeGoals + awayGoals;
-        homeAdvantage = Math.min(1.4, Math.max(1.05, (homeGoals / (totalG / 2))));
-        awayDisadvantage = Math.min(0.95, Math.max(0.65, (awayGoals / (totalG / 2))));
+        homeAdvantage = Math.min(1.4, Math.max(1.05, homeGoals / (totalG / 2)));
+        awayDisadvantage = Math.min(
+          0.95,
+          Math.max(0.65, awayGoals / (totalG / 2)),
+        );
       } else {
         const diffWinsRatio = (winsH - winsA) / matchesCount;
         homeAdvantage = Math.min(1.4, Math.max(1.05, 1.0 + diffWinsRatio));
@@ -572,15 +584,24 @@ function buildLeagueStats(standings, refereeStats, leagueInfo = null) {
     const actualMatches = totalMatches / 2;
     if (actualMatches > 0) {
       avgGoals = totalGoalsFor / actualMatches;
-      if (hasHomeAwayBreakdown && (totalHomeWins + totalAwayWins + totalDraws) > 0) {
+      if (
+        hasHomeAwayBreakdown &&
+        totalHomeWins + totalAwayWins + totalDraws > 0
+      ) {
         const countedMatches = totalHomeWins + totalAwayWins + totalDraws;
         homeWinPct = (totalHomeWins / countedMatches) * 100;
         drawPct = (totalDraws / countedMatches) * 100;
         awayWinPct = (totalAwayWins / countedMatches) * 100;
         if (homeGoalsTotal > 0 && awayGoalsTotal > 0) {
           const expectedPerSide = (homeGoalsTotal + awayGoalsTotal) / 2;
-          homeAdvantage = Math.min(1.4, Math.max(1.05, homeGoalsTotal / expectedPerSide));
-          awayDisadvantage = Math.min(0.95, Math.max(0.65, awayGoalsTotal / expectedPerSide));
+          homeAdvantage = Math.min(
+            1.4,
+            Math.max(1.05, homeGoalsTotal / expectedPerSide),
+          );
+          awayDisadvantage = Math.min(
+            0.95,
+            Math.max(0.65, awayGoalsTotal / expectedPerSide),
+          );
         }
       }
     }
@@ -639,11 +660,19 @@ function buildSherlockPayload(extractedData) {
   const awayName =
     match.awayTeam?.shortName || match.awayTeam?.name || "Visitante";
 
-  // Fix: Asegurar la correcta extracción de competition desde el evento
-  const competition =
-    match.tournament?.uniqueTournament?.name ||
-    match.event?.tournament?.uniqueTournament?.name ||
+  // 1\. Obtener el objeto tournament sin importar la anidación
+  const tournamentObj =
+    match.tournament ||
+    match.event?.tournament ||
+    extractedData.match?.tournament;
+
+  // 2\. Extraer dando PRIORIDAD ABSOLUTA a uniqueTournament.name
+  const rawComp =
+    tournamentObj?.uniqueTournament?.name ||
+    tournamentObj?.name ||
     "Desconocida";
+  // 3\. Limpiar subclasificaciones (ej: "Liga, Playoffs" -&gt; "Liga")
+  const competition = rawComp ? rawComp.split(",")[0].trim() : "Desconocida";
 
   const homeTeamId = match.homeTeam?.id;
   const awayTeamId = match.awayTeam?.id;
@@ -852,14 +881,14 @@ function buildSherlockPayload(extractedData) {
         // ═══════════════════════════════════════════════════════════
         // RATING
         // ═══════════════════════════════════════════════════════════
-        avg_rating: null,  // Issue #3: null, no 6.5
+        avg_rating: null, // Issue #3: null, no 6.5
 
         // ═══════════════════════════════════════════════════════════
         // xG / xGA
         // ═══════════════════════════════════════════════════════════
         xg_per_game: null,
         xga_per_game: null,
-        xg_is_imputed: true,  // Issue #4: sin xG real
+        xg_is_imputed: true, // Issue #4: sin xG real
         // Issue #13: sin datos de equipo
         has_stats: false,
 
@@ -1229,7 +1258,10 @@ function buildSherlockPayload(extractedData) {
   // ── Issue #11: normalizar temporada ──
   const rawSeason = match.season?.year || match.season?.name || null;
   const normalizedSeason = rawSeason
-    ? String(rawSeason).replace(/^(\d{2})\/(\d{2})$/, (_, a, b) => `20${a}/20${b}`)
+    ? String(rawSeason).replace(
+        /^(\d{2})\/(\d{2})$/,
+        (_, a, b) => `20${a}/20${b}`,
+      )
     : rawSeason;
 
   return {
@@ -1243,8 +1275,8 @@ function buildSherlockPayload(extractedData) {
     user_context: "",
     // ── Issue #13: has_stats a nivel partido y por equipo ──
     has_real_stats: !!(homeStats && awayStats),
-    home_has_stats: home.has_stats ?? !!(homeStats),
-    away_has_stats: away.has_stats ?? !!(awayStats),
+    home_has_stats: home.has_stats ?? !!homeStats,
+    away_has_stats: away.has_stats ?? !!awayStats,
     start_timestamp: match.startTimestamp,
     // ── Issue #11: enviar match_date en UTC y extractedAt ──
     match_date: match.startTimestamp
@@ -1256,7 +1288,8 @@ function buildSherlockPayload(extractedData) {
     tournament_id: match.tournament?.id || null,
     unique_tournament_id: match.tournament?.uniqueTournament?.id || null,
     season_id: extractedData.seasonId || null,
-    country: match.tournament?.uniqueTournament?.category?.country?.name || null,
+    country:
+      match.tournament?.uniqueTournament?.category?.country?.name || null,
     // ── Issue #12: no descartar alineaciones y rachas descargadas ──
     lineups: extractedData.lineups || null,
     team_streaks: extractedData.teamStreaks || null,

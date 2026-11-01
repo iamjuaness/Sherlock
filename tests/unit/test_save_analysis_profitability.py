@@ -2,11 +2,34 @@ import json
 import pytest
 from datetime import datetime, timezone
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from src.core.database import Base, get_db
 from src.ui.api.main import app, PROFITABLE_LEAGUES_PATH
 
-client = TestClient(app)
 
-def test_save_analysis_respects_profitable_leagues(tmp_path, monkeypatch):
+@pytest.fixture
+def client(tmp_path):
+    test_db = tmp_path / "test_sherlock.db"
+    test_engine = create_engine(f"sqlite:///{test_db}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=test_engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    test_client = TestClient(app)
+    yield test_client
+    app.dependency_overrides.clear()
+
+
+def test_save_analysis_respects_profitable_leagues(client, tmp_path, monkeypatch):
     """
     Verifica que al guardar un análisis sin count_in_profitability explícito:
     - Si la liga está en profitable_leagues.json, count_in_profitability es True.

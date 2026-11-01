@@ -45,7 +45,7 @@ class TestPrimeraAUnder25:
 
     def test_segment_key_canonical(self):
         key = market_group_key("Primera A", "goals", "under", "core_2_5")
-        assert key == "league:primera a|family:goals|side:under|bucket:core_2_5"
+        assert key == "league:Primera A|family:goals|side:under|bucket:core_2_5"
 
     def test_segment_is_blocked_by_governance(self):
         st = evaluate_segment_status("Primera A", "goals", "under", "core_2_5", effective_n=50)
@@ -84,7 +84,7 @@ class TestPrimeraAUnder25:
             min_samples_league_family_side_bucket=50,
         )
         curve = cal.resolve_curve("goals", "under", "core_2_5", "Primera A")
-        assert "primera a" in curve.segment
+        assert "Primera A" in curve.segment
         assert "core_2_5" in curve.segment
 
 

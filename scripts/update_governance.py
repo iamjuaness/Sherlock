@@ -146,7 +146,7 @@ def merge_with_existing(
 
     # Manual overrides fijos requeridos por reglas de gobernanza y suites de tests de regresión
     KNOWN_MANUAL_OVERRIDES = {
-        "league:primera a|family:goals|side:under|bucket:core_2_5": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},
+        "league:Primera A|family:goals|side:under|bucket:core_2_5": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},
         "league:liga profesional de fútbol|family:result|side:away": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},
         "league:liga profesional de fútbol|family:result|side:away|bucket:no_line": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},
         "league:liga profesional de fútbol|family:shots_target|side:under|bucket:core_7_5_8_5": {"status": "blocked", "n_samples": 50, "calibration_gap": 0.20, "auto": False},

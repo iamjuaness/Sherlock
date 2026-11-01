@@ -171,7 +171,10 @@ function setupEventListeners() {
     els.btnBulkExtractStats.addEventListener("click", handleBulkExtractStatsUI);
   }
   if (els.btnBulkExtractResults) {
-    els.btnBulkExtractResults.addEventListener("click", handleBulkExtractResultsUI);
+    els.btnBulkExtractResults.addEventListener(
+      "click",
+      handleBulkExtractResultsUI,
+    );
   }
   els.btnViewJson.addEventListener("click", handleViewJson);
   els.btnSettings.addEventListener("click", () =>
@@ -196,7 +199,10 @@ async function getActiveCompetitions() {
         }
       }
     } catch (e) {
-      console.warn("No se pudo obtener competiciones desde la API de Sherlock:", e.message);
+      console.warn(
+        "No se pudo obtener competiciones desde la API de Sherlock:",
+        e.message,
+      );
     }
   }
 
@@ -238,17 +244,22 @@ async function getActiveCompetitions() {
     { name: "Liga de Primera", id: 11653, season: 88493, active: true },
     { name: "Liga MX, Apertura", id: 11621, season: 96191, active: true },
     { name: "Liga Portugal Betclic", id: 238, season: 97436, active: true },
-    { name: "Liga Profesional de Fútbol", id: 155, season: 87913, active: true },
+    {
+      name: "Liga Profesional de Fútbol",
+      id: 155,
+      season: 87913,
+      active: true,
+    },
     { name: "LigaPro Serie A", id: 240, season: 89674, active: true },
     { name: "Ligue 1", id: 34, season: 96127, active: true },
     { name: "MLS", id: 242, season: 86668, active: true },
-    { name: "Premier League", id: 17, "season": 96668, active: true },
+    { name: "Premier League", id: 17, season: 96668, active: true },
     { name: "Primera A", id: 11539, season: 88503, active: true },
     { name: "Pro League", id: 28, season: 96616, active: true },
     { name: "Saudi Pro League", id: 955, season: 99275, active: true },
     { name: "Scottish Premiership", id: 36, season: 96658, active: true },
     { name: "Serie A", id: 23, season: 95836, active: true },
-    { name: "VriendenLoterij Eredivisie", id: 37, season: 96143, active: true }
+    { name: "VriendenLoterij Eredivisie", id: 37, season: 96143, active: true },
   ];
 }
 
@@ -360,7 +371,10 @@ async function handleBulkExtractResultsUI() {
 
     showProgress(100);
     if (res && res.success) {
-      showStatus("success", `✅ Resultados: ${res.totalSaved} guardados, ${res.totalErrors} errores`);
+      showStatus(
+        "success",
+        `✅ Resultados: ${res.totalSaved} guardados, ${res.totalErrors} errores`,
+      );
     } else if (res && res.cancelled) {
       showStatus("error", "⏹ Extracción cancelada");
     } else {
@@ -887,7 +901,9 @@ function showNoMatch() {
   els.statsContainer.style.display = "none";
 
   const btnBulkStats = document.getElementById("btnBulkExtractStatsNoMatch");
-  const btnBulkResults = document.getElementById("btnBulkExtractResultsNoMatch");
+  const btnBulkResults = document.getElementById(
+    "btnBulkExtractResultsNoMatch",
+  );
   const btnSettings = document.getElementById("btnNoMatchSettings");
 
   if (btnBulkStats) {
@@ -1141,7 +1157,8 @@ async function handleExtractHistorical() {
 
   try {
     const targetSeasonId = els.seasonSelect ? els.seasonSelect.value : "all";
-    const forceReextract = document.getElementById("chkForceHistorical")?.checked || false;
+    const forceReextract =
+      document.getElementById("chkForceHistorical")?.checked || false;
     const result = await chrome.runtime.sendMessage({
       action: "extractHistoricalData",
       data: {

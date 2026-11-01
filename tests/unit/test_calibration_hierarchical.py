@@ -12,7 +12,7 @@ from src.models.calibration import (
 
 def test_calibration_keys():
     k1 = league_family_side_bucket_key("Primera A", "goals", "under", "core_2_5")
-    assert k1 == "league:primera a|family:goals|side:under|bucket:core_2_5"
+    assert k1 == "league:Primera A|family:goals|side:under|bucket:core_2_5"
 
     k2 = family_side_bucket_key("goals", "under", "core_2_5")
     assert k2 == "family:goals|side:under|bucket:core_2_5"
@@ -59,4 +59,4 @@ def test_hierarchical_resolution():
     )
 
     curve = cal.resolve_curve("goals", "under", "core_2_5", "Primera A")
-    assert curve.segment == "league:primera a|family:goals|side:under|bucket:core_2_5"
+    assert curve.segment == "league:Primera A|family:goals|side:under|bucket:core_2_5"

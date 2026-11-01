@@ -23858,7 +23858,7 @@
       "community": 50,
       "community_name": "_compute_league_season_corners",
       "file_type": "rationale",
-      "norm_label": "verifica que para 'primera a' y temporada '2026', se calcule el promedio real...",
+      "norm_label": "verifica que para 'Primera A' y temporada '2026', se calcule el promedio real...",
       "source_file": "tests/unit/test_prefill_corners.py",
       "source_location": "L19"
     },

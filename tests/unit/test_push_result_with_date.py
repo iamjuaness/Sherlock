@@ -8,12 +8,31 @@ from unittest.mock import MagicMock, patch
 from datetime import datetime
 
 from fastapi.testclient import TestClient
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from src.core.database import Base, get_db
 from src.ui.api.main import app
 
 
 @pytest.fixture
-def client():
-    return TestClient(app)
+def client(tmp_path):
+    test_db = tmp_path / "test_sherlock.db"
+    test_engine = create_engine(f"sqlite:///{test_db}", connect_args={"check_same_thread": False})
+    Base.metadata.create_all(bind=test_engine)
+    TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=test_engine)
+
+    def override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
+
+    app.dependency_overrides[get_db] = override_get_db
+    test_client = TestClient(app)
+    yield test_client
+    app.dependency_overrides.clear()
 
 
 # Payload típico que envía Watson con fecha y estadísticas
@@ -89,13 +108,12 @@ def test_push_result_fallback_to_match_date_field(client):
         main_module._in_leagues_window = original_window
 
 
-def test_push_result_warning_when_no_date(caplog):
+def test_push_result_warning_when_no_date(client, caplog):
     """
     Verifica que cuando no hay ninguna fecha en el payload, se loguea un warning
     con el event_id y se usa datetime.utcnow() como fallback.
     """
     import logging
-    from fastapi.testclient import TestClient
     import src.ui.api.main as main_module
 
     original_window = main_module._in_leagues_window
@@ -112,7 +130,6 @@ def test_push_result_warning_when_no_date(caplog):
         # Sin start_timestamp, match_date ni date
     }
 
-    client = TestClient(app)
     with caplog.at_level(logging.WARNING, logger="sherlock"):
         response = client.post("/api/v1/result", json=payload_no_date)
 

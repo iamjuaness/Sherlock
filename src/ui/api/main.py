@@ -7052,16 +7052,16 @@ if __name__ == "__main__":
     #     db.close()
 
     
-    ##---------Cambiar nombre de liga---------------
-    # old_name = "Liga 1"
-    # new_name = "Liga 1 Te Apuesto"
+    #---------Cambiar nombre de liga---------------
+    old_name = "Primera A"
+    new_name = "Liga Dimayor"
     
-    # db = next(get_db())
-    # try:
-    #     resultado = rename_competition_matches(old_name, new_name, db)
-    #     print(resultado)
-    # finally:
-    #     db.close()
+    db = next(get_db())
+    try:
+        resultado = rename_competition_matches(old_name, new_name, db)
+        print(resultado)
+    finally:
+        db.close()
 
     ##---------Eliminar liga--------------------------------
 
@@ -7103,9 +7103,9 @@ if __name__ == "__main__":
     # finally:
     #     db.close()
 
-    db = next(get_db())
-    try:
-        resultado = _compute_league_season_corners(liga, "2026-07-24", db)
-        print(resultado)
-    finally:
-        db.close()
+    # db = next(get_db())
+    # try:
+    #     resultado = _compute_league_season_corners(liga, "2026-07-24", db)
+    #     print(resultado)
+    # finally:
+    #     db.close()
