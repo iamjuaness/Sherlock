@@ -13,13 +13,8 @@ El pick bloqueado terminaba publicado.
 import pytest
 
 from src.domain.eligibility import BlockReason
-from src.ui.api.compare import (
-    ValueIndicator,
-    block_pick,
-    current_eligibility,
-    evaluate_pick_eligibility,
-    is_publishable_pick,
-)
+from src.ui.api.compare import block_pick, current_eligibility, evaluate_pick_eligibility, is_publishable_pick
+from src.ui.api.compare_models import ValueIndicator
 
 
 def make_pick(**over) -> ValueIndicator:

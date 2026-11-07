@@ -16,12 +16,9 @@ from typing import Any, Union
 
 from src.core.domain import Sport
 from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
-from src.ui.api.compare import (
-    compare_football,
-    FootballCompareRequest,
-    CompareResponse,
-    split_asian_line,
-)
+from src.ui.api.compare_service import compare_football
+from src.ui.api.compare_models import FootballCompareRequest, CompareResponse
+from src.core.prediction.score_matrix import split_asian_line
 
 
 def _settle_total_line(total: float, line: float, side: str) -> str:

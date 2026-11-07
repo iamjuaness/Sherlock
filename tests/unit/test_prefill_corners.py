@@ -7,7 +7,9 @@ import pytest
 from unittest.mock import MagicMock
 from fastapi.testclient import TestClient
 
-from src.ui.api.main import app, _compute_league_season_corners, push_prefill, prefill_store
+from src.ui.api.main import app
+from src.ui.api.shared import _compute_league_season_corners
+from src.ui.api.routes.prefill_routes import push_prefill, prefill_store
 
 
 @pytest.fixture
@@ -81,7 +83,7 @@ def test_push_prefill_calculates_and_sets_corners():
     res = asyncio.run(push_prefill(watson_payload))
     assert res["status"] == "ok"
 
-    from src.ui.api.main import prefill_store
+    from src.ui.api.routes.prefill_routes import prefill_store
     assert prefill_store is not None
     assert "league_stats" in prefill_store
     assert prefill_store["league_stats"]["avg_corners_per_game"] == 9.05

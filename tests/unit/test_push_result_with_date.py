@@ -63,7 +63,7 @@ def test_push_result_persists_date_and_stats(client):
     3. La fecha y estadísticas se persisten en el registro creado o actualizado.
     """
     # Necesitamos que _in_leagues_window sea True o que el payload sea histórico
-    import src.ui.api.main as main_module
+    import src.ui.api.routes.results_routes as main_module
     original_window = main_module._in_leagues_window
     main_module._in_leagues_window = True
     try:
@@ -81,7 +81,7 @@ def test_push_result_date_parsed_from_start_timestamp():
     """
     Verifica que match_date se deriva de start_timestamp cuando está presente.
     """
-    from src.ui.api.main import _in_leagues_window
+    from src.ui.api.routes.results_routes import _in_leagues_window
     expected_date = datetime.utcfromtimestamp(1748476800)
     assert expected_date.year == 2025
     assert expected_date.month == 5
@@ -92,7 +92,7 @@ def test_push_result_fallback_to_match_date_field(client):
     """
     Verifica que cuando no hay start_timestamp, se usa match_date del payload.
     """
-    import src.ui.api.main as main_module
+    import src.ui.api.routes.results_routes as main_module
     original_window = main_module._in_leagues_window
     main_module._in_leagues_window = True
     payload_no_ts = {**WATSON_PAYLOAD}
@@ -114,7 +114,7 @@ def test_push_result_warning_when_no_date(client, caplog):
     con el event_id y se usa datetime.utcnow() como fallback.
     """
     import logging
-    import src.ui.api.main as main_module
+    import src.ui.api.routes.results_routes as main_module
 
     original_window = main_module._in_leagues_window
     main_module._in_leagues_window = True

@@ -27,14 +27,8 @@ from src.core.math.calibration import (
 from src.core.math.kelly import (
     calculate_fractional_kelly,
 )
-from src.ui.api.compare import (
-    FootballCompareRequest,
-    FootballTeamStats,
-    LeagueStats,
-    FootballOdds,
-    CompareResponse,
-    compare_football,
-)
+from src.ui.api.compare_service import compare_football
+from src.ui.api.compare_models import FootballCompareRequest, FootballTeamStats, LeagueStats, FootballOdds, CompareResponse
 
 
 # ==============================================================================

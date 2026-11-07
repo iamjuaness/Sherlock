@@ -6,7 +6,8 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from src.core.database import Base, get_db
-from src.ui.api.main import app, PROFITABLE_LEAGUES_PATH
+from src.ui.api.main import app
+from src.ui.api.shared import PROFITABLE_LEAGUES_PATH
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ def test_save_analysis_respects_profitable_leagues(client, tmp_path, monkeypatch
     fake_leagues_file = tmp_path / "profitable_leagues.json"
     fake_leagues_file.write_text(json.dumps(["Premier League", "LaLiga"]), encoding="utf-8")
     
-    import src.ui.api.main as main_module
+    import src.ui.api.shared as main_module
     monkeypatch.setattr(main_module, "PROFITABLE_LEAGUES_PATH", str(fake_leagues_file))
     
     # 1. Liga rentable: Premier League

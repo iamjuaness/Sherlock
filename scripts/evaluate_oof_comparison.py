@@ -243,7 +243,7 @@ def load_historical_picks_from_db(
 
             if succ is None and has_result:
                 try:
-                    from src.ui.api.main import _check_pick_success
+                    from src.ui.api.shared import _check_pick_success
                     res_dict = {
                         "final_score_home": score_home,
                         "final_score_away": score_away,

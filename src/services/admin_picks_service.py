@@ -188,7 +188,7 @@ def _extract_picks_from_analysis(
 
         if not market or str(market).strip() in ("N/A", "Otro", "General", "None", "", "null"):
             try:
-                from src.ui.api.main import get_market_name
+                from src.ui.api.shared import get_market_name
                 market = get_market_name(selection)
             except Exception:
                 market = "Resultado Final (1X2)"
@@ -226,7 +226,7 @@ def _extract_picks_from_analysis(
 
         if succ is None and has_result:
             try:
-                from src.ui.api.main import _check_pick_success
+                from src.ui.api.shared import _check_pick_success
                 succ = _check_pick_success(p, res_dict)
             except Exception:
                 succ = None

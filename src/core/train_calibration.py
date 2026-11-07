@@ -233,7 +233,7 @@ def extract_samples(
       en la región de decisión real (Issue #41).
     """
     if resolver is None:
-        from src.ui.api.main import _check_pick_success as resolver  # type: ignore
+        from src.ui.api.shared import _check_pick_success as resolver  # type: ignore
 
     if market_family_fn is None:
         from src.ui.api.compare import _market_family as market_family_fn  # type: ignore
@@ -334,7 +334,7 @@ def extract_samples(
             sample_ts = _coerce_datetime(pick.get("predicted_at_utc")) or timestamp
 
             if resolver is None:
-                from src.ui.api.main import _check_pick_success as resolver  # type: ignore
+                from src.ui.api.shared import _check_pick_success as resolver  # type: ignore
 
             try:
                 legacy_outcome = resolver(pick, results)

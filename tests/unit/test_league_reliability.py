@@ -1,6 +1,7 @@
 import math
 import pytest
-from src.ui.api.compare import LeagueStats, _compute_league_reliability_score
+from src.ui.api.compare import _compute_league_reliability_score
+from src.ui.api.compare_models import LeagueStats
 
 
 def test_lrs_zero_matches_no_metrics():

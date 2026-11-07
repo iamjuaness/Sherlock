@@ -15,7 +15,7 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     # Importación tardía para evitar dependencias circulares con compare.py
-    from src.ui.api.compare import ValueIndicator
+    from src.ui.api.compare_models import ValueIndicator
 
 logger = logging.getLogger("sherlock.portfolio")
 

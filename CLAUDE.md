@@ -86,3 +86,9 @@ Manifest V3. Load unpacked from `watson/` in `chrome://extensions`. `competition
 - **League penalties** are enforced at pick-generation time in `pick_rules_engine.py`. Add new rules via `/rules` UI or directly in `league_penalties.json`.
 - **SQLite WAL mode** is active (`sherlock.db-shm` / `sherlock.db-wal`). Never delete WAL files while the server is running.
 - `compare.py` and `main.py` are intentionally large monoliths; extract only when a clear domain boundary exists.
+
+## Vault de Obsidian (cerebro digital)
+
+- El vault de este proyecto es `C:\Users\cardo\OneDrive\Escritorio\Juanes\Me\03_Memoria_Procedimental\Proyectos`. Es el cerebro digital del usuario en Obsidian.
+- Contexto del proyecto: si en ese vault no existe una nota de contexto de Sherlock, crearla antes de seguir trabajando. Si ya existe, leerla y mantenerla actualizada.
+- Cambios: tras cada cambio relevante en el repo, agregar una anotación breve en la nota de Sherlock del vault (qué cambió, archivos afectados, fecha absoluta).

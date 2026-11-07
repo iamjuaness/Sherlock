@@ -295,7 +295,7 @@ def test_filter_correlated_picks(db_session: Session):
 
 def test_closing_odds_endpoints(db_session: Session):
     """Test get_pending_closing_odds_matches and submit_closing_odds logic."""
-    from src.ui.api.main import get_pending_closing_odds_matches
+    from src.ui.api.routes.closing_odds_routes import get_pending_closing_odds_matches
 
     sample_picks = [
         {"selection": "Más de 2.5", "market": "Total Goles", "line": 2.5, "odds": 1.95, "is_publishable": True},
