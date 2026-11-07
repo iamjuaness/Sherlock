@@ -334,6 +334,74 @@ async function handleBulkExtractStatsUI() {
   }
 }
 
+async function handleBulkAnalyzeDayUI() {
+  if (!sherlockEndpoint) {
+    showStatus("error", "Configura el endpoint de Sherlock en Settings");
+    chrome.runtime.openOptionsPage();
+    return;
+  }
+  const comps = await getActiveCompetitions();
+  if (!comps || comps.length === 0) {
+    showStatus("error", "No se pudieron cargar las competiciones activas");
+    return;
+  }
+
+  const btnBulkAnalyze = document.getElementById("btnBulkAnalyzeDay");
+  const btnCancelBulk = document.getElementById("btnCancelBulkExtract");
+  if (btnBulkAnalyze) btnBulkAnalyze.style.display = "none";
+  if (btnCancelBulk) {
+    btnCancelBulk.style.display = "block";
+    btnCancelBulk.onclick = async () => {
+      showStatus("loading", "⏳ Cancelando...");
+      await chrome.runtime.sendMessage({ action: "cancelBulkExtraction" });
+    };
+  }
+
+  showStatus("loading", "Iniciando análisis batch de la jornada...");
+  showProgress(15);
+
+  const listener = (msg) => {
+    if (msg.action === "bulkProgress") {
+      const d = msg.data;
+      showStatus(d.phase === "error" ? "error" : "loading", d.message || "");
+      if (d.total && d.done !== undefined) {
+        showProgress(Math.min(100, Math.round((d.done / d.total) * 100)));
+      }
+    }
+  };
+  chrome.runtime.onMessage.addListener(listener);
+
+  try {
+    let baseUrl = sherlockEndpoint;
+    if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
+
+    const res = await chrome.runtime.sendMessage({
+      action: "bulkAnalyzeDay",
+      data: { baseUrl, competitions: comps },
+    });
+
+    showProgress(100);
+    if (res && res.success) {
+      showStatus(
+        "success",
+        `✅ Análisis Batch listo: ${res.totalProcessed} partidos, ${res.totalPicks} picks de valor encontrados`,
+      );
+      setTimeout(() => {
+        chrome.tabs.create({ url: `${baseUrl}/main-dashboard` });
+      }, 1500);
+    } else {
+      showStatus("error", `❌ ${res?.error || "Error en análisis batch"}`);
+    }
+  } catch (err) {
+    showStatus("error", `❌ Error: ${err.message}`);
+  } finally {
+    if (btnBulkAnalyze) btnBulkAnalyze.style.display = "block";
+    if (btnCancelBulk) btnCancelBulk.style.display = "none";
+    chrome.runtime.onMessage.removeListener(listener);
+    setTimeout(() => hideProgress(), 3000);
+  }
+}
+
 async function handleBulkExtractResultsUI() {
   if (!sherlockEndpoint) {
     showStatus("error", "Configura el endpoint de Sherlock en Settings");
@@ -904,10 +972,14 @@ function showNoMatch() {
   const btnBulkResults = document.getElementById(
     "btnBulkExtractResultsNoMatch",
   );
+  const btnBulkAnalyze = document.getElementById("btnBulkAnalyzeDay");
   const btnSettings = document.getElementById("btnNoMatchSettings");
 
   if (btnBulkStats) {
     btnBulkStats.onclick = handleBulkExtractStatsUI;
+  }
+  if (btnBulkAnalyze) {
+    btnBulkAnalyze.onclick = handleBulkAnalyzeDayUI;
   }
   if (btnBulkResults) {
     btnBulkResults.onclick = handleBulkExtractResultsUI;

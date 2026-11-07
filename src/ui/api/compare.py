@@ -1705,7 +1705,7 @@ def is_underdog_pick(v: Any) -> bool:
         return False
 
     # Rango de cuotas: (2.80, 8.00]
-    if odds is None or odds <= 2.80 or odds > 8.00:
+    if odds is None or odds <= 2.80 or odds > 5.00:
         return False
 
     # Expected Value (EV): edge_ev >= 0.050 (5%) o edge >= 5.0%

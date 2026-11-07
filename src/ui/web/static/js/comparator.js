@@ -87,6 +87,33 @@ let probChart = null;
 let currentResults = null;
 let loadedHistoryEntryId = null;
 let loadedHistoryEntryDate = null;
+// Fecha del partido tomada SOLO del prefill de SofaScore. Las cuotas de las
+// casas de apuestas nunca la tocan, y sobrevive a cancelEditing() para que
+// re-analizar el mismo partido (p.ej. al llegar cuotas después) no pierda la fecha.
+let sofascoreMatchDate = null;
+
+function currentMatchDate() {
+  return loadedHistoryEntryDate || sofascoreMatchDate;
+}
+
+// Convención del proyecto: fecha guardada = hora de Bogotá (UTC-5) serializada
+// con sufijo Z. Se aplica UNA sola vez, venga start_timestamp o match_date (UTC real).
+function sofascoreToBogotaIso(p) {
+  const ms = p.start_timestamp
+    ? p.start_timestamp * 1000
+    : Date.parse(p.match_date || p.date);
+  return isNaN(ms) ? null : new Date(ms - 18000000).toISOString();
+}
+
+// Muestra la fecha guardada tal cual (hora de pared), sin volver a convertir a la zona local.
+function formatWallClock(s) {
+  if (!s) return "";
+  const str = String(s);
+  const d = new Date(/(Z|[+-]\d\d:?\d\d)$/.test(str) ? str : str + "Z");
+  if (isNaN(d.getTime())) return str;
+  const p = (n) => String(n).padStart(2, "0");
+  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+}
 
 // ── Restore use_general_stats preference from localStorage ──────
 (function initGeneralStatsCheckbox() {
@@ -193,12 +220,12 @@ function renderOddsBookmakerCards(sources) {
         const payload = data.payload;
         const sport = payload.sport || "football";
 
-        if (payload.start_timestamp) {
-          loadedHistoryEntryDate = new Date(
-            payload.start_timestamp * 1000 - 18000000,
-          ).toISOString();
-        } else if (payload.match_date || payload.date) {
-          loadedHistoryEntryDate = payload.match_date || payload.date;
+        // Solo el payload de SofaScore trae fecha; uno solo-cuotas (casas de
+        // apuestas) no la trae y por tanto nunca la borra ni la cambia.
+        const sofaDate = sofascoreToBogotaIso(payload);
+        if (sofaDate) {
+          loadedHistoryEntryDate = sofaDate;
+          sofascoreMatchDate = sofaDate;
         }
 
         showPrefillBanner(sport, payload);
@@ -1336,7 +1363,7 @@ async function saveAnalysisDataToDB(sport, payload, results = null) {
         (payload.home?.name || payload.player1?.name || "Local") +
         " vs " +
         (payload.away?.name || payload.player2?.name || "Visitante"),
-      match_date: loadedHistoryEntryDate,
+      match_date: currentMatchDate(),
       payload: payload,
       picks_calculados: results ? results.values : [],
       user_context: payload.context || "",
@@ -1779,6 +1806,7 @@ async function loadHistoryEntry(id) {
       // Guardar ID y fecha de edición
       loadedHistoryEntryId = entry.id;
       loadedHistoryEntryDate = entry.match_date || entry.date;
+      sofascoreMatchDate = null;
 
 
 
@@ -1908,7 +1936,11 @@ function cancelEditing() {
   if (indicator) {
     indicator.style.display = "none";
   }
-
+  const matchDateEl = document.getElementById("prefill-match-date");
+  if (matchDateEl) {
+    matchDateEl.textContent = "Fecha: --";
+    matchDateEl.style.display = "none";
+  }
 }
 
 function populateAppForm(sport, data) {
@@ -1941,12 +1973,23 @@ function populateAppForm(sport, data) {
         bannerTitle.innerHTML = `
           Datos Cargados Automáticamente
           <span id="prefill-badge" style="background: #10b981; color: #fff; font-size: 0.6rem; padding: 2px 6px; border-radius: 4px; text-transform: uppercase; letter-spacing: 1px;">Prefill Activo</span>
+          <span id="prefill-match-date" class="badge" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; font-size: 0.72rem; padding: 2px 8px; border-radius: 4px; letter-spacing: 0.5px;">Fecha: --</span>
         `;
       }
       const bannerDesc = document.getElementById("prefill-desc");
       if (bannerDesc) {
         bannerDesc.textContent =
           "El comparador ha inyectado el historial del partido. Puedes revisar directamente los paneles abajo.";
+      }
+    }
+
+    // Actualizar badge de fecha si viene en payload o en el historial cargado
+    const matchDateEl = document.getElementById("prefill-match-date");
+    if (matchDateEl) {
+      const formattedDate = formatWallClock(currentMatchDate());
+      if (formattedDate) {
+        matchDateEl.textContent = `📅 ${formattedDate}`;
+        matchDateEl.style.display = "inline-block";
       }
     }
 
@@ -3379,7 +3422,7 @@ function buildFootballPayloadFromForm() {
     competition,
     league_stats,
     use_general_stats,
-    matchDate: loadedHistoryEntryDate,
+    matchDate: currentMatchDate(),
     season: window._prefillSeason || null,
   };
 }
@@ -3515,7 +3558,7 @@ async function saveToDB() {
       id: loadedHistoryEntryId,
       sport: sport,
       match_title: matchTitle,
-      match_date: loadedHistoryEntryDate,
+      match_date: currentMatchDate(),
       payload: payload,
     };
 

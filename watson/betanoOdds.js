@@ -3,6 +3,28 @@
 // ═══════════════════════════════════════════════════════════════
 // NORMALIZACIÓN / MATCHING DE EQUIPOS
 // ═══════════════════════════════════════════════════════════════
+const TEAM_ALIASES = {
+  niza: ["nice"],
+  nice: ["niza"],
+  munich: ["munchen", "muenchen", "bayern"],
+  munchen: ["munich", "muenchen", "bayern"],
+  muenchen: ["munich", "munchen", "bayern"],
+  sevilla: ["seville"],
+  seville: ["sevilla"],
+  inter: ["internazionale"],
+  internazionale: ["inter"],
+  "sporting lisboa": ["sporting cp", "sporting portugal"],
+  "sporting cp": ["sporting lisboa", "sporting portugal"],
+  "sporting portugal": ["sporting lisboa", "sporting cp"],
+  atletico: ["atletico madrid", "atm"],
+  "atletico madrid": ["atletico", "atm"],
+  "athletic bilbao": ["athletic club", "athletic"],
+  "athletic club": ["athletic bilbao", "athletic"],
+  psg: ["paris saint germain", "paris sg"],
+  "paris saint germain": ["psg", "paris sg"],
+  "paris sg": ["psg", "paris saint germain"],
+};
+
 function normalizeTeamName(str) {
   return (str || "")
     .normalize("NFD")
@@ -29,11 +51,38 @@ function normalizeTeamName(str) {
 function getNameVariants(teamOrName) {
   if (!teamOrName) return [];
   if (typeof teamOrName === "string") {
-    return teamOrName.trim() ? [teamOrName.trim()] : [];
+    const raw = teamOrName.trim();
+    if (!raw) return [];
+    const baseNorm = normalizeTeamName(raw);
+    const variants = [raw];
+    if (TEAM_ALIASES[baseNorm]) {
+      variants.push(...TEAM_ALIASES[baseNorm]);
+    }
+    return variants;
   }
   const arr = [];
   if (teamOrName.shortName) arr.push(teamOrName.shortName.trim());
   if (teamOrName.name) arr.push(teamOrName.name.trim());
+  if (teamOrName.slug) {
+    const slugName = String(teamOrName.slug).replace(/-/g, " ").trim();
+    if (slugName) arr.push(slugName);
+  }
+
+  // Inyectar alias conocidos si coincide palabra o frase completa
+  const additional = [];
+  arr.forEach((v) => {
+    const norm = normalizeTeamName(v);
+    if (TEAM_ALIASES[norm]) {
+      additional.push(...TEAM_ALIASES[norm]);
+    }
+    norm.split(" ").forEach((w) => {
+      if (TEAM_ALIASES[w]) {
+        additional.push(...TEAM_ALIASES[w]);
+      }
+    });
+  });
+  arr.push(...additional);
+
   const seen = new Set();
   return arr.filter((v) => {
     if (!v) return false;

@@ -101,6 +101,17 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  // NUEVO: Analizar Jornada Próxima (One-Click Batch Analysis)
+  if (request.action === "bulkAnalyzeDay") {
+    _bulkCancelled = false;
+    handleBulkAnalyzeDay(request.data)
+      .then(sendResponse)
+      .catch((err) => {
+        sendResponse({ success: false, error: err.message });
+      });
+    return true;
+  }
+
   // NUEVO (Punto 2): Extracción masiva de resultados del día actual/anterior
   if (request.action === "bulkExtractResults") {
     _bulkCancelled = false;
@@ -212,21 +223,32 @@ async function handleExtractResults(data) {
     }
 
     // 5. Enviar al endpoint de resultados de Sherlock
+    const homeTeamStr = String(
+      eventData.event.homeTeam?.shortName || eventData.event.homeTeam?.name || "Local",
+    ).trim();
+    const awayTeamStr = String(
+      eventData.event.awayTeam?.shortName || eventData.event.awayTeam?.name || "Visitante",
+    ).trim();
+
+    const pushBody = {
+      sport: "football",
+      event_id: String(eventData.event.id || eventId),
+      home_team: homeTeamStr,
+      away_team: awayTeamStr,
+      competition: eventData.event.tournament?.uniqueTournament?.name || eventData.event.tournament?.name || "Desconocida",
+      start_timestamp: eventData.event.startTimestamp || null,
+      ...payload,
+    };
+
     const resPush = await fetch(`${baseUrl}/api/v1/result`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        sport: "football",
-        home_team:
-          eventData.event.homeTeam.shortName || eventData.event.homeTeam.name,
-        away_team:
-          eventData.event.awayTeam.shortName || eventData.event.awayTeam.name,
-        ...payload,
-      }),
+      body: JSON.stringify(pushBody),
     });
 
     if (!resPush.ok) {
-      throw new Error(`Error en el servidor al enviar: ${resPush.status}`);
+      const errText = await resPush.text().catch(() => "");
+      throw new Error(`HTTP ${resPush.status}: ${errText || resPush.statusText}`);
     }
 
     const resData = await resPush.json();
@@ -1117,6 +1139,30 @@ async function handleExtractHistoricalData(data) {
 
           const missingCount = eventsToProcess.length;
           const missingKeys = eventsToProcess.map((e) => buildMatchKey(e._eventInfo));
+          const missingEventIds = eventsToProcess.map((e) => e._eventInfo.eventId).filter(Boolean);
+
+          // Reporte de auditoría estructurado
+          const auditReport = {
+            season_id: season.id,
+            competition: tournamentName || "",
+            total_sofascore: totalInListing,
+            total_db: totalInDb,
+            missing_in_db: missingEventIds.length > 0 ? missingEventIds : missingKeys,
+            extra_in_db: [],
+          };
+          console.log("[Watson-Histórico Audit Report]", JSON.stringify(auditReport));
+
+          // Despachar reporte a Sherlock
+          try {
+            const cleanBase = baseUrl.split("/api/v1")[0];
+            await fetch(`${cleanBase}/api/v1/audit/season`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(auditReport),
+            });
+          } catch (auditErr) {
+            console.warn("[Watson-Histórico] No se pudo guardar reporte de auditoría:", auditErr.message);
+          }
 
           console.log(
             `[Watson-Histórico] T.${season.year} => Total en listado: ${totalInListing}, Total en DB: ${totalInDb}, Faltantes: ${missingCount}`,
@@ -1647,6 +1693,121 @@ async function handleBulkExtractStats(data) {
     totalSaved,
     totalErrors,
     recalcResult,
+  };
+}
+
+/**
+ * Pipeline Batch "One-Click": Analizar Jornada Próxima
+ * Consulta eventos del día/mañana, extrae estadísticas y cuotas en paralelo,
+ * construye FootballCompareRequest para cada partido y despacha en un único POST a /api/v1/compare/batch.
+ */
+async function handleBulkAnalyzeDay(data) {
+  const { baseUrl, competitions } = data;
+  if (!baseUrl) throw new Error("Endpoint de Sherlock no configurado");
+  if (!competitions || competitions.length === 0) {
+    throw new Error("No hay competiciones activas");
+  }
+
+  const activeComps = competitions.filter((c) => c.active && c.season);
+  sendBulkProgress({
+    phase: "start",
+    message: `Iniciando análisis batch de ${activeComps.length} ligas...`,
+    total: activeComps.length,
+    done: 0,
+  });
+
+  const now = new Date();
+  const tomorrow = new Date(now);
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  const tomorrowEnd = new Date(tomorrow);
+  tomorrowEnd.setUTCHours(23, 59, 59, 999);
+  const todayStart = new Date(now);
+  todayStart.setUTCHours(0, 0, 0, 0);
+
+  const batchPayloads = [];
+
+  for (let ci = 0; ci < activeComps.length; ci++) {
+    if (_bulkCancelled) break;
+    const comp = activeComps[ci];
+    try {
+      const scheduledData = await fetchSofaScore(
+        `/api/v1/unique-tournament/${comp.id}/season/${comp.season}/events/next/0`,
+      );
+      const events = scheduledData.events || [];
+      const targetEvents = events.filter((e) => {
+        const ts = e.startTimestamp * 1000;
+        return ts >= todayStart.getTime() && ts <= tomorrowEnd.getTime();
+      });
+
+      for (let ei = 0; ei < targetEvents.length; ei++) {
+        if (_bulkCancelled) break;
+        const event = targetEvents[ei];
+        try {
+          const result = await handleExtractStats({
+            eventId: String(event.id),
+            homeTeamId: event.homeTeam?.id,
+            awayTeamId: event.awayTeam?.id,
+            tournamentId: event.tournament?.id,
+            uniqueTournamentId: comp.id,
+            seasonId: comp.season,
+            url: `https://www.sofascore.com/event/${event.id}`,
+          });
+
+          if (result?.success && result.data) {
+            const mapped = buildSherlockPayload(result.data);
+            if (mapped) {
+              batchPayloads.push(mapped);
+              sendBulkProgress({
+                phase: "event_saved",
+                message: `  🎯 Agregado a lote: ${event.homeTeam?.name} vs ${event.awayTeam?.name}`,
+              });
+            }
+          }
+        } catch (e) {
+          console.warn(`[Batch Analyze] Error en evento ${event.id}:`, e.message);
+        }
+        await delay(1000);
+      }
+    } catch (e) {
+      console.warn(`[Batch Analyze] Error en liga ${comp.name}:`, e.message);
+    }
+  }
+
+  if (batchPayloads.length === 0) {
+    sendBulkProgress({
+      phase: "done",
+      message: "⚠️ No se encontraron partidos para analizar en la jornada.",
+    });
+    return { success: true, totalProcessed: 0, totalPicks: 0 };
+  }
+
+  sendBulkProgress({
+    phase: "sending_batch",
+    message: `🚀 Despachando ${batchPayloads.length} partidos al motor de Sherlock...`,
+  });
+
+  const cleanBaseUrl = baseUrl.split("/api/v1")[0];
+  const resp = await fetch(`${cleanBaseUrl}/api/v1/compare/batch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(batchPayloads),
+  });
+
+  if (!resp.ok) {
+    throw new Error(`Error en servidor batch: HTTP ${resp.status}`);
+  }
+
+  const batchResult = await resp.json();
+  sendBulkProgress({
+    phase: "done",
+    message: `✅ Batch completado: ${batchResult.total_processed} partidos, ${batchResult.total_value_picks} picks con valor`,
+  });
+
+  return {
+    success: true,
+    totalProcessed: batchResult.total_processed,
+    totalPicks: batchResult.total_value_picks,
+    valuePicks: batchResult.value_picks,
   };
 }
 

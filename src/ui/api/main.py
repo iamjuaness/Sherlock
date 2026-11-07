@@ -1849,6 +1849,65 @@ async def compare_teams_football(request: FootballCompareRequest, db: Session = 
     return await _enrich_with_results(Sport.FOOTBALL, request.home.name, request.away.name, res, db, match_date=request.match_date)
 
 
+@app.post("/api/v1/compare/batch", tags=["Comparator"])
+async def compare_batch_football(requests: list[FootballCompareRequest], db: Session = Depends(get_db)) -> dict:
+    """Procesamiento batch masivo de partidos: compara, guarda en historial y extrae picks con valor."""
+    processed = 0
+    errors = 0
+    value_picks_total = []
+
+    for req in requests:
+        try:
+            req_shopping, bmap = _apply_line_shopping(req)
+            res = await compare_football(req_shopping, db=db)
+            if bmap:
+                _annotate_best_bookmaker(res, bmap, req.home.name, req.away.name)
+            enriched = await _enrich_with_results(Sport.FOOTBALL, req.home.name, req.away.name, res, db, match_date=req.match_date)
+
+            # Extraer picks con valor (EV positivo)
+            val_picks = [v.model_dump() if hasattr(v, "model_dump") else v.dict() for v in enriched.values if getattr(v, "is_value", False)]
+            for vp in val_picks:
+                vp["match"] = f"{req.home.name} vs {req.away.name}"
+                vp["competition"] = req.competition
+                value_picks_total.append(vp)
+
+            # Auto-guardado en analysis_history
+            m_date = req.match_date
+            if not m_date and getattr(req, "start_timestamp", None):
+                try:
+                    m_date = datetime.utcfromtimestamp(req.start_timestamp)
+                except Exception:
+                    pass
+
+            entry = AnalysisHistory(
+                sport=Sport.FOOTBALL,
+                match_title=f"{req.home.name} vs {req.away.name}",
+                match_date=m_date,
+                payload=req.model_dump() if hasattr(req, "model_dump") else req.dict(),
+                picks_calculados=val_picks,
+                compare_response_snapshot=enriched.model_dump() if hasattr(enriched, "model_dump") else enriched.dict(),
+                competition=req.competition,
+                season_id=getattr(req, "season_id", None) or getattr(req, "season", None),
+                tournament_id=getattr(req, "tournament_id", None),
+                has_real_stats=getattr(req, "has_real_stats", True),
+            )
+            db.add(entry)
+            db.commit()
+            processed += 1
+        except Exception as e:
+            db.rollback()
+            errors += 1
+            logging.getLogger("sherlock").warning("[compare_batch_football] Error en partido %s vs %s: %s", req.home.name, req.away.name, e)
+
+    return {
+        "status": "ok",
+        "total_processed": processed,
+        "total_errors": errors,
+        "total_value_picks": len(value_picks_total),
+        "value_picks": value_picks_total
+    }
+
+
 # ---------------------------------------------------------------------------
 # Comparator LLM Streaming (SSE)
 # ---------------------------------------------------------------------------
@@ -3843,6 +3902,29 @@ def get_history_matches(
         })
 
     return {"competition": competition, "season": season, "count": len(matches), "matches": matches}
+
+
+class SeasonAuditPayload(BaseModel):
+    season_id: int | str
+    competition: str | None = None
+    total_sofascore: int
+    total_db: int
+    missing_in_db: list[Any] = []
+    extra_in_db: list[Any] = []
+
+
+@app.post("/api/v1/audit/season", tags=["Audit"])
+def save_season_audit(payload: SeasonAuditPayload):
+    """Guarda reporte de auditoría de temporada en data/audit_season_{sId}.json"""
+    import os
+    os.makedirs("data", exist_ok=True)
+    file_path = os.path.join("data", f"audit_season_{payload.season_id}.json")
+    try:
+        with open(file_path, "w", encoding="utf-8") as f:
+            json.dump(payload.model_dump() if hasattr(payload, "model_dump") else payload.dict(), f, indent=2)
+        return {"status": "ok", "path": file_path}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.post("/api/v1/analysis/{analysis_id}/profitability", tags=["Analysis History"])

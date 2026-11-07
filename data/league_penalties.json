@@ -1,0 +1,26 @@
+[
+  {
+    "league": "Pro League",
+    "market_family": "corners",
+    "market_side": "over",
+    "line": 11.5
+  },
+  {
+    "league": "Pro League",
+    "market_family": "goals",
+    "market_side": "over",
+    "line": 3.5
+  },
+  {
+    "league": "Pro League",
+    "market_family": "corners",
+    "market_side": "over",
+    "line": 13.5
+  },
+  {
+    "league": "Pro League",
+    "market_family": "cards",
+    "market_side": "under",
+    "line": 3.5
+  }
+]

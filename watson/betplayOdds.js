@@ -143,10 +143,20 @@ function isTeamSpecificCriterion(criterion) {
   const eLabel = (criterion.englishLabel || "").toLowerCase();
   return (
     label.includes(" a favor de ") ||
+    label.includes(" por parte de ") ||
+    label.includes(" del jugador ") ||
     eLabel.includes(" by ") ||
-    eLabel.startsWith("most ") ||
-    label.startsWith("más ") ||
-    label.startsWith("mas ")
+    eLabel.startsWith("players ") ||
+    eLabel.startsWith("player's ") ||
+    eLabel.includes("player to ") ||
+    eLabel.includes("interval") ||
+    label.includes("intervalo") ||
+    eLabel.includes("1st half") ||
+    eLabel.includes("2nd half") ||
+    label.includes("1.ª parte") ||
+    label.includes("2.ª parte") ||
+    label.includes("1ª parte") ||
+    label.includes("2ª parte")
   );
 }
 
@@ -179,9 +189,6 @@ function parseBetPlayOdds(betOffers, homeTeamName, awayTeamName) {
     shotsTargetLines: [],
     shotsTargetOverOdds: {},
     shotsTargetUnderOdds: {},
-    handicapLines: [],
-    handicapHomeOdds: {},
-    handicapAwayOdds: {},
   };
 
   const addOverUnder = (offer, linesArr, overDict, underDict) => {
@@ -201,13 +208,18 @@ function parseBetPlayOdds(betOffers, homeTeamName, awayTeamName) {
 
   (betOffers || []).forEach((offer) => {
     const criterion = offer.criterion || {};
-    const label = (criterion.label || "").toLowerCase();
-    const eLabel = (criterion.englishLabel || "").toLowerCase();
+    const label = (criterion.label || "").toLowerCase().trim();
+    const eLabel = (criterion.englishLabel || "").toLowerCase().trim();
     const typeId = offer.betOfferType?.id;
 
+    // 1X2 - Resultado Final
     if (
-      typeId === 2 &&
-      (eLabel === "full time" || label === "resultado final")
+      (typeId === 2 || typeId === 1) &&
+      (eLabel === "full time" ||
+        eLabel === "match" ||
+        label === "resultado final" ||
+        label === "partido" ||
+        label === "tiempo reglamentario")
     ) {
       (offer.outcomes || []).forEach((oc) => {
         if (oc.status !== "OPEN" || oc.odds == null) return;
@@ -219,64 +231,96 @@ function parseBetPlayOdds(betOffers, homeTeamName, awayTeamName) {
       return;
     }
 
-    if (eLabel.trim() === "Double Chance") {
-      (offer.outcomes || []).forEach((oc) => {
-        if (oc.status !== "OPEN" || oc.odds == null) return;
-        const price = oc.odds / 1000;
-        if (oc.type === "OT_ONE_OR_CROSS") odds.dc1X = price;
-        else if (oc.type === "OT_ONE_OR_TWO") odds.dc12 = price;
-        else if (oc.type === "OT_CROSS_OR_TWO") odds.dcX2 = price;
-      });
+    // Doble Oportunidad
+    if (
+      eLabel.includes("double chance") ||
+      label.includes("doble oportunidad")
+    ) {
+      if (!eLabel.includes("half") && !label.includes("parte")) {
+        (offer.outcomes || []).forEach((oc) => {
+          if (oc.status !== "OPEN" || oc.odds == null) return;
+          const price = oc.odds / 1000;
+          if (oc.type === "OT_ONE_OR_CROSS") odds.dc1X = price;
+          else if (oc.type === "OT_ONE_OR_TWO") odds.dc12 = price;
+          else if (oc.type === "OT_CROSS_OR_TWO") odds.dcX2 = price;
+        });
+      }
       return;
     }
 
-    if (eLabel.trim() === "Both Teams To Score") {
-      (offer.outcomes || []).forEach((oc) => {
-        if (oc.status !== "OPEN" || oc.odds == null) return;
-        const price = oc.odds / 1000;
-        if (oc.type === "OT_YES") odds.bttsYes = price;
-        else if (oc.type === "OT_NO") odds.bttsNo = price;
-      });
+    // Ambos Equipos Marcan (BTTS)
+    if (
+      eLabel.includes("both teams to score") ||
+      label.includes("ambos equipos marcarán") ||
+      label.includes("ambos equipos marcaran")
+    ) {
+      if (!eLabel.includes("half") && !label.includes("parte")) {
+        (offer.outcomes || []).forEach((oc) => {
+          if (oc.status !== "OPEN" || oc.odds == null) return;
+          const price = oc.odds / 1000;
+          if (oc.type === "OT_YES") odds.bttsYes = price;
+          else if (oc.type === "OT_NO") odds.bttsNo = price;
+        });
+      }
       return;
     }
 
+    // Mercados Over/Under (typeId === 6)
     if (typeId !== 6) return;
     if (isTeamSpecificCriterion(criterion)) return;
 
-    if (eLabel.trim() === "total goals") {
+    // Total Goles
+    if (eLabel === "total goals" || label === "total de goles") {
       addOverUnder(
         offer,
         odds.goalsLines,
         odds.goalsOverOdds,
         odds.goalsUnderOdds,
       );
-    } else if (eLabel.trim() === "total cards") {
+    }
+    // Total Tiros de Esquina
+    else if (
+      eLabel === "total corners" ||
+      label.includes("total de tiros de esquina")
+    ) {
+      addOverUnder(
+        offer,
+        odds.cornersLines,
+        odds.cornersOverOdds,
+        odds.cornersUnderOdds,
+      );
+    }
+    // Total Tarjetas
+    else if (eLabel === "total cards" || label.includes("total de tarjetas")) {
       addOverUnder(
         offer,
         odds.cardsLines,
         odds.cardsOverOdds,
         odds.cardsUnderOdds,
       );
-    } else if (eLabel.trim() === "total shots on target") {
+    }
+    // Total Tiros a Puerta
+    else if (
+      eLabel.startsWith("total shots on target") ||
+      label.startsWith("total de tiros a puerta")
+    ) {
       addOverUnder(
         offer,
         odds.shotsTargetLines,
         odds.shotsTargetOverOdds,
         odds.shotsTargetUnderOdds,
       );
-    } else if (eLabel.trim() === "total shots") {
+    }
+    // Total Tiros
+    else if (
+      eLabel.startsWith("total shots") ||
+      label.startsWith("total de tiros")
+    ) {
       addOverUnder(
         offer,
         odds.shotsLines,
         odds.shotsOverOdds,
         odds.shotsUnderOdds,
-      );
-    } else if (eLabel.trim() === "total corners") {
-      addOverUnder(
-        offer,
-        odds.cornersLines,
-        odds.cornersOverOdds,
-        odds.cornersUnderOdds,
       );
     }
   });
@@ -305,6 +349,15 @@ function parseBetPlayOdds(betOffers, homeTeamName, awayTeamName) {
     odds.shotsTargetOverOdds,
     odds.shotsTargetUnderOdds,
   );
+
+  const MIN_CORNERS = 4.5;
+  odds.cornersLines = odds.cornersLines.filter((l) => l >= MIN_CORNERS);
+  Object.keys(odds.cornersOverOdds).forEach((k) => {
+    if (parseFloat(k) < MIN_CORNERS) delete odds.cornersOverOdds[k];
+  });
+  Object.keys(odds.cornersUnderOdds).forEach((k) => {
+    if (parseFloat(k) < MIN_CORNERS) delete odds.cornersUnderOdds[k];
+  });
 
   [
     odds.goalsLines,
