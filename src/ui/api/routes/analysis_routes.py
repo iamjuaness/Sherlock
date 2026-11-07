@@ -1435,7 +1435,22 @@ async def recalculate_all_accuracy(
         except Exception:
             pass
 
-    query = db.query(AnalysisHistory).filter(AnalysisHistory.picks_calculados != None)
+    from sqlalchemy.orm import defer as _defer
+
+    # Columnas pesadas que este endpoint solo escribe (nunca lee): no hidratarlas.
+    query = (
+        db.query(AnalysisHistory)
+        .options(
+            _defer(AnalysisHistory.picks_calculados),
+            _defer(AnalysisHistory.compare_response_snapshot),
+            _defer(AnalysisHistory.llm_response),
+            _defer(AnalysisHistory.user_context),
+            _defer(AnalysisHistory.pre_match_stats),
+            _defer(AnalysisHistory.recent_form_stats),
+            _defer(AnalysisHistory.historical_pick_rates),
+        )
+        .filter(AnalysisHistory.picks_calculados != None)
+    )
     if threshold_dt:
         query = query.filter(
             or_(

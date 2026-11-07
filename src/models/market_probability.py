@@ -31,12 +31,13 @@ def remove_vig_two_way(odds_a: float, odds_b: float) -> Tuple[float, float]:
 
 def remove_vig_power(odds_list: Sequence[float], tol: float = 1e-7, max_iter: int = 100) -> list[float]:
     """
-    Elimina el margen (vigorish) usando el método de potencia (Shin / Power method).
+    Elimina el margen (vigorish) usando el método de potencia (Power method; NO es Shin).
     Resuelve sum( (1 / o_i)^k ) = 1.0 para k > 0 mediante bisección o Newton-Raphson.
     El método de potencia no penaliza desproporcionadamente las probabilidades altas (como en Doble Oportunidad).
     """
     valid_odds = [float(o) for o in odds_list if o is not None and o > 1.0]
-    if not valid_odds:
+    # Cuota inválida => []: filtrar acortaría la lista y desalinearía probs vs. selecciones.
+    if not valid_odds or len(valid_odds) != len(odds_list):
         return []
     if len(valid_odds) == 1:
         return [1.0]
@@ -85,7 +86,7 @@ class CLVResult:
     open_odds: float
     close_odds: float
     clv_percent: float  # (close_odds / open_odds - 1) * 100
-    clv_log: float      # log(open_prob / close_prob)
+    clv_log: float      # log(close_prob / open_prob); >0 = batiste el cierre
     market_prob_open_no_vig: Optional[float] = None
     market_prob_close_no_vig: Optional[float] = None
     market_margin_open: Optional[float] = None
@@ -105,7 +106,7 @@ def compute_clv(
     clv_pct = ((open_odds / close_odds) - 1.0) * 100.0
     p_open_raw = implied_probability(open_odds)
     p_close_raw = implied_probability(close_odds)
-    clv_log = math.log(p_open_raw / p_close_raw) if (p_open_raw > 0 and p_close_raw > 0) else 0.0
+    clv_log = math.log(p_close_raw / p_open_raw) if (p_open_raw > 0 and p_close_raw > 0) else 0.0
 
     p_open_novig = None
     margin_open = None

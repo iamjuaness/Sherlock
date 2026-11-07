@@ -426,6 +426,8 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
                 team_index.setdefault(f"{comp}::{at}", []).append(r)
 
     results = []
+    # Un solo event loop por chunk (antes: asyncio.run por partido, creaba/destruía loop cada vez).
+    loop = asyncio.new_event_loop()
 
     for match in matches:
         match_id = match["id"]
@@ -480,7 +482,7 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
             req = FootballCompareRequest(**local_payload)
             req, bookmaker_map = _apply_line_shopping(req)
 
-            new_response = asyncio.run(
+            new_response = loop.run_until_complete(
                 compare_football(
                     req,
                     db=None,
@@ -566,4 +568,5 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
                 "error": str(e)
             })
 
+    loop.close()
     return results

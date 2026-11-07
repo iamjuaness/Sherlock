@@ -41,12 +41,14 @@ from src.core.prediction.lambdas import (  # re-export: moved out of compare.py
 )
 from src.core.prediction.score_matrix import (  # re-export: moved out of compare.py
     fit_dixon_coles_rho,
+    fit_market_lambdas,
     _dc_score_matrix,
     _sum_score_matrix_1x2_and_markets,
     _matrix_over_under,
 )
 from src.domain.portfolio import apply_portfolio_exposure_cap
 import asyncio
+from src.models.market_probability import remove_vig_power
 from datetime import datetime
 from src.core.math.calibration import (
     normalize_categorical_market,
@@ -486,8 +488,21 @@ async def compare_football(
         ):
             db_session = db if db is not None else SessionLocal()
             db_created = db is None
+            # Solo columnas necesarias (sin payload ni snapshots JSON).
+            league_cols = [
+                getattr(AnalysisHistory, c)
+                for c in (
+                    "final_score_home", "final_score_away",
+                    "final_corners_home", "final_corners_away",
+                    "final_yellow_cards_home", "final_yellow_cards_away",
+                    "final_red_cards_home", "final_red_cards_away",
+                    "final_shots_home", "final_shots_away",
+                    "final_shots_on_target_home", "final_shots_on_target_away",
+                    "picks_calculados",
+                )
+            ]
             league_rows = (
-                db_session.query(AnalysisHistory)
+                db_session.query(*league_cols)
                 .filter(
                     AnalysisHistory.competition == req.competition,
                     AnalysisHistory.sport == Sport.FOOTBALL,
@@ -800,6 +815,22 @@ async def compare_football(
     a_lam = _compute_team_goals_lambda(
         a, h, req.league_stats, is_home=False, general=use_general, db=db, data_quality_score=_dq_a
     )
+    # ── Ensemble con lambdas implícitos del mercado (media geométrica ponderada) ──
+    # El mercado sin margen es la mejor estimación independiente; w controla cuánto se ancla.
+    _w_mkt = float(os.getenv("SHERLOCK_MARKET_LAMBDA_WEIGHT", "0.35"))
+    _o = req.odds
+    if _w_mkt > 0 and _o and all(x and x > 1.0 for x in (_o.home, _o.draw, _o.away)):
+        _p3 = remove_vig_power([_o.home, _o.draw, _o.away])
+        _po = None
+        _ov = (_o.goals_over_odds or {}).get("2.5")
+        _un = (_o.goals_under_odds or {}).get("2.5")
+        if _ov and _un and _ov > 1.0 and _un > 1.0:
+            _po = remove_vig_power([_ov, _un])[0]
+        _fit = fit_market_lambdas(_p3[0], _p3[1], _p3[2], _po) if len(_p3) == 3 else None
+        if _fit:
+            h_lam = h_lam ** (1 - _w_mkt) * _fit[0] ** _w_mkt
+            a_lam = a_lam ** (1 - _w_mkt) * _fit[1] ** _w_mkt
+
     h_lam_corners, h_r_corners, a_lam_corners, a_r_corners = _compute_corners_lambda(
         h, a, req.league_stats, general=use_general, db=db
     )
@@ -854,7 +885,12 @@ async def compare_football(
             from src.core.domain import AnalysisHistory
 
             hist_rows = (
-                db.query(AnalysisHistory)
+                db.query(
+                    AnalysisHistory.final_score_home,
+                    AnalysisHistory.final_score_away,
+                    AnalysisHistory.expected_goals_home,
+                    AnalysisHistory.expected_goals_away,
+                )
                 .filter(
                     AnalysisHistory.competition == req.competition,
                     AnalysisHistory.final_score_home.isnot(None),
@@ -865,17 +901,24 @@ async def compare_football(
                 .all()
             )
             # Build match tuples (home_goals, away_goals, h_lambda, a_lambda)
-            # We use the league average lambdas as approximation since we don't store
-            # the original lambdas — the key signal is the score distribution shape.
+            # Los lambdas pre-partido originales no se guardan. Proxy por partido: xG real del
+            # partido si existe; si no, media de liga con factor de localía. NUNCA los lambdas
+            # del partido actual (sesgaría rho hacia el partido que se analiza).
             avg_lambda = req.league_stats.avg_goals_per_game / 2.0
+            lg_h = max(avg_lambda * (req.league_stats.home_advantage_factor or 1.0), 0.2)
+            lg_a = max(avg_lambda * (req.league_stats.away_disadvantage_factor or 1.0), 0.2)
             match_tuples: list[tuple[int, int, float, float]] = []
             for row in hist_rows:
                 hg = row.final_score_home
                 ag = row.final_score_away
                 if hg is None or ag is None:
                     continue
+                xg_h = row.expected_goals_home
+                xg_a = row.expected_goals_away
+                lam_h = max(float(xg_h), 0.2) if xg_h else lg_h
+                lam_a = max(float(xg_a), 0.2) if xg_a else lg_a
                 try:
-                    match_tuples.append((int(hg), int(ag), h_lam, a_lam))
+                    match_tuples.append((int(hg), int(ag), lam_h, lam_a))
                 except (ValueError, TypeError):
                     continue
             if len(match_tuples) >= 100:
@@ -961,7 +1004,6 @@ async def compare_football(
     _or_dc = _or_dc_raw if _or_dc_raw > 100.5 else _or_1x2
 
     # Issue #44: No-vig de Doble Oportunidad por método de potencia
-    from src.models.market_probability import remove_vig_power
 
     _dc_odds_list = [req.odds.dc_1x, req.odds.dc_x2, req.odds.dc_12]
     _dc_novig_probs = (
@@ -971,12 +1013,21 @@ async def compare_football(
     _dc_novig_x2 = (_dc_novig_probs[1] * 100.0) if len(_dc_novig_probs) == 3 else None
     _dc_novig_12 = (_dc_novig_probs[2] * 100.0) if len(_dc_novig_probs) == 3 else None
 
+    def _pw(*odds: float | None) -> list[float | None]:
+        """No-vig por método de potencia (no penaliza favoritos/longshots como el proporcional)."""
+        if not all(o and o > 1.0 for o in odds):
+            return [None] * len(odds)
+        return [x * 100.0 for x in remove_vig_power(list(odds))] or [None] * len(odds)
+
+    _nv_1x2 = _pw(req.odds.home, req.odds.draw, req.odds.away)
+    _nv_btts = _pw(req.odds.btts_yes, req.odds.btts_no)
+
     market_configs: list[tuple[str, float | None, float, float, float, float | None]] = [
-        ("Local", req.odds.home, h_prob * 100, _or_1x2, 0.0, None),
-        ("Empate", req.odds.draw, d_prob * 100, _or_1x2, 0.0, None),
-        ("Visitante", req.odds.away, a_prob * 100, _or_1x2, 0.0, None),
-        ("BTTS Sí", req.odds.btts_yes, p_btts_yes * 100, _or_btts, 0.0, None),
-        ("BTTS No", req.odds.btts_no, p_btts_no * 100, _or_btts, 0.0, None),
+        ("Local", req.odds.home, h_prob * 100, _or_1x2, 0.0, _nv_1x2[0]),
+        ("Empate", req.odds.draw, d_prob * 100, _or_1x2, 0.0, _nv_1x2[1]),
+        ("Visitante", req.odds.away, a_prob * 100, _or_1x2, 0.0, _nv_1x2[2]),
+        ("BTTS Sí", req.odds.btts_yes, p_btts_yes * 100, _or_btts, 0.0, _nv_btts[0]),
+        ("BTTS No", req.odds.btts_no, p_btts_no * 100, _or_btts, 0.0, _nv_btts[1]),
         ("Doble Oportunidad 1X", req.odds.dc_1x, p_dc_1x, _or_dc, 0.0, _dc_novig_1x),
         ("Doble Oportunidad X2", req.odds.dc_x2, p_dc_x2, _or_dc, 0.0, _dc_novig_x2),
         ("Doble Oportunidad 12", req.odds.dc_12, p_dc_12, _or_dc, 0.0, _dc_novig_12),

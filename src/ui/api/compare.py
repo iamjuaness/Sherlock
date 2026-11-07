@@ -37,9 +37,7 @@ from src.domain.market_taxonomy import (
     normalize_market_family,
 )
 # ── Portfolio: control de sobreexposición simultánea por jornada ──
-from src.core.math.kelly import (
-    calculate_fractional_kelly,
-)
+from src.models.market_probability import blend_model_and_market_probability
 
 load_dotenv()
 
@@ -1118,26 +1116,12 @@ def _calculate_stake_units(
     if edge_ev < 0.020 or kelly_fraction <= 0 or odds <= 1.0:
         return 0.0
 
-    prob_est = (edge_ev + 1.0) / odds
-    fraction_divisor = 8.0 if market_family in {"corners", "cards", "shots", "shots_target", "fouls"} else 4.0
-    stake_frac, edge_pct = calculate_fractional_kelly(
-        calibrated_prob=prob_est,
-        odds=odds,
-        fraction_divisor=fraction_divisor,
-        max_stake_cap=0.03,
-    )
-
-    if stake_frac <= 0.0:
-        return 0.0
-
-    raw_units = stake_frac * 100.0
-    _lrs = lrs if lrs is not None else 0.50
-
-    # Escalar el stake continuamente entre [0.25, 3.00] unidades:
-    # stake = min(3.0, max(0.25, raw_stake * LRS))
-    scaled = raw_units * _lrs
-    stake = min(3.0, max(0.25, scaled))
-    return round(round(stake * 4) / 4, 2)
+    # kelly_fraction ya viene de la distribución completa de retornos (push/cuartos correctos)
+    # y ya incorpora la fiabilidad de liga vía kelly_multiplier: no se recalcula ni se re-escala por LRS.
+    vol_factor = 0.5 if market_family in {"corners", "cards", "shots", "shots_target", "fouls"} else 1.0
+    stake = min(3.0, kelly_fraction * vol_factor * 100.0)  # 1u = 1% del bankroll; tope 3%
+    stake = round(stake * 4) / 4
+    return stake if stake >= 0.25 else 0.0
 
 def _calculate_kelly_fraction(
     calibrated_prob: float,
@@ -1246,9 +1230,19 @@ def _value_indicator(
     _p_model_raw_01 = modelp / 100.0 if modelp > 1.0 else modelp
     _p_calibrated_01 = calibrated_p / 100.0 if calibrated_p > 1.0 else calibrated_p
 
-    # Blend con probabilidad de mercado (no-vig): 80% calibrado + 20% mercado
-    _p_market_01 = (implied_no_vig / 100.0) if implied_no_vig > 0.0 else _p_calibrated_01
-    _p_final_01 = 0.80 * _p_calibrated_01 + 0.20 * _p_market_01
+    # Siempre recalcular con la fórmula actualizada; el valor de BD puede estar obsoleto
+    lrs = _compute_league_reliability_score(league) if league is not None else 0.7
+
+    # Blend modelo/mercado ponderado por fiabilidad de liga: peso del modelo 0.65-0.90
+    # (antes fijo 0.80) + guarda de divergencia (aviso 0.15 / bloqueo 0.25 vía _blend_stake_mult).
+    _p_market_01 = (implied_no_vig / 100.0) if implied_no_vig > 0.0 else None
+    _blend = blend_model_and_market_probability(
+        p_calibrated=_p_calibrated_01,
+        p_market_no_vig=_p_market_01,
+        reliability_score=0.65 + 0.25 * min(max(lrs, 0.0), 1.0),
+    )
+    _p_final_01 = _blend.final_prob
+    _blend_stake_mult = _blend.stake_multiplier
 
     try:
         edge_result = compute_edge(
@@ -1273,12 +1267,7 @@ def _value_indicator(
     ev = ret_dist.expected_value
     edge_prob = (ret_dist.p_win_effective * 100.0) - raw_implied
 
-    # ── 5. League Reliability Score ──────────────────────────────────────
-    if league is not None:
-        # Siempre recalcular con la fórmula actualizada; el valor de BD puede estar obsoleto
-        lrs = _compute_league_reliability_score(league)
-    else:
-        lrs = 0.7
+    # ── 5. League Reliability Score (calculado antes del blend) ──
     lrs_penalty = 0.0
     p = calibrated_p / 100.0
 
@@ -1348,6 +1337,10 @@ def _value_indicator(
         market_family=family,
         lrs=lrs,
     )
+
+    if _blend_stake_mult < 1.0:
+        stake = round(round(stake * _blend_stake_mult * 4) / 4, 2)
+        stake = stake if stake >= 0.25 else 0.0
 
     # Aplicar governance_multiplier al stake (REDUCED→×0.25, BLOCKED→0, WATCH→×0.50)
     if gov_multiplier < 1.0:

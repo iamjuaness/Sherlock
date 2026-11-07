@@ -54,19 +54,19 @@ def build_dixon_coles_matrix(
     lambda_h = max(lambda_h, epsilon)
     mu_a = max(mu_a, epsilon)
 
-    matrix = np.zeros((max_goals + 1, max_goals + 1), dtype=np.float64)
-
-    # Precompute 1D Poisson PMFs
+    # Vectorizado: outer product de PMFs 1D * factor tau (solo 4 celdas de baja anotación).
     goals = np.arange(max_goals + 1)
     p_h = poisson.pmf(goals, lambda_h)
     p_a = poisson.pmf(goals, mu_a)
 
-    for x in range(max_goals + 1):
-        for y in range(max_goals + 1):
-            adj = tau(x, y, lambda_h, mu_a, rho)
-            # Ensure prob factor does not go negative due to rho bounds
-            prob = max(p_h[x] * p_a[y] * adj, 0.0)
-            matrix[x, y] = prob
+    adj = np.ones((max_goals + 1, max_goals + 1), dtype=np.float64)
+    adj[0, 0] = tau(0, 0, lambda_h, mu_a, rho)
+    if max_goals >= 1:
+        adj[0, 1] = tau(0, 1, lambda_h, mu_a, rho)
+        adj[1, 0] = tau(1, 0, lambda_h, mu_a, rho)
+        adj[1, 1] = tau(1, 1, lambda_h, mu_a, rho)
+    # Ensure prob factor does not go negative due to rho bounds
+    matrix = np.maximum(np.outer(p_h, p_a) * adj, 0.0)
 
     total = np.sum(matrix)
     if total > 0:

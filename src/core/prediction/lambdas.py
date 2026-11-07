@@ -10,8 +10,19 @@ from typing import Any
 
 import numpy as np
 
-from src.core.math.bayesian import fit_gamma_prior_from_league, update_gamma_poisson
+from src.core.math.bayesian import update_gamma_poisson
 from src.core.prediction.score_matrix import get_dispersion_r
+
+_FINAL_STAT_COLS = (
+    "final_score_home", "final_score_away",
+    "final_corners_home", "final_corners_away",
+    "final_yellow_cards_home", "final_yellow_cards_away",
+    "final_red_cards_home", "final_red_cards_away",
+    "final_shots_home", "final_shots_away",
+    "final_shots_on_target_home", "final_shots_on_target_away",
+    "final_fouls_home", "final_fouls_away",
+    "final_offsides_home", "final_offsides_away",
+)
 
 
 def _estimate_league_variance(
@@ -37,8 +48,9 @@ def _estimate_league_variance(
         try:
             from src.core.domain import AnalysisHistory
 
+            # Solo columnas de resultado: evita hidratar payload/snapshots JSON de cada fila.
             rows = (
-                db.query(AnalysisHistory)
+                db.query(*[getattr(AnalysisHistory, c) for c in _FINAL_STAT_COLS])
                 .filter(
                     AnalysisHistory.competition == competition_name,
                     AnalysisHistory.final_score_home.isnot(None),
@@ -200,9 +212,12 @@ def _compute_team_goals_lambda(
 
     # ── Issue #20: Un solo shrinkage Bayesiano hacia la media de liga ──
     # Empirical Bayes Gamma-Poisson shrinkage for attack and defense rates
-    alpha_prior, beta_prior = fit_gamma_prior_from_league(
-        [avg_team_goals, goals_mean, max(goals_var, 0.1)]
+    # Prior Gamma: media = media de liga por equipo, fuerza k = prior_n empírico (Fano/calidad/muestra).
+    k_prior = estimate_empirical_bayes_prior_n(
+        goals_var, goals_mean, min(att_n, def_n), data_quality_score,
+        baseline_prior_n=5.0, max_prior_n=8.0,  # CLAUDE.md: prior_n=5 para goles
     )
+    alpha_prior, beta_prior = avg_team_goals * k_prior, k_prior
     post_att_rate = update_gamma_poisson(alpha_prior, beta_prior, att_rate * att_n, att_n)
     post_def_rate = update_gamma_poisson(alpha_prior, beta_prior, def_rate * def_n, def_n)
 
@@ -227,8 +242,10 @@ def _compute_team_goals_lambda(
         w10 = att_recent.get("last_10", {}).get("goals_scored", avg_team_goals)
         w15 = att_recent.get("last_15", {}).get("goals_scored", avg_team_goals)
         form_avg_att = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
-        form_factor_att = form_avg_att / max(avg_team_goals, 0.10)
-        form_factor_att = max(0.70, min(1.30, form_factor_att))
+        # Forma relativa a la tasa de temporada del propio equipo (no a la liga: ya está en att_str),
+        # amortiguada con exponente 0.35 para no contar dos veces la misma información.
+        form_factor_att = (form_avg_att / max(att_rate, 0.10)) ** 0.35
+        form_factor_att = max(0.85, min(1.15, form_factor_att))
 
     def_recent = getattr(defender, "recent_form", None) or getattr(
         defender, "recent_form_stats", None
@@ -238,8 +255,8 @@ def _compute_team_goals_lambda(
         w10 = def_recent.get("last_10", {}).get("goals_conceded", avg_team_goals)
         w15 = def_recent.get("last_15", {}).get("goals_conceded", avg_team_goals)
         form_avg_def = 0.50 * w5 + 0.30 * w10 + 0.20 * w15
-        form_factor_def = form_avg_def / max(avg_team_goals, 0.10)
-        form_factor_def = max(0.70, min(1.30, form_factor_def))
+        form_factor_def = (form_avg_def / max(def_rate, 0.10)) ** 0.35
+        form_factor_def = max(0.85, min(1.15, form_factor_def))
 
     lam_final = lam_base * form_factor_att * form_factor_def
     return max(lam_final, 0.10)
@@ -402,9 +419,8 @@ def _compute_team_cards_lambda(
         lam *= ref_modifier
 
     # 6. Shrinkage final al promedio de liga
-    alpha_prior_cd, beta_prior_cd = fit_gamma_prior_from_league(
-        [avg_team_cards, cards_mean, max(cards_var, 0.1)]
-    )
+    k_cd = estimate_empirical_bayes_prior_n(cards_var, cards_mean, actual_matches)
+    alpha_prior_cd, beta_prior_cd = avg_team_cards * k_cd, k_cd
     lam = update_gamma_poisson(alpha_prior_cd, beta_prior_cd, lam * actual_matches, actual_matches)
 
     # ── Issue #28: Factor de localía para tarjetas (visitante recibe más amarillas) ──

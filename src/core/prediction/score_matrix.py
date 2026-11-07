@@ -8,6 +8,8 @@ from __future__ import annotations
 import math
 from typing import Any
 
+import numpy as np
+from scipy.special import gammaln
 
 from src.core.math.dixon_coles import build_dixon_coles_matrix
 
@@ -121,15 +123,28 @@ def fit_dixon_coles_rho(
             return _default_dc_rho(avg_lam, avg_mu)
         return -0.13
 
+    # Vectorizado: matriz (grid x partidos) en vez de grid x partidos bucles Python.
     lo, hi = rho_bounds
-    best_rho, best_ll = lo, float("-inf")
-    for i in range(grid_steps):
-        rho = lo + (hi - lo) * i / (grid_steps - 1)
-        ll = _dc_log_likelihood(rho, matches)
-        if ll > best_ll:
-            best_ll, best_rho = ll, rho
-
-    return round(best_rho, 4)
+    arr = np.asarray(matches, dtype=np.float64)
+    hg, ag = arr[:, 0], arr[:, 1]
+    lam = np.maximum(arr[:, 2], 1e-300)
+    mu = np.maximum(arr[:, 3], 1e-300)
+    base = np.exp(
+        hg * np.log(lam) - lam - gammaln(hg + 1.0) + ag * np.log(mu) - mu - gammaln(ag + 1.0)
+    )
+    rhos = lo + (hi - lo) * np.arange(grid_steps) / (grid_steps - 1)
+    r = rhos[:, None]
+    tau = np.ones((grid_steps, arr.shape[0]))
+    z00 = (hg == 0) & (ag == 0)
+    z01 = (hg == 0) & (ag == 1)
+    z10 = (hg == 1) & (ag == 0)
+    z11 = (hg == 1) & (ag == 1)
+    tau[:, z00] = 1.0 - (lam * mu)[z00] * r
+    tau[:, z01] = 1.0 + lam[z01] * r
+    tau[:, z10] = 1.0 + mu[z10] * r
+    tau[:, z11] = 1.0 - r
+    ll = np.log(np.maximum(base * tau, 1e-10)).sum(axis=1)
+    return round(float(rhos[int(np.argmax(ll))]), 4)
 
 
 def _dc_score_matrix(
@@ -152,6 +167,7 @@ def _dc_score_matrix(
 
 
 def _sum_score_matrix_1x2_and_markets(matrix: list[list[float]]) -> dict[str, float]:
+    # Bucle en el mismo orden que antes: la suma en este orden mantiene bit a bit los resultados.
     h_win = 0.0
     draw = 0.0
     a_win = 0.0
@@ -287,10 +303,11 @@ def _matrix_over_under(matrix: list[list[float]], line: float) -> tuple[float, f
 
 
 def _poisson_over_under(lam: float, line: float, max_k: int = 40) -> tuple[float, float, float]:
+    pmf = [(lam**k * math.exp(-lam)) / math.factorial(k) for k in range(max_k + 1)]
+
     def _get_single_line_probs(l: float):
         p_u, p_p, p_o = 0.0, 0.0, 0.0
-        for k in range(max_k + 1):
-            p = (lam**k * math.exp(-lam)) / math.factorial(k)
+        for k, p in enumerate(pmf):
             if k < l:
                 p_u += p
             elif k > l:
@@ -312,10 +329,11 @@ def _poisson_over_under(lam: float, line: float, max_k: int = 40) -> tuple[float
 def _neg_binomial_over_under(
     mu: float, line: float, r: float, max_k: int = 60
 ) -> tuple[float, float, float]:
+    pmf = [_neg_bin_pmf(mu, r, k) for k in range(max_k + 1)]
+
     def _get_single_line_probs(l: float):
         p_u, p_p, p_o = 0.0, 0.0, 0.0
-        for k in range(max_k + 1):
-            p = _neg_bin_pmf(mu, r, k)
+        for k, p in enumerate(pmf):
             if k < l:
                 p_u += p
             elif k > l:
@@ -332,3 +350,37 @@ def _neg_binomial_over_under(
     avg_under = sum(r[2] for r in results) / len(results)
 
     return avg_over * 100.0, avg_push * 100.0, avg_under * 100.0
+
+
+def fit_market_lambdas(
+    p_home: float,
+    p_draw: float,
+    p_away: float,
+    p_over25: float | None = None,
+    rho: float = -0.10,
+) -> tuple[float, float] | None:
+    """Lambdas (local, visitante) cuya matriz Dixon-Coles reproduce las probabilidades
+    sin margen del mercado (1X2 [+ Over 2.5]). Mínimos cuadrados sobre log-lambdas.
+    Devuelve None si no converge o las entradas son inválidas."""
+    from scipy.optimize import minimize
+
+    if min(p_home, p_draw, p_away) <= 0 or abs(p_home + p_draw + p_away - 1.0) > 0.02:
+        return None
+
+    def loss(x: np.ndarray) -> float:
+        m, _ = _dc_score_matrix(math.exp(x[0]), math.exp(x[1]), rho=rho)
+        mk = _sum_score_matrix_1x2_and_markets(m)
+        e = (
+            (mk["home_win_pct"] / 100 - p_home) ** 2
+            + (mk["draw_pct"] / 100 - p_draw) ** 2
+            + (mk["away_win_pct"] / 100 - p_away) ** 2
+        )
+        if p_over25 is not None:
+            e += (mk["over_25_pct"] / 100 - p_over25) ** 2
+        return e
+
+    res = minimize(loss, x0=np.log([1.4, 1.1]), method="Nelder-Mead", options={"xatol": 1e-4, "fatol": 1e-9})
+    if not res.success or res.fun > 1e-3:
+        return None
+    lh, la = float(np.exp(res.x[0])), float(np.exp(res.x[1]))
+    return (lh, la) if 0.1 <= lh <= 5.0 and 0.1 <= la <= 5.0 else None

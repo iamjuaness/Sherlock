@@ -195,6 +195,36 @@ def filter_selected_portfolio(
     return selected
 
 
+
+def _correlated_exposure(candidates: List[Any], default_rho: float = 0.15) -> float:
+    """Riesgo efectivo del libro del partido: sqrt(k' R k), con k = kelly_fraction por pick.
+
+    R sale de data/market_correlation.json (misma clave que el filtro de correlación). Pares sin
+    dato usan default_rho; rho negativo se recorta a 0 (no se acredita cobertura).
+    shortcut: rho constante entre partidos distintos = 0 (esta función opera por análisis); si se
+    agrupan varios partidos, extender R por bloques.
+    """
+    from src.core.pick_rules_engine import (
+        load_market_correlation_matrix,
+        market_correlation_rho,
+        market_group,
+    )
+
+    matrix = load_market_correlation_matrix()
+    ks = [float(getattr(v, "kelly_fraction", 0.0) or 0.0) for v in candidates]
+    groups = [market_group(str(getattr(v, "selection", "") or "")) for v in candidates]
+    var = 0.0
+    for i, ki in enumerate(ks):
+        for j, kj in enumerate(ks):
+            if i == j:
+                rho = 1.0
+            else:
+                r = market_correlation_rho(groups[i], groups[j], matrix)
+                rho = default_rho if r is None else max(0.0, r)
+            var += ki * kj * rho
+    return var**0.5
+
+
 def apply_portfolio_exposure_cap(
     value_indicators: "List[ValueIndicator]",
     max_total_exposure: float = 0.25,
@@ -246,7 +276,11 @@ def apply_portfolio_exposure_cap(
         return value_indicators
 
     # Exposición total = suma de kelly_fractions (fracción del bankroll)
-    total_kelly = sum(getattr(v, "kelly_fraction", 0.0) or 0.0 for v in candidates)
+    # Exposición efectiva con correlación entre picks (nunca mayor que la suma lineal).
+    total_kelly = min(
+        sum(getattr(v, "kelly_fraction", 0.0) or 0.0 for v in candidates),
+        _correlated_exposure(candidates),
+    )
 
     if total_kelly <= max_total_exposure:
         logger.debug(
