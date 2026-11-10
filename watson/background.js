@@ -90,6 +90,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return true;
   }
 
+  if (request.action === "syncCompetitions") {
+    handleSyncCompetitions(request.data)
+      .then(sendResponse)
+      .catch((err) => sendResponse({ success: false, error: err.message }));
+    return true;
+  }
+
   // NUEVO (Punto 1): Extracción masiva de partidos del día siguiente
   if (request.action === "bulkExtractStats") {
     _bulkCancelled = false;
@@ -262,6 +269,7 @@ async function handleExtractResults(data) {
       away_team: awayTeamStr,
       competition: eventData.event.tournament?.uniqueTournament?.name || eventData.event.tournament?.name || "Desconocida",
       start_timestamp: eventData.event.startTimestamp || null,
+      stage: stageOfEvent(eventData.event),
       ...payload,
     };
 
@@ -881,6 +889,75 @@ function delay(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/**
+ * Sincroniza la tabla `competitions` de Sherlock con SofaScore (reemplaza depender de competitions.json).
+ * Por cada competición: /unique-tournament/{id} (tier, país, colores, popularidad) y
+ * /unique-tournament/{id}/seasons (la primera es la temporada vigente).
+ * data = { baseUrl, competitions: [{ id, name, active? }] }; `name` local se envía como alias.
+ * Solo sincroniza las competiciones indicadas (catálogo de la BD + competitions.json); no descubre otras.
+ */
+async function handleSyncCompetitions(data) {
+  const { baseUrl, competitions = [] } = data;
+  if (!baseUrl) throw new Error("Endpoint de Sherlock no configurado");
+  if (!competitions.length) {
+    throw new Error("Sin competiciones para sincronizar");
+  }
+
+  const out = [];
+  for (const comp of competitions) {
+    try {
+      const t = await fetchSofaScore(`/api/v1/unique-tournament/${comp.id}`);
+      const ut = t?.uniqueTournament;
+      if (!ut) continue;
+      const s = await fetchSofaScore(`/api/v1/unique-tournament/${comp.id}/seasons`);
+      const cur = s?.seasons?.[0]; // la primera es la temporada vigente
+      // meta (nº de equipos, rondas, fases, ascensos...) es opcional: no todos los torneos la tienen
+      const meta = (
+        await fetchSofaScore(`/api/v1/unique-tournament/${comp.id}/meta`).catch(() => null)
+      )?.meta;
+      out.push({
+        id: ut.id ?? comp.id,
+        name: ut.name,
+        alias: comp.name,
+        slug: ut.slug,
+        tier: ut.tier,
+        userCount: ut.userCount,
+        category: ut.category?.name,
+        country: ut.category?.country?.name,
+        countryCode: ut.category?.country?.alpha2 || ut.category?.alpha2,
+        primaryColor: ut.primaryColorHex,
+        secondaryColor: ut.secondaryColorHex,
+        logoId: ut.logo?.id,
+        grade: meta?.grade,
+        teamsCount: meta?.teamsCount,
+        roundsCount: meta?.roundsCount,
+        gamesCount: meta?.gamesCount,
+        tablesCount: meta?.tablesCount,
+        relegatingTeamsCount: meta?.relegatingTeamsCount,
+        frequency: meta?.frequency,
+        otherNames: meta?.otherNames,
+        active: comp.active !== false,
+        season: cur
+          ? { id: cur.id, name: cur.name, year: normalizeSeasonYear(cur.year) }
+          : undefined,
+      });
+    } catch (e) {
+      console.warn(`[SyncCompetitions] ${comp.name} (${comp.id}):`, e.message);
+    }
+    await delay(400);
+  }
+
+  if (!out.length) throw new Error("SofaScore no devolvió ninguna competición");
+
+  const res = await fetch(`${baseUrl}/api/v1/competitions/sync`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ competitions: out }),
+  });
+  if (!res.ok) throw new Error(`Sherlock respondió ${res.status} al sincronizar`);
+  return { success: true, ...(await res.json()) };
+}
+
 /** Envía progreso al popup (fire-and-forget) */
 function sendProgress(progressData) {
   chrome.runtime
@@ -948,6 +1025,15 @@ function buildMatchKey(info) {
   const home = normalizeText(info.homeShort || "");
   const away = normalizeText(info.awayShort || "");
   return `${dateStr}|${home}|${away}`;
+}
+
+/** "Liga DIMAYOR, Apertura" / "Liga MX, Clausura" -> "Apertura" / "Clausura"; si no aplica, undefined. */
+function stageOfEvent(event) {
+  for (const n of [event?.tournament?.name, event?.tournament?.uniqueTournament?.name]) {
+    const m = String(n || "").match(/,\s*(Apertura|Clausura)\s*$/i);
+    if (m) return m[1][0].toUpperCase() + m[1].slice(1).toLowerCase();
+  }
+  return undefined;
 }
 
 function normalizeSeasonYear(year) {
@@ -1599,6 +1685,7 @@ function buildHistoricalPayload(
     tournament_id: event.tournament?.id || null,
     tournament_name: normalizedName,
     competition: normalizedName,
+    stage: stageOfEvent(event),
     final_score_home: event.homeScore?.normaltime ?? 0,
     final_score_away: event.awayScore?.normaltime ?? 0,
   };

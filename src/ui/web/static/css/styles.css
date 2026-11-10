@@ -6,8 +6,8 @@
 /* ── Design Tokens ────────────────────────────────────────────── */
 :root {
   /* Background Layers (Elevation System) */
-  --bg-base: #030712;
-  --bg-elevated: #0b0f19;
+  --bg-base: #070a10;
+  --bg-elevated: #0d121b;
   --bg-surface: rgba(15, 23, 42, 0.6);
   --bg-glass: rgba(20, 27, 45, 0.45);
   --bg-input: rgba(8, 12, 21, 0.85);
@@ -21,8 +21,8 @@
 
   /* Text */
   --text-primary: #f1f5f9;
-  --text-secondary: #94a3b8;
-  --text-muted: #64748b;
+  --text-secondary: #9aa7b8;
+  --text-muted: #7a889b;
   --text-dim: #475569;
 
   /* Accents (Restrained Palette) */
@@ -2121,5 +2121,356 @@ details[style*="#ef4444"] summary::before {
   .card {
     border: 1px solid #ccc;
     box-shadow: none;
+  }
+}
+
+/* ── UI polish (shared) ───────────────────────────────────────── */
+body {
+  font-variant-numeric: tabular-nums;
+}
+button,
+.btn-analyze,
+.btn-preset,
+.btn-load,
+.tab,
+.tab-btn {
+  -webkit-tap-highlight-color: transparent;
+}
+button:enabled:active,
+.btn-analyze:active,
+.btn-preset:active,
+.btn-load:active {
+  scale: 0.96;
+  transition: scale 150ms ease-out;
+}
+:focus-visible {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+.modal,
+.modal__body,
+.modal-content {
+  overscroll-behavior: contain;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+  .header__icon {
+    animation: none;
+  }
+}
+
+/* ── Comparator / shared redesign layer ───────────────────────── */
+:root {
+  --accent: #0891b2;
+  --accent-light: #22d3ee;
+  --accent-glow: rgba(34, 211, 238, 0.3);
+  --accent-subtle: rgba(34, 211, 238, 0.1);
+  --border-focus: rgba(34, 211, 238, 0.5);
+  --border-accent: rgba(34, 211, 238, 0.25);
+  --green: #34d399;
+  --red: #fb7185;
+  --yellow: #fbbf24;
+  --bg-surface: #111721;
+  --bg-input: #0a0e14;
+  --ring: 0 0 0 1px rgba(148, 163, 184, 0.14), 0 1px 2px rgba(0, 0, 0, 0.35),
+    0 8px 24px -12px rgba(0, 0, 0, 0.55);
+}
+body {
+  background-image: radial-gradient(
+    ellipse 80% 50% at 50% -10%,
+    rgba(34, 211, 238, 0.06),
+    transparent
+  );
+}
+.header__title {
+  background: linear-gradient(135deg, #fff 0%, var(--accent-light) 100%);
+  background-clip: text;
+  -webkit-background-clip: text;
+}
+.header__icon {
+  animation: none;
+}
+
+/* Nav */
+.tabs {
+  background: rgba(7, 10, 16, 0.85);
+}
+.tab {
+  border-radius: 10px;
+  border: 1px solid transparent;
+  box-shadow: 0 0 0 1px rgba(148, 163, 184, 0.14);
+  background: var(--bg-surface);
+  transition-property: color, background-color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+.tab::before {
+  display: none;
+}
+.tab:hover {
+  transform: none;
+}
+.tab--active,
+.tab--active:hover {
+  background: rgba(34, 211, 238, 0.12);
+  color: var(--accent-light);
+  box-shadow: 0 0 0 1px rgba(34, 211, 238, 0.3);
+}
+.btn-history {
+  border-radius: 10px;
+  transition-property: color, background-color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+.btn-history:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+/* Surfaces: ring shadow instead of border, no blur/lift */
+.comparator__team,
+.card,
+.stats-section,
+.odds-section,
+.modal__content {
+  border: 1px solid transparent;
+  box-shadow: var(--ring);
+  backdrop-filter: none;
+}
+.card {
+  background: var(--bg-surface);
+}
+.card:hover,
+.comparator__team:hover {
+  transform: none;
+  border-color: transparent;
+  box-shadow: var(--ring);
+}
+.card::before {
+  display: none;
+}
+.card--radar,
+.card--bar,
+.card--projected {
+  background: var(--bg-surface);
+}
+.stats-section {
+  background: rgba(148, 163, 184, 0.04);
+  box-shadow: none;
+  border-color: rgba(148, 163, 184, 0.1);
+}
+.card h3::before,
+.card--projected h3::before {
+  box-shadow: none;
+}
+.comparator__vs span {
+  background: var(--bg-surface);
+  box-shadow: var(--ring);
+  border-color: transparent;
+}
+.comparator__vs span:hover {
+  transform: none;
+  box-shadow: 0 0 0 1px var(--accent-light);
+}
+.team-header--home h2 {
+  color: #60a5fa;
+}
+.team-header--away h2 {
+  color: #fb923c;
+}
+
+/* Inputs */
+.input {
+  background: var(--bg-input);
+  border-color: rgba(148, 163, 184, 0.14);
+  border-radius: 10px;
+  color-scheme: dark;
+  font-variant-numeric: tabular-nums;
+}
+.input:hover {
+  background: var(--bg-input);
+}
+.input:focus,
+.comparator__team > .form-group:first-of-type .input:focus {
+  background: var(--bg-input);
+  border-color: var(--accent-light);
+  box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.15);
+}
+.input--odds {
+  background: rgba(251, 191, 36, 0.05);
+}
+
+/* Primary action */
+.btn-analyze {
+  background: var(--accent);
+  border-radius: 12px;
+  box-shadow: none;
+  transition-property: background-color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+.btn-analyze::before {
+  display: none;
+}
+.btn-analyze:hover {
+  transform: none;
+  box-shadow: none;
+  background: #0e7490;
+}
+.btn-analyze:active:not(:disabled) {
+  transform: none;
+  scale: 0.96;
+}
+.btn-preset,
+.btn-load,
+.btn-copy-analysis,
+.btn-history-action {
+  transition-property: color, background-color, border-color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+.btn-preset:hover,
+.btn-load:hover,
+.btn-history:hover {
+  transform: none;
+}
+.btn-load:hover {
+  box-shadow: none;
+}
+
+/* Tables / lists */
+.table tbody tr:hover td,
+.table--history tr:hover td {
+  background: rgba(34, 211, 238, 0.05);
+}
+.table,
+.table--history td,
+.stat-val {
+  font-variant-numeric: tabular-nums;
+}
+.analytics-item:hover {
+  transform: none;
+}
+.llm-body code {
+  background: rgba(34, 211, 238, 0.1);
+  border-color: rgba(34, 211, 238, 0.2);
+  color: #67e8f9;
+}
+
+/* Modal: no overshoot, short fade */
+.modal__content {
+  background: var(--bg-elevated);
+  animation: modalScale 200ms ease-out;
+  overscroll-behavior: contain;
+}
+@keyframes modalScale {
+  from {
+    transform: translateY(8px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.modal__close:hover {
+  transform: none;
+}
+.tab-btn.active {
+  background: rgba(34, 211, 238, 0.06);
+}
+
+/* Panel entrance: opacity only on switch (high-frequency) */
+.panel--active {
+  animation: modalFadeIn 150ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .modal__content {
+    animation: modalFadeIn 150ms ease-out;
+  }
+}
+
+/* ── App navigation (shared by every page) ────────────────────── */
+:root {
+  --app-nav-h: 52px;
+}
+.app-nav {
+  position: sticky;
+  top: 0;
+  z-index: 200;
+  height: var(--app-nav-h);
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  padding: 0 1.5rem;
+  background: rgba(7, 10, 16, 0.9);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--border);
+}
+.app-nav__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 800;
+  font-size: 1.05rem;
+  letter-spacing: -0.01em;
+  color: var(--text-primary);
+  text-decoration: none;
+  flex: none;
+}
+.app-nav__links {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  padding: 4px;
+}
+.app-nav__links a {
+  flex: none;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-decoration: none;
+  padding: 0.4rem 0.8rem;
+  border-radius: 10px;
+  white-space: nowrap;
+  transition-property: color, background-color, scale;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+  -webkit-tap-highlight-color: transparent;
+}
+.app-nav__links a:active {
+  scale: 0.96;
+}
+.app-nav__links a.is-active {
+  color: var(--accent-light);
+  background: rgba(34, 211, 238, 0.12);
+}
+@media (hover: hover) {
+  .app-nav__links a:not(.is-active):hover {
+    color: var(--text-primary);
+    background: rgba(148, 163, 184, 0.08);
+  }
+}
+/* La barra reemplaza al encabezado grande de cada página */
+.app-nav + .header {
+  display: none;
+}
+.tabs {
+  top: var(--app-nav-h);
+}
+@media (max-width: 640px) {
+  .app-nav {
+    padding: 0 0.75rem;
+    gap: 0.5rem;
+  }
+  .app-nav__brand span {
+    display: none;
   }
 }

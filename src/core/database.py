@@ -230,6 +230,19 @@ def init_db() -> None:
                     conn.execute(text(f"ALTER TABLE teams ADD COLUMN {col} {dtype}"))
                 except Exception as e:
                     print(f"DB migration warning for teams.{col}: {e}")
+        for col, dtype in (("slug", "VARCHAR(200)"), ("category", "VARCHAR(100)"),
+                           ("country_code", "VARCHAR(3)"), ("tier", "INTEGER"),
+                           ("user_count", "INTEGER"), ("primary_color", "VARCHAR(9)"),
+                           ("secondary_color", "VARCHAR(9)"), ("logo_id", "INTEGER"),
+                           ("season_id", "VARCHAR(30)"), ("season_name", "VARCHAR(200)"),
+                           ("season_year", "VARCHAR(20)"),
+                           ("active", "BOOLEAN NOT NULL DEFAULT 1"), ("synced_at", "DATETIME"),
+                           ("aliases", "TEXT")):
+            if not _column_exists(conn, "competitions", col):
+                try:
+                    conn.execute(text(f"ALTER TABLE competitions ADD COLUMN {col} {dtype}"))
+                except Exception as e:
+                    print(f"DB migration warning for competitions.{col}: {e}")
         # ── Temporada desnormalizada: backfill único al crear las columnas ──
         _season_new = False
         for col in ("season_id", "season_year", "season_label"):
@@ -244,8 +257,19 @@ def init_db() -> None:
                 "season_label = json_extract(payload, '$.season')"
             ))
             print("DB backfill: season_id/season_year/season_label desde payload.")
+        if not _column_exists(conn, "analysis_history", "stage"):
+            conn.execute(text("ALTER TABLE analysis_history ADD COLUMN stage VARCHAR(50)"))
+            conn.execute(text(
+                "UPDATE analysis_history SET stage = CASE "
+                "WHEN competition LIKE '%, Apertura' THEN 'Apertura' "
+                "WHEN competition LIKE '%, Clausura' THEN 'Clausura' END "
+                "WHERE competition LIKE '%, Apertura' OR competition LIKE '%, Clausura'"
+            ))
         try:
-            from src.core.entity_resolver import backfill_entity_ids
+            from src.core.entity_resolver import backfill_entity_ids, consolidate_competitions
+            n = consolidate_competitions(conn)
+            if n:
+                print(f"DB consolidate: {n} competencias unidas (torneos/alias).")
             n = backfill_entity_ids(conn)
             if n:
                 print(f"DB backfill: {n} filas con competition_id/home_team_id/away_team_id.")

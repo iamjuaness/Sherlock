@@ -1,12 +1,57 @@
 // Sherlock - Main Dashboard script
 let globalStatsData = null;
+let adminSummary = null; // /api/v1/admin/dashboard/summary (KPIs, Brier, CLV, calibración)
+let adminAnomalies = null; // /api/v1/admin/stats/anomalies
 let activeCategory = "global"; // 'global', 'professional', 'underdog'
+let firstRenderDone = false;
 
 // Chart instances
 let marketChartInstance = null;
 let oddsChartInstance = null;
 let edgeChartInstance = null;
+let confChartInstance = null;
+let calibChartInstance = null;
 let dailyProfitChartInstance = null;
+
+const PALETTE = {
+  accent: "#22d3ee",
+  pos: "#34d399",
+  neg: "#fb7185",
+  warn: "#fbbf24",
+  info: "#818cf8",
+  text: "#e6edf6",
+  text2: "#9aa7b8",
+  grid: "rgba(148, 163, 184, 0.1)",
+};
+const REDUCED_MOTION =
+  window.matchMedia &&
+  window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+function esc(v) {
+  return String(v ?? "").replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
+        c
+      ],
+  );
+}
+const $ = (id) => document.getElementById(id);
+const setText = (id, txt) => {
+  const el = $(id);
+  if (el) el.textContent = txt;
+  return el;
+};
+const signed = (v, d = 2, suffix = "") =>
+  `${v > 0 ? "+" : ""}${Number(v).toFixed(d)}${suffix}`;
+const tone = (v) => (v > 0 ? "sx-pos" : v < 0 ? "sx-neg" : "");
+
+function setTone(el, v) {
+  if (!el) return;
+  el.classList.remove("sx-pos", "sx-neg", "sx-warn");
+  const t = tone(v);
+  if (t) el.classList.add(t);
+}
 
 // Initialize on DOM load
 document.addEventListener("DOMContentLoaded", () => {
@@ -16,7 +61,7 @@ document.addEventListener("DOMContentLoaded", () => {
   );
 
   // Sync checkbox with localStorage
-  const useStakeCheck = document.getElementById("dashboard-use-stake");
+  const useStakeCheck = $("dashboard-use-stake");
   if (useStakeCheck) {
     const saved = localStorage.getItem("use_stake_system");
     if (saved !== null) {
@@ -26,12 +71,8 @@ document.addEventListener("DOMContentLoaded", () => {
     }
   }
 
-  const useGeneralCheck = document.getElementById(
-    "dashboard-use-general-stats",
-  );
-  const generalStatsDate = document.getElementById(
-    "dashboard-general-stats-date",
-  );
+  const useGeneralCheck = $("dashboard-use-general-stats");
+  const generalStatsDate = $("dashboard-general-stats-date");
   if (useGeneralCheck) {
     const savedGen = localStorage.getItem("use_general_stats_system");
     if (savedGen !== null) {
@@ -59,125 +100,109 @@ document.addEventListener("DOMContentLoaded", () => {
   startResultPolling();
 
   // Setup Simulator button
-  document
-    .getElementById("btn-simulate")
-    .addEventListener("click", updateCapitalSimulator);
+  const simBtn = $("btn-simulate");
+  if (simBtn) simBtn.addEventListener("click", updateCapitalSimulator);
 });
 
-// Helper to get selected date range parameters for dashboard
-function getDashboardDateParams() {
-  const range = document.getElementById("dashboard-date-range")
-    ? document.getElementById("dashboard-date-range").value
-    : "all";
+// Helper to get selected date range parameters for dashboard.
+// Returns { all: "?date_from=..&use_stake=..", range: "?date_from=..&date_to=.." }
+function buildDashboardParams() {
+  const rangeEl = $("dashboard-date-range");
+  const range = rangeEl ? rangeEl.value : "all";
   let dateFrom = "";
   let dateTo = "";
 
-  // Helper que formatea una fecha local como YYYY-MM-DDTHH:mm:ss
   function formatLocalDateTime(date, time = "00:00:00") {
     const y = date.getFullYear();
     const m = String(date.getMonth() + 1).padStart(2, "0");
     const d = String(date.getDate()).padStart(2, "0");
     return `${y}-${m}-${d}T${time}`;
   }
+  const daysAgo = (n) => {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return formatLocalDateTime(d, "00:00:00");
+  };
 
   if (range === "today") {
     const today = new Date();
     dateFrom = formatLocalDateTime(today, "00:00:00");
     dateTo = formatLocalDateTime(today, "23:59:59");
   } else if (range === "7days") {
-    const d = new Date();
-    d.setDate(d.getDate() - 7);
-    dateFrom = formatLocalDateTime(d, "00:00:00");
+    dateFrom = daysAgo(7);
   } else if (range === "3days") {
-    const d = new Date();
-    d.setDate(d.getDate() - 3);
-    dateFrom = formatLocalDateTime(d, "00:00:00");
+    dateFrom = daysAgo(3);
   } else if (range === "30days") {
-    const d = new Date();
-    d.setDate(d.getDate() - 30);
-    dateFrom = formatLocalDateTime(d, "00:00:00");
+    dateFrom = daysAgo(30);
   } else if (range === "custom") {
-    const fromVal = document.getElementById("dashboard-date-from")
-      ? document.getElementById("dashboard-date-from").value
-      : "";
-    const toVal = document.getElementById("dashboard-date-to")
-      ? document.getElementById("dashboard-date-to").value
-      : "";
+    const fromVal = $("dashboard-date-from")?.value || "";
+    const toVal = $("dashboard-date-to")?.value || "";
     if (fromVal) dateFrom = `${fromVal}T00:00:00`;
     if (toVal) dateTo = `${toVal}T23:59:59`;
   }
 
-  let params = [];
-  if (dateFrom) params.push(`date_from=${encodeURIComponent(dateFrom)}`);
-  if (dateTo) params.push(`date_to=${encodeURIComponent(dateTo)}`);
+  const rangeParams = [];
+  if (dateFrom) rangeParams.push(`date_from=${encodeURIComponent(dateFrom)}`);
+  if (dateTo) rangeParams.push(`date_to=${encodeURIComponent(dateTo)}`);
 
-  const useStakeCheck = document.getElementById("dashboard-use-stake");
-  if (useStakeCheck && useStakeCheck.checked) {
-    params.push("use_stake=true");
-  }
+  const allParams = [...rangeParams];
+  if ($("dashboard-use-stake")?.checked) allParams.push("use_stake=true");
+  if ($("dashboard-use-general-stats")?.checked)
+    allParams.push("use_general_stats=true");
 
-  const useGeneralCheck = document.getElementById(
-    "dashboard-use-general-stats",
-  );
-  if (useGeneralCheck && useGeneralCheck.checked) {
-    params.push("use_general_stats=true");
-  }
+  const q = (arr) => (arr.length ? "?" + arr.join("&") : "");
+  return { all: q(allParams), range: q(rangeParams) };
+}
 
-  return params.length > 0 ? "?" + params.join("&") : "";
+function getDashboardDateParams() {
+  return buildDashboardParams().all;
 }
 
 function handleDashboardDateRangeChange() {
-  const range = document.getElementById("dashboard-date-range").value;
-  const customInputs = document.getElementById("dashboard-custom-date-inputs");
+  const range = $("dashboard-date-range").value;
+  const customInputs = $("dashboard-custom-date-inputs");
   if (customInputs) {
-    customInputs.style.display = range === "custom" ? "flex" : "none";
+    customInputs.style.display = range === "custom" ? "inline-flex" : "none";
   }
   reloadDashboardStats();
 }
 
 async function reloadDashboardStats() {
-  const useStakeCheck = document.getElementById("dashboard-use-stake");
+  const useStakeCheck = $("dashboard-use-stake");
   if (useStakeCheck) {
     localStorage.setItem("use_stake_system", useStakeCheck.checked);
   }
-  const useGeneralCheck = document.getElementById(
-    "dashboard-use-general-stats",
-  );
+  const useGeneralCheck = $("dashboard-use-general-stats");
   if (useGeneralCheck) {
     localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
   }
   await fetchGlobalStats();
 }
 
+function showLoader(message) {
+  const loader = $("loader");
+  const content = $("dashboard-content");
+  if (loader) {
+    loader.style.display = "flex";
+    loader.innerHTML = `<div class="spinner"></div><span>${esc(message)}</span>`;
+  }
+  if (content) content.style.display = "none";
+}
+
 async function triggerRecalculateAndFetch() {
-  const useGeneralCheck = document.getElementById(
-    "dashboard-use-general-stats",
-  );
-  const generalStatsDate = document.getElementById(
-    "dashboard-general-stats-date",
-  );
+  const useGeneralCheck = $("dashboard-use-general-stats");
+  const generalStatsDate = $("dashboard-general-stats-date");
   const useGeneral = useGeneralCheck ? useGeneralCheck.checked : false;
   const thresholdDate = generalStatsDate
     ? generalStatsDate.value
     : "2026-01-01";
 
-  const loader = document.getElementById("loader");
-  const content = document.getElementById("dashboard-content");
-  if (loader) {
-    loader.style.display = "flex";
-    loader.innerHTML =
-      '<div class="spinner"></div><span>Recalculando acierto y rentabilidad de partidos...</span>';
-  }
-  if (content) {
-    content.style.display = "none";
-  }
+  showLoader("Recalculando acierto y rentabilidad de partidos...");
 
   try {
     const res = await fetch(
       `/api/v1/analysis/recalculate-all?use_general_stats=${useGeneral}&threshold_date=${thresholdDate}&parallel=true`,
-      {
-        method: "POST",
-      },
+      { method: "POST" },
     );
     if (!res.ok) throw new Error("Error al recalcular");
   } catch (error) {
@@ -188,16 +213,7 @@ async function triggerRecalculateAndFetch() {
 }
 
 async function triggerApplyBlacklistAndFetch() {
-  const loader = document.getElementById("loader");
-  const content = document.getElementById("dashboard-content");
-  if (loader) {
-    loader.style.display = "flex";
-    loader.innerHTML =
-      '<div class="spinner"></div><span>Aplicando blacklist actual a picks existentes...</span>';
-  }
-  if (content) {
-    content.style.display = "none";
-  }
+  showLoader("Aplicando blacklist actual a picks existentes...");
 
   try {
     const res = await fetch("/api/v1/analysis/apply-blacklist", {
@@ -215,12 +231,8 @@ async function triggerApplyBlacklistAndFetch() {
 }
 
 function handleDashboardGeneralStatsChange() {
-  const useGeneralCheck = document.getElementById(
-    "dashboard-use-general-stats",
-  );
-  const generalStatsDate = document.getElementById(
-    "dashboard-general-stats-date",
-  );
+  const useGeneralCheck = $("dashboard-use-general-stats");
+  const generalStatsDate = $("dashboard-general-stats-date");
   if (useGeneralCheck) {
     localStorage.setItem("use_general_stats_system", useGeneralCheck.checked);
     if (generalStatsDate) {
@@ -233,9 +245,7 @@ function handleDashboardGeneralStatsChange() {
 }
 
 function handleDashboardGeneralStatsDateChange() {
-  const generalStatsDate = document.getElementById(
-    "dashboard-general-stats-date",
-  );
+  const generalStatsDate = $("dashboard-general-stats-date");
   if (generalStatsDate) {
     localStorage.setItem(
       "general_stats_threshold_date",
@@ -245,24 +255,48 @@ function handleDashboardGeneralStatsDateChange() {
   triggerRecalculateAndFetch();
 }
 
-// Fetch stats from backend
+// Fetch stats from backend. Core stats are required; admin summary and
+// anomalies are optional enrichments and never block the dashboard.
+let fetchSeq = 0;
 async function fetchGlobalStats() {
+  const seq = ++fetchSeq;
   try {
-    const queryParams = getDashboardDateParams();
-    const res = await fetch(`/api/v1/stats/global${queryParams}`);
-    if (!res.ok) throw new Error("Error al cargar estadísticas");
-    globalStatsData = await res.json();
+    const p = buildDashboardParams();
+    // Enrichments are slow (~20s each): start them now, render when they land.
+    const enrich = (url, assign) =>
+      fetch(url)
+        .then((r) => (r.ok ? r.json() : null))
+        .catch(() => null)
+        .then((data) => {
+          if (seq !== fetchSeq) return;
+          assign(data);
+          if (globalStatsData) renderDashboard();
+        });
+    adminSummary = undefined; // undefined = cargando, null = falló
+    adminAnomalies = undefined;
+    enrich(`/api/v1/admin/dashboard/summary${p.range}`, (d) => (adminSummary = d));
+    enrich(`/api/v1/admin/stats/anomalies`, (d) => (adminAnomalies = d));
 
-    // Hide loader, show content
-    document.getElementById("loader").style.display = "none";
-    document.getElementById("dashboard-content").style.display = "block";
+    const statsRes = await fetch(`/api/v1/stats/global${p.all}`);
+    if (!statsRes.ok) throw new Error("Error al cargar estadísticas");
+    const data = await statsRes.json();
+    if (seq !== fetchSeq) return; // a newer request superseded this one
+    globalStatsData = data;
+
+    $("loader").style.display = "none";
+    $("dashboard-content").style.display = "block";
 
     renderDashboard();
+    if (!firstRenderDone) {
+      firstRenderDone = true;
+      // Entrance stagger runs once; later re-renders must not replay it.
+      setTimeout(() => $("sx-body")?.classList.remove("sx-enter"), 1200);
+    }
   } catch (error) {
     console.error(error);
-    const loader = document.getElementById("loader");
+    const loader = $("loader");
     if (loader) {
-      loader.innerHTML = `<span style="color: var(--red);">❌ Error al cargar estadísticas. Por favor intenta de nuevo.</span>`;
+      loader.innerHTML = `<span class="sx-neg">❌ Error al cargar estadísticas. Por favor intenta de nuevo.</span>`;
     }
   }
 }
@@ -270,571 +304,711 @@ async function fetchGlobalStats() {
 // Switch between tabs
 function switchCategory(category) {
   activeCategory = category;
-
-  // Update active tab styles
-  document.querySelectorAll(".tab-link").forEach((btn) => {
-    btn.classList.remove("tab-link--active");
+  document.querySelectorAll(".tab-link[data-cat]").forEach((btn) => {
+    btn.classList.toggle("tab-link--active", btn.dataset.cat === category);
   });
-
-  // Find which tab button was clicked
-  const tabIndex = {
-    global: 0,
-    professional: 1,
-    underdog: 2,
-  }[category];
-
-  document
-    .querySelectorAll(".tab-link")
-    [tabIndex].classList.add("tab-link--active");
-
   renderDashboard();
+}
+
+function currentCategoryStats() {
+  if (!globalStatsData) return null;
+  return activeCategory === "global"
+    ? globalStatsData
+    : globalStatsData.category_stats?.[activeCategory] || null;
 }
 
 // Render/Update all dashboard components
 function renderDashboard() {
-  if (!globalStatsData) return;
-
-  // Get relevant dataset
-  let currentStats = null;
-  if (activeCategory === "global") {
-    currentStats = globalStatsData;
-  } else {
-    currentStats = globalStatsData.category_stats?.[activeCategory];
-  }
-
+  const currentStats = currentCategoryStats();
   if (!currentStats) return;
+  const isGlobal = activeCategory === "global";
 
-  // 1. Fill Card Stats
-  if (activeCategory === "global") {
-    document.getElementById("stat-total-matches").textContent =
-      globalStatsData.total_matches || "0";
-    document.getElementById("stat-resolved-matches").textContent =
-      `${globalStatsData.total_matches_with_results || 0} resueltos`;
+  renderDataHealth(currentStats, isGlobal);
+  renderPerformance(currentStats, isGlobal);
 
-    document.getElementById("stat-exact-scores").textContent =
-      `${globalStatsData.total_exact_scores_hits || 0}`;
-    const exactRate =
-      globalStatsData.total_exact_scores_predicted > 0
-        ? (
-            (globalStatsData.total_exact_scores_hits /
-              globalStatsData.total_exact_scores_predicted) *
-            100
-          ).toFixed(1)
-        : "0.0";
-    document.getElementById("stat-exact-ratio").textContent =
-      `${exactRate}% (${globalStatsData.total_exact_scores_predicted || 0} predichos)`;
+  renderRankings(currentStats.best_leagues, "list-best-leagues", "🏆");
+  renderRankings(currentStats.best_teams, "list-best-teams", "⚽");
+  renderWorstMarkets(currentStats.worst_markets);
+  renderSports();
+  renderAnomalies();
+
+  renderMarketChart(currentStats.best_markets);
+  renderBucketsChart(currentStats.odds_buckets, currentStats.edge_buckets);
+  renderConfidenceChart(currentStats.confidence_buckets);
+  renderCalibrationChart();
+  renderDailyProfitChart(currentStats.daily_profit_series || []);
+
+  updateCapitalSimulator();
+}
+
+// ── Salud de los datos ─────────────────────────────────────────────
+function renderDataHealth(cur, isGlobal) {
+  const g = globalStatsData;
+  const k = adminSummary?.kpis;
+  const q = adminSummary?.quality;
+  const scopeNote = " · todos los picks calculados";
+
+  if (isGlobal) {
+    const total = g.total_matches || 0;
+    const resolved = g.total_matches_with_results || 0;
+    const cov = total > 0 ? (resolved / total) * 100 : 0;
+    setText("stat-total-matches", String(total));
+    setText("stat-resolved-matches", `${resolved} con resultado`);
+    $("bar-coverage").style.width = `${cov.toFixed(1)}%`;
+    setText(
+      "health-coverage-note",
+      `Cobertura de resultados: ${cov.toFixed(1)}% · ${total - resolved} sin resultado`,
+    );
+
+    const exactPred = g.total_exact_scores_predicted || 0;
+    setText("stat-exact-scores", String(g.total_exact_scores_hits || 0));
+    setText(
+      "stat-exact-ratio",
+      `${exactPred > 0 ? ((g.total_exact_scores_hits / exactPred) * 100).toFixed(1) : "0.0"}% (${exactPred} predichos)`,
+    );
   } else {
-    // For specific categories, we don't have total_matches directly, so we adapt card labels
-    document.getElementById("stat-total-matches").textContent = "-";
-    document.getElementById("stat-resolved-matches").textContent =
-      "N/A en esta categoría";
-
-    document.getElementById("stat-exact-scores").textContent = "-";
-    document.getElementById("stat-exact-ratio").textContent =
-      "Solo disponible en Global";
+    setText("stat-total-matches", "-");
+    setText("stat-resolved-matches", "N/A en esta categoría");
+    $("bar-coverage").style.width = "0%";
+    setText("health-coverage-note", "Cobertura solo disponible en Global");
+    setText("stat-exact-scores", "-");
+    setText("stat-exact-ratio", "Solo disponible en Global");
   }
 
-  // Common stats cards
-  document.getElementById("stat-total-picks").textContent =
-    currentStats.total_picks || "0";
-  document.getElementById("stat-pending-picks").textContent =
-    `${currentStats.total_pending || 0} pendientes`;
+  setText("stat-total-picks", String(cur.total_picks || 0));
+  setText("stat-pending-picks", `${cur.total_pending || 0} pendientes`);
 
-  const accuracy =
-    (activeCategory === "global"
-      ? globalStatsData.global_accuracy
-      : currentStats.accuracy) || 0;
-  document.getElementById("stat-accuracy").textContent =
-    `${accuracy.toFixed(1)}%`;
+  // Outcome distribution bar (W / L / push / void / pending)
+  // Same population as the "Picks evaluados" card (counted picks only).
+  const hits = cur.total_hits || 0;
+  const parts = [
+    ["Ganados", hits, PALETTE.pos],
+    ["Perdidos", Math.max((cur.total_picks || 0) - hits, 0), PALETTE.neg],
+    ["Pendientes", cur.total_pending || 0, PALETTE.warn],
+  ];
+  const sum = parts.reduce((s, p) => s + (p[1] || 0), 0);
+  $("bar-outcomes").innerHTML = parts
+    .filter((p) => p[1] > 0)
+    .map(
+      (p) =>
+        `<span title="${esc(p[0])}: ${p[1]}" style="width:${((p[1] / sum) * 100).toFixed(2)}%;background:${p[2]}"></span>`,
+    )
+    .join("");
+  $("legend-outcomes").innerHTML = parts
+    .filter((p) => p[1] > 0)
+    .map(
+      (p) =>
+        `<span><i class="sx-dot" style="background:${p[2]}"></i>${esc(p[0])} ${p[1]}</span>`,
+    )
+    .join("");
 
-  const totalResolvedPicks = currentStats.total_picks || 0;
-  const totalHits = currentStats.total_hits || 0;
-  document.getElementById("stat-hits-ratio").textContent =
-    `${totalHits} hits de ${totalResolvedPicks}`;
+  // Anomalies
+  const anomEl = $("health-anomalies");
+  if (adminAnomalies) {
+    const n = adminAnomalies.total_anomalies || 0;
+    const high = (adminAnomalies.anomalies || []).filter(
+      (a) => a.severity === "high",
+    ).length;
+    anomEl.textContent = String(n);
+    anomEl.classList.remove("sx-pos", "sx-neg", "sx-warn");
+    anomEl.classList.add(n === 0 ? "sx-pos" : high > 0 ? "sx-neg" : "sx-warn");
+    setText(
+      "health-anomalies-sub",
+      n === 0 ? "Sin inconsistencias" : `${high} de severidad alta`,
+    );
+  } else {
+    anomEl.textContent = "-";
+    setText(
+      "health-anomalies-sub",
+      adminAnomalies === undefined ? "Calculando..." : "No disponible",
+    );
+  }
 
-  document.getElementById("stat-avg-odds").textContent =
-    `@${(currentStats.avg_odds || 0).toFixed(2)}`;
-  document.getElementById("stat-avg-winning-odds").textContent =
-    `Ganadoras: @${(currentStats.avg_winning_odds || 0).toFixed(2)}`;
+  // Model quality
+  const brierEl = $("health-brier");
+  if (q && q.brier_score != null) {
+    brierEl.textContent = q.brier_score.toFixed(4);
+    brierEl.classList.remove("sx-pos", "sx-neg", "sx-warn");
+    brierEl.classList.add(
+      q.brier_score < 0.22 ? "sx-pos" : q.brier_score < 0.25 ? "sx-warn" : "sx-neg",
+    );
+    setText("health-brier-sub", `Menor es mejor (0.25 = azar)${scopeNote}`);
+  } else {
+    brierEl.textContent = "-";
+    brierEl.classList.remove("sx-pos", "sx-neg", "sx-warn");
+    setText(
+      "health-brier-sub",
+      adminSummary === undefined ? "Calculando..." : "Sin picks resueltos",
+    );
+  }
 
-  // Total profit stats
-  const totalProfit =
-    (activeCategory === "global"
-      ? globalStatsData.total_profit
-      : currentStats.total_profit) || 0;
-  const profitEl = document.getElementById("stat-total-profit");
-  profitEl.textContent = `${totalProfit > 0 ? "+" : ""}${totalProfit.toFixed(2)} u`;
-  profitEl.style.color =
-    totalProfit > 0
-      ? "var(--green)"
-      : totalProfit < 0
-        ? "var(--red)"
-        : "var(--text-primary)";
+  const gapEl = $("health-model-gap");
+  if (q) {
+    gapEl.textContent = signed(q.actual_vs_expected_diff, 1, " pp");
+    setTone(gapEl, q.actual_vs_expected_diff);
+    setText(
+      "health-model-gap-sub",
+      `Modelo ${q.avg_model_prob.toFixed(1)}% vs. real ${(q.avg_model_prob + q.actual_vs_expected_diff).toFixed(1)}%${scopeNote}`,
+    );
+  } else {
+    gapEl.textContent = "-";
+    setTone(gapEl, 0);
+    setText(
+      "health-model-gap-sub",
+      adminSummary === undefined ? "Calculando..." : "Sin datos del modelo",
+    );
+  }
 
-  const roi =
-    (activeCategory === "global" ? globalStatsData.roi : currentStats.roi) ?? 0;
-  document.getElementById("stat-roi").textContent =
-    `ROI (flat stake): ${Number(roi).toFixed(1)}%`;
+  const clvEl = $("health-clv");
+  if (k && k.avg_clv != null) {
+    clvEl.textContent = signed(k.avg_clv, 2, "%");
+    setTone(clvEl, k.avg_clv);
+  } else {
+    clvEl.textContent = "-";
+    setTone(clvEl, 0);
+  }
+}
 
-  // Category breakdown display logic
-  const breakdownEl = document.getElementById("category-profit-breakdown");
+// ── Rendimiento ────────────────────────────────────────────────────
+function renderPerformance(cur, isGlobal) {
+  const accuracy = (isGlobal ? globalStatsData.global_accuracy : cur.accuracy) || 0;
+  setText("stat-accuracy", `${accuracy.toFixed(1)}%`);
+  setText(
+    "stat-hits-ratio",
+    `${cur.total_hits || 0} hits de ${cur.total_picks || 0}`,
+  );
+
+  const avgOdds = cur.avg_odds || 0;
+  setText("stat-avg-odds", `@${avgOdds.toFixed(2)}`);
+  setText(
+    "stat-avg-winning-odds",
+    `Ganadoras: @${(cur.avg_winning_odds || 0).toFixed(2)}`,
+  );
+
+  // Break-even vs real hit rate: a hit rate under break-even loses money
+  const be = avgOdds > 1 ? 100 / avgOdds : 0;
+  const beEl = $("kpi-breakeven");
+  if (beEl) {
+    beEl.textContent =
+      be > 0
+        ? `Break-even ${be.toFixed(1)}% · ${signed(accuracy - be, 1, " pp")}`
+        : "Break-even: -";
+    setTone(beEl, be > 0 ? accuracy - be : 0);
+  }
+
+  const totalProfit = cur.total_profit || 0;
+  const profitEl = $("stat-total-profit");
+  profitEl.textContent = `${signed(totalProfit)} u`;
+  setTone(profitEl, totalProfit);
+
+  const roi = cur.roi ?? 0;
+  setText("stat-roi", `ROI (flat stake): ${Number(roi).toFixed(1)}%`);
+
+  const breakdownEl = $("category-profit-breakdown");
   if (breakdownEl) {
-    if (activeCategory === "global" && globalStatsData.category_stats) {
+    if (isGlobal && globalStatsData.category_stats) {
       breakdownEl.style.display = "block";
-      const proProf =
-        globalStatsData.category_stats.professional?.total_profit || 0;
-      const undProf =
-        globalStatsData.category_stats.underdog?.total_profit || 0;
-      const hcProf =
-        globalStatsData.category_stats.high_confidence?.total_profit || 0;
-
-      const setBreakdownStyle = (el, val) => {
-        el.textContent = `${val > 0 ? "+" : ""}${val.toFixed(2)} u`;
-        el.style.color =
-          val > 0
-            ? "var(--green)"
-            : val < 0
-              ? "var(--red)"
-              : "var(--text-muted)";
+      const setB = (id, val) => {
+        const el = $(id);
+        el.textContent = `${signed(val)} u`;
+        setTone(el, val);
       };
-
-      setBreakdownStyle(document.getElementById("prof-breakdown-pro"), proProf);
-      setBreakdownStyle(document.getElementById("prof-breakdown-und"), undProf);
+      setB(
+        "prof-breakdown-pro",
+        globalStatsData.category_stats.professional?.total_profit || 0,
+      );
+      setB(
+        "prof-breakdown-und",
+        globalStatsData.category_stats.underdog?.total_profit || 0,
+      );
     } else {
       breakdownEl.style.display = "none";
     }
   }
 
-  // 2. Render Rankings (Ligas y Equipos)
-  renderRankings(currentStats.best_leagues, "list-best-leagues", "🏆");
-  renderRankings(currentStats.best_teams, "list-best-teams", "⚽");
+  // Drawdown & best/worst day from the cumulative series
+  const series = cur.daily_profit_series || [];
+  let peak = 0;
+  let maxDd = 0;
+  let best = null;
+  let worst = null;
+  for (const d of series) {
+    const cum = Number(d.cumulative) || 0;
+    peak = Math.max(peak, cum);
+    maxDd = Math.max(maxDd, peak - cum);
+    const day = Number(d.daily) || 0;
+    if (!best || day > best.v) best = { v: day, date: d.date };
+    if (!worst || day < worst.v) worst = { v: day, date: d.date };
+  }
+  const ddEl = $("kpi-drawdown");
+  ddEl.textContent = series.length ? `-${maxDd.toFixed(2)} u` : "-";
+  ddEl.classList.remove("sx-pos", "sx-neg", "sx-warn");
+  if (series.length && maxDd > 0) ddEl.classList.add("sx-neg");
 
-  // 3. Render Charts
-  renderMarketChart(currentStats.best_markets);
-  renderBucketsChart(currentStats.odds_buckets, currentStats.edge_buckets);
+  const bestEl = $("kpi-bestday");
+  if (best && worst) {
+    bestEl.innerHTML = `<span class="${tone(best.v)}">${signed(best.v)}</span> / <span class="${tone(worst.v)}">${signed(worst.v)}</span>`;
+  } else {
+    bestEl.textContent = "-";
+  }
+  setText("kpi-days-sub", `Días con picks resueltos: ${series.length}`);
 
-  // Daily profit chart
-  const dailySeries =
-    activeCategory === "global"
-      ? globalStatsData.daily_profit_series
-      : currentStats.daily_profit_series || [];
-  renderDailyProfitChart(dailySeries);
-
-  // 4. Update simulator if there's data
-  updateCapitalSimulator();
+  const k = adminSummary?.kpis;
+  if (k && isGlobal) {
+    const edge = adminSummary.quality.avg_edge ?? 0;
+    const edgeEl = setText("kpi-edge", `${edge.toFixed(2)}%`);
+    edgeEl.classList.toggle("sx-warn", edge > 50); // >50% medio = outliers en los datos
+    setText(
+      "kpi-kelly",
+      edge > 50
+        ? "Atípico: hay edges extremos, revisa anomalías"
+        : `Kelly: ${(k.avg_kelly * 100).toFixed(2)}% del bankroll`,
+    );
+  } else {
+    setText("kpi-edge", "-");
+    setText("kpi-kelly", "Solo disponible en Global");
+  }
 }
 
-// Render rank lists (leagues/teams)
-function renderRankings(items, containerId, emoji) {
-  const container = document.getElementById(containerId);
-  if (!container) return;
+// ── Listas ─────────────────────────────────────────────────────────
+function rowHtml(name, meta, profit, roiVal) {
+  const cls = profit >= 0 ? "sx-pos" : "sx-neg";
+  return `
+    <div class="sx-row">
+      <div class="sx-row__main">
+        <div class="sx-row__name" title="${esc(name)}">${esc(name)}</div>
+        <div class="sx-row__meta">${meta}</div>
+      </div>
+      <div class="sx-row__val ${cls}">${signed(profit)} u<small>${signed(roiVal, 1, "%")}</small></div>
+    </div>`;
+}
 
+function itemRoi(item) {
+  return item.roi !== undefined
+    ? item.roi
+    : item.picks > 0
+      ? (item.profit / item.picks) * 100
+      : 0;
+}
+
+function renderRankings(items, containerId, emoji) {
+  const container = $(containerId);
+  if (!container) return;
   if (!items || items.length === 0) {
-    container.innerHTML = `<div style="color: var(--text-muted); font-size: 0.85rem; padding: 1rem; text-align: center;">Sin datos de rendimiento para esta categoría</div>`;
+    container.innerHTML = `<div class="sx-none">Sin datos de rendimiento para esta categoría</div>`;
     return;
   }
-
-  // Sort by profit desc, take top 10
   const topItems = [...items].sort((a, b) => b.profit - a.profit).slice(0, 10);
-
   container.innerHTML = topItems
-    .map((item) => {
-      const profitClass =
-        item.profit >= 0 ? "profit--positive" : "profit--negative";
-      const profitSign = item.profit >= 0 ? "+" : "";
-      const roiVal =
-        item.roi !== undefined
-          ? item.roi
-          : item.picks > 0
-            ? (item.profit / item.picks) * 100
-            : 0;
-      const roiSign = roiVal >= 0 ? "+" : "";
+    .map((item) =>
+      rowHtml(
+        `${emoji} ${item.name}`,
+        `${item.hits}/${item.picks} aciertos (${item.accuracy.toFixed(1)}%)`,
+        item.profit,
+        itemRoi(item),
+      ),
+    )
+    .join("");
+}
+
+function renderWorstMarkets(items) {
+  const container = $("list-worst-markets");
+  if (!container) return;
+  const list = (items || []).filter((m) => m.profit < 0).slice(0, 8);
+  if (!list.length) {
+    container.innerHTML = `<div class="sx-none">Sin mercados con pérdidas</div>`;
+    return;
+  }
+  container.innerHTML = list
+    .map((m) =>
+      rowHtml(
+        m.name,
+        `${m.hits}/${m.picks} aciertos (${m.accuracy.toFixed(1)}%)`,
+        m.profit,
+        itemRoi(m),
+      ),
+    )
+    .join("");
+}
+
+function renderSports() {
+  const container = $("list-sports");
+  if (!container) return;
+  const entries = Object.entries(globalStatsData?.sport_stats || {}).sort(
+    (a, b) => (b[1].picks || 0) - (a[1].picks || 0),
+  );
+  if (!entries.length) {
+    container.innerHTML = `<div class="sx-none">Sin datos por deporte</div>`;
+    return;
+  }
+  const maxPicks = Math.max(...entries.map((e) => e[1].picks || 0), 1);
+  container.innerHTML = entries
+    .map(([sport, s]) => {
+      const w = ((s.picks || 0) / maxPicks) * 100;
       return `
-      <div class="ranking-item">
-        <div class="ranking-item__info">
-          <span class="ranking-item__name">${emoji} ${item.name}</span>
-          <span class="ranking-item__stats">${item.hits}/${item.picks} aciertos (${item.accuracy.toFixed(1)}%)</span>
+      <div class="sx-row" style="display:block">
+        <div style="display:flex;justify-content:space-between;gap:.75rem">
+          <span class="sx-row__name">${esc(sport)}</span>
+          <span class="sx-row__val">${(s.accuracy || 0).toFixed(1)}%</span>
         </div>
-        <div class="ranking-item__profit ${profitClass}">
-          ${profitSign}${item.profit.toFixed(2)} u <span style="font-size: 0.8em; opacity: 0.85; margin-left: 2px;">(${roiSign}${roiVal.toFixed(1)}%)</span>
-        </div>
-      </div>
-    `;
+        <div class="sx-bar" style="height:6px"><span style="width:${w.toFixed(1)}%;background:${PALETTE.accent}"></span></div>
+        <div class="sx-row__meta" style="margin-top:.3rem">${s.hits || 0}/${s.picks || 0} aciertos</div>
+      </div>`;
     })
     .join("");
 }
 
-// Render Markets bar chart
-function renderMarketChart(bestMarkets) {
-  const ctx = document.getElementById("marketChart").getContext("2d");
-
-  if (marketChartInstance) {
-    marketChartInstance.destroy();
-  }
-
-  if (!bestMarkets || bestMarkets.length === 0) {
-    ctx.clearRect(0, 0, 400, 300);
+function renderAnomalies() {
+  const container = $("list-anomalies");
+  if (!container) return;
+  if (!adminAnomalies) {
+    container.innerHTML = `<div class="sx-none">${adminAnomalies === undefined ? "Analizando integridad de datos..." : "No se pudo consultar la integridad de datos"}</div>`;
+    setText("anomalies-hint", "");
     return;
   }
+  const items = adminAnomalies.anomalies || [];
+  setText("anomalies-hint", `${adminAnomalies.total_anomalies || 0} en total`);
+  if (!items.length) {
+    container.innerHTML = `<div class="sx-none sx-pos">✔ Sin anomalías detectadas</div>`;
+    return;
+  }
+  const order = { high: 0, medium: 1, low: 2 };
+  container.innerHTML = [...items]
+    .sort((a, b) => (order[a.severity] ?? 3) - (order[b.severity] ?? 3))
+    .slice(0, 30)
+    .map((a) => {
+      const sev = ["high", "medium", "low"].includes(a.severity)
+        ? a.severity
+        : "low";
+      return `
+      <div class="sx-row">
+        <div class="sx-row__main">
+          <div class="sx-row__name" title="${esc(a.match_title)}">${esc(a.match_title)}</div>
+          <div class="sx-row__meta">${esc(a.anomaly_type)} · ${esc(a.description)}</div>
+        </div>
+        <span class="sx-sev sx-sev--${sev}">${esc(sev)}</span>
+      </div>`;
+    })
+    .join("");
+}
 
-  // Sort by picks or profit
-  const sortedMarkets = [...bestMarkets].sort((a, b) => b.picks - a.picks);
-  const labels = sortedMarkets.map((m) => m.name);
-  const accuracyData = sortedMarkets.map((m) => m.accuracy);
-  const profitData = sortedMarkets.map((m) => m.profit);
+// ── Charts ─────────────────────────────────────────────────────────
+function setEmpty(wrapId, empty) {
+  const w = $(wrapId);
+  if (w) w.dataset.empty = empty ? "true" : "false";
+}
 
-  marketChartInstance = new Chart(ctx, {
+function baseOptions(extra = {}) {
+  return {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: REDUCED_MOTION ? false : { duration: 300 },
+    interaction: { mode: "index", intersect: false },
+    ...extra,
+  };
+}
+const tooltipStyle = {
+  backgroundColor: "#0a0e14",
+  titleColor: PALETTE.text,
+  bodyColor: PALETTE.text2,
+  borderColor: "rgba(148,163,184,0.2)",
+  borderWidth: 1,
+  padding: 10,
+  cornerRadius: 10,
+};
+const axisTicks = { color: PALETTE.text2, font: { family: "Inter", size: 11 } };
+const pctAxis = (extra = {}) => ({
+  min: 0,
+  max: 100,
+  grid: { color: PALETTE.grid },
+  border: { display: false },
+  ticks: { ...axisTicks, callback: (v) => v + "%" },
+  ...extra,
+});
+const catAxis = {
+  grid: { display: false },
+  border: { color: PALETTE.grid },
+  ticks: axisTicks,
+};
+
+function renderMarketChart(bestMarkets) {
+  if (marketChartInstance) marketChartInstance.destroy();
+  marketChartInstance = null;
+  const empty = !bestMarkets || bestMarkets.length === 0;
+  setEmpty("wrap-market", empty);
+  if (empty) return;
+
+  const sorted = [...bestMarkets].sort((a, b) => b.picks - a.picks);
+  const profitData = sorted.map((m) => m.profit);
+
+  marketChartInstance = new Chart($("marketChart").getContext("2d"), {
     type: "bar",
     data: {
-      labels: labels,
+      labels: sorted.map((m) => m.name),
       datasets: [
         {
           label: "Acierto (%)",
-          data: accuracyData,
-          backgroundColor: "rgba(99, 102, 241, 0.65)",
-          borderColor: "#6366f1",
-          borderWidth: 1,
+          data: sorted.map((m) => m.accuracy),
+          backgroundColor: "rgba(34, 211, 238, 0.7)",
           yAxisID: "yAccuracy",
-          borderRadius: 4,
-          barPercentage: 0.5,
+          borderRadius: 6,
+          barPercentage: 0.6,
         },
         {
-          label: "Beneficio neto (Unidades)",
+          label: "Beneficio neto (u)",
           data: profitData,
           backgroundColor: profitData.map((p) =>
-            p >= 0 ? "rgba(16, 185, 129, 0.65)" : "rgba(239, 68, 68, 0.65)",
+            p >= 0 ? "rgba(52, 211, 153, 0.75)" : "rgba(251, 113, 133, 0.75)",
           ),
-          borderColor: profitData.map((p) => (p >= 0 ? "#10b981" : "#ef4444")),
-          borderWidth: 1,
           yAxisID: "yProfit",
-          borderRadius: 4,
-          barPercentage: 0.5,
+          borderRadius: 6,
+          barPercentage: 0.6,
         },
       ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
+    options: baseOptions({
       scales: {
-        x: {
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: { color: "#94a3b8", font: { family: "Inter", size: 10 } },
-        },
-        yAccuracy: {
-          type: "linear",
-          position: "left",
-          min: 0,
-          max: 100,
-          grid: { color: "rgba(255, 255, 255, 0.05)" },
-          ticks: {
-            color: "#94a3b8",
-            callback: (value) => value + "%",
-            font: { family: "Inter" },
-          },
-          title: {
-            display: true,
-            text: "Tasa de Acierto",
-            color: "#94a3b8",
-            font: { family: "Inter", weight: "bold" },
-          },
-        },
+        x: { ...catAxis, ticks: { ...axisTicks, maxRotation: 40 } },
+        yAccuracy: { ...pctAxis(), type: "linear", position: "left" },
         yProfit: {
           type: "linear",
           position: "right",
           grid: { drawOnChartArea: false },
+          border: { display: false },
           ticks: {
-            color: "#94a3b8",
-            callback: (value) => (value >= 0 ? "+" : "") + value + " u",
-            font: { family: "Inter" },
-          },
-          title: {
-            display: true,
-            text: "Beneficio Neto",
-            color: "#94a3b8",
-            font: { family: "Inter", weight: "bold" },
+            ...axisTicks,
+            callback: (v) => (v >= 0 ? "+" : "") + v + " u",
           },
         },
       },
       plugins: {
         legend: {
-          labels: {
-            color: "#f8fafc",
-            font: { family: "Inter", weight: "500" },
-          },
+          labels: { color: PALETTE.text, boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { family: "Inter" } },
         },
         tooltip: {
-          backgroundColor: "#090e1a",
-          titleFont: { family: "Inter", weight: "bold" },
-          bodyFont: { family: "Inter" },
-          borderColor: "rgba(255, 255, 255, 0.1)",
-          borderWidth: 1,
+          ...tooltipStyle,
+          callbacks: {
+            afterBody: (ctx) => `Picks: ${sorted[ctx[0].dataIndex].picks}`,
+          },
         },
       },
-    },
+    }),
   });
 }
 
-// Render Odds and Edge buckets charts
-function renderBucketsChart(oddsBuckets, edgeBuckets) {
-  // 1. Odds chart
-  const ctxOdds = document.getElementById("oddsChart").getContext("2d");
-  if (oddsChartInstance) oddsChartInstance.destroy();
-
-  if (oddsBuckets && oddsBuckets.length > 0) {
-    const oddsLabels = oddsBuckets.map((b) => b.bucket);
-    const oddsAcc = oddsBuckets.map((b) => b.accuracy);
-    const oddsCount = oddsBuckets.map((b) => b.count);
-
-    oddsChartInstance = new Chart(ctxOdds, {
-      type: "bar",
-      data: {
-        labels: oddsLabels,
-        datasets: [
-          {
-            label: "Acierto (%)",
-            data: oddsAcc,
-            backgroundColor: "rgba(59, 130, 246, 0.6)",
-            borderColor: "#3b82f6",
-            borderWidth: 1.5,
-            borderRadius: 4,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            grid: { color: "rgba(255,255,255,0.03)" },
-            ticks: { color: "#94a3b8" },
-          },
-          y: {
-            min: 0,
-            max: 100,
-            grid: { color: "rgba(255,255,255,0.05)" },
-            ticks: { color: "#94a3b8", callback: (v) => v + "%" },
-          },
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              afterBody: (context) => {
-                const idx = context[0].dataIndex;
-                return `Picks: ${oddsCount[idx]}`;
-              },
-            },
-          },
-        },
-      },
-    });
-  }
-
-  // 2. Edge chart
-  const ctxEdge = document.getElementById("edgeChart").getContext("2d");
-  if (edgeChartInstance) edgeChartInstance.destroy();
-
-  if (edgeBuckets && edgeBuckets.length > 0) {
-    const edgeLabels = edgeBuckets.map((b) => b.bucket);
-    const edgeAcc = edgeBuckets.map((b) => b.accuracy);
-    const edgeCount = edgeBuckets.map((b) => b.count);
-
-    edgeChartInstance = new Chart(ctxEdge, {
-      type: "bar",
-      data: {
-        labels: edgeLabels,
-        datasets: [
-          {
-            label: "Acierto (%)",
-            data: edgeAcc,
-            backgroundColor: "rgba(245, 158, 11, 0.6)",
-            borderColor: "#f59e0b",
-            borderWidth: 1.5,
-            borderRadius: 4,
-          },
-        ],
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        scales: {
-          x: {
-            grid: { color: "rgba(255,255,255,0.03)" },
-            ticks: { color: "#94a3b8" },
-          },
-          y: {
-            min: 0,
-            max: 100,
-            grid: { color: "rgba(255,255,255,0.05)" },
-            ticks: { color: "#94a3b8", callback: (v) => v + "%" },
-          },
-        },
-        plugins: {
-          legend: { display: false },
-          tooltip: {
-            callbacks: {
-              afterBody: (context) => {
-                const idx = context[0].dataIndex;
-                return `Picks: ${edgeCount[idx]}`;
-              },
-            },
-          },
-        },
-      },
-    });
-  }
-}
-
-// Render Daily Profit Line Chart
-function renderDailyProfitChart(dailySeries) {
-  const ctx = document.getElementById("dailyProfitChart").getContext("2d");
-
-  if (dailyProfitChartInstance) {
-    dailyProfitChartInstance.destroy();
-  }
-
-  if (!dailySeries || dailySeries.length === 0) {
-    ctx.clearRect(0, 0, 400, 300);
-    return;
-  }
-
-  let chartSeries = [...dailySeries];
-  if (chartSeries.length === 1) {
-    chartSeries.unshift({
-      date: "Inicio",
-      daily: 0,
-      cumulative: 0,
-    });
-  }
-
-  const labels = chartSeries.map((d) => {
-    if (d.date === "Inicio") return "Inicio";
-    // Format YYYY-MM-DD to DD/MM
-    const p = d.date.split("-");
-    if (p.length === 3) return `${p[2]}/${p[1]}`;
-    return d.date;
-  });
-  const dataPoints = chartSeries.map((d) => d.cumulative);
-
-  dailyProfitChartInstance = new Chart(ctx, {
-    type: "line",
+function bucketChart(canvasId, wrapId, buckets, color, previous) {
+  if (previous) previous.destroy();
+  const empty = !buckets || buckets.length === 0;
+  setEmpty(wrapId, empty);
+  if (empty) return null;
+  return new Chart($(canvasId).getContext("2d"), {
+    type: "bar",
     data: {
-      labels: labels,
+      labels: buckets.map((b) => b.bucket),
       datasets: [
         {
-          label: "Unidades Netas Acumuladas",
-          data: dataPoints,
-          borderColor: "#6366f1",
-          backgroundColor: "rgba(99, 102, 241, 0.1)",
-          borderWidth: 2,
-          fill: true,
-          tension: 0.2, // slight curve
-          pointBackgroundColor: "#1e293b",
-          pointBorderColor: "#6366f1",
-          pointBorderWidth: 2,
-          pointRadius: 3,
-          pointHoverRadius: 5,
+          label: "Acierto (%)",
+          data: buckets.map((b) => b.accuracy),
+          backgroundColor: color,
+          borderRadius: 6,
         },
       ],
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      scales: {
-        x: {
-          grid: { color: "rgba(255,255,255,0.05)" },
-          ticks: { color: "#94a3b8", maxTicksLimit: 12 },
-        },
-        y: {
-          grid: { color: "rgba(255,255,255,0.1)" },
-          ticks: {
-            color: "#94a3b8",
-            callback: (v) => (v > 0 ? "+" : "") + v + " u",
+    options: baseOptions({
+      scales: { x: catAxis, y: pctAxis() },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          ...tooltipStyle,
+          callbacks: {
+            afterBody: (ctx) =>
+              `Picks: ${buckets[ctx[0].dataIndex].count} · Cuota media @${(buckets[ctx[0].dataIndex].avg_odds || 0).toFixed(2)}`,
           },
-          // Ensure zero line is clearly visible
-          border: {
-            display: true,
-            dash: [4, 4],
-            color: "rgba(255,255,255,0.2)",
+        },
+      },
+    }),
+  });
+}
+
+function renderBucketsChart(oddsBuckets, edgeBuckets) {
+  oddsChartInstance = bucketChart(
+    "oddsChart", "wrap-odds", oddsBuckets, "rgba(129, 140, 248, 0.75)", oddsChartInstance,
+  );
+  edgeChartInstance = bucketChart(
+    "edgeChart", "wrap-edge", edgeBuckets, "rgba(251, 191, 36, 0.75)", edgeChartInstance,
+  );
+}
+
+function renderConfidenceChart(confBuckets) {
+  confChartInstance = bucketChart(
+    "confChart", "wrap-conf", confBuckets, "rgba(34, 211, 238, 0.7)", confChartInstance,
+  );
+}
+
+function renderCalibrationChart() {
+  if (calibChartInstance) calibChartInstance.destroy();
+  calibChartInstance = null;
+  const bands = (adminSummary?.quality?.calibration_bands || []).filter(
+    (b) => b.total_picks > 0,
+  );
+  setEmpty("wrap-calib", bands.length === 0);
+  if (!bands.length) return;
+
+  calibChartInstance = new Chart($("calibChart").getContext("2d"), {
+    type: "bar",
+    data: {
+      labels: bands.map((b) => b.band),
+      datasets: [
+        {
+          label: "Modelo (%)",
+          data: bands.map((b) => b.avg_model_prob),
+          backgroundColor: "rgba(148, 163, 184, 0.45)",
+          borderRadius: 6,
+        },
+        {
+          label: "Real (%)",
+          data: bands.map((b) => b.actual_hit_rate),
+          backgroundColor: bands.map((b) =>
+            b.diff >= 0 ? "rgba(52, 211, 153, 0.8)" : "rgba(251, 113, 133, 0.8)",
+          ),
+          borderRadius: 6,
+        },
+      ],
+    },
+    options: baseOptions({
+      scales: { x: catAxis, y: pctAxis() },
+      plugins: {
+        legend: {
+          labels: { color: PALETTE.text, boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { family: "Inter", size: 11 } },
+        },
+        tooltip: {
+          ...tooltipStyle,
+          callbacks: {
+            afterBody: (ctx) => {
+              const b = bands[ctx[0].dataIndex];
+              return `Picks: ${b.total_picks} · Desv.: ${signed(b.diff, 1, " pp")}`;
+            },
+          },
+        },
+      },
+    }),
+  });
+}
+
+function renderDailyProfitChart(dailySeries) {
+  if (dailyProfitChartInstance) dailyProfitChartInstance.destroy();
+  dailyProfitChartInstance = null;
+  const empty = !dailySeries || dailySeries.length === 0;
+  setEmpty("wrap-daily", empty);
+  if (empty) return;
+
+  const chartSeries = [...dailySeries];
+  if (chartSeries.length === 1) {
+    chartSeries.unshift({ date: "Inicio", daily: 0, cumulative: 0 });
+  }
+  const labels = chartSeries.map((d) => {
+    if (d.date === "Inicio") return "Inicio";
+    const p = String(d.date).split("-");
+    return p.length === 3 ? `${p[2]}/${p[1]}` : d.date;
+  });
+  const cumulative = chartSeries.map((d) => d.cumulative);
+  const daily = chartSeries.map((d) => d.daily ?? 0);
+
+  dailyProfitChartInstance = new Chart($("dailyProfitChart").getContext("2d"), {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: "line",
+          label: "Acumulado (u)",
+          data: cumulative,
+          borderColor: PALETTE.accent,
+          backgroundColor: "rgba(34, 211, 238, 0.1)",
+          borderWidth: 2,
+          fill: true,
+          tension: 0.25,
+          pointRadius: 2,
+          pointHoverRadius: 5,
+          pointBackgroundColor: PALETTE.accent,
+          order: 1,
+        },
+        {
+          type: "bar",
+          label: "Día (u)",
+          data: daily,
+          backgroundColor: daily.map((v) =>
+            v >= 0 ? "rgba(52, 211, 153, 0.5)" : "rgba(251, 113, 133, 0.5)",
+          ),
+          borderRadius: 3,
+          order: 2,
+        },
+      ],
+    },
+    options: baseOptions({
+      scales: {
+        x: { ...catAxis, ticks: { ...axisTicks, maxTicksLimit: 14 } },
+        y: {
+          grid: { color: PALETTE.grid },
+          border: { display: false },
+          ticks: {
+            ...axisTicks,
+            callback: (v) => (v > 0 ? "+" : "") + v + " u",
           },
         },
       },
       plugins: {
-        legend: { display: false },
+        legend: {
+          labels: { color: PALETTE.text, boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { family: "Inter" } },
+        },
         tooltip: {
-          backgroundColor: "#090e1a",
-          titleFont: { family: "Inter", weight: "bold" },
+          ...tooltipStyle,
           callbacks: {
-            label: (context) => {
-              const val = context.raw;
-              return `Acumulado: ${val > 0 ? "+" : ""}${val.toFixed(2)} unidades`;
-            },
+            label: (c) => `${c.dataset.label}: ${signed(c.raw)} u`,
           },
         },
       },
-    },
+    }),
   });
 }
 
-// Capital Simulator Logic
+// ── Capital Simulator ──────────────────────────────────────────────
 function updateCapitalSimulator() {
-  if (!globalStatsData) return;
-
-  let currentStats = null;
-  if (activeCategory === "global") {
-    currentStats = globalStatsData;
-  } else {
-    currentStats = globalStatsData.category_stats?.[activeCategory];
-  }
-
+  const currentStats = currentCategoryStats();
   if (!currentStats) return;
 
-  const totalProfitUnits =
-    (activeCategory === "global"
-      ? globalStatsData.total_profit
-      : currentStats.total_profit) || 0;
-
-  const bankrollInput = document.getElementById("sim-bankroll");
-  const unitInput = document.getElementById("sim-unit");
-
+  const totalProfitUnits = currentStats.total_profit || 0;
+  const bankrollInput = $("sim-bankroll");
+  const unitInput = $("sim-unit");
   if (!bankrollInput || !unitInput) return;
 
   const initialBankroll = parseFloat(bankrollInput.value) || 0;
   const unitValue = parseFloat(unitInput.value) || 0;
-
   const moneyProfit = totalProfitUnits * unitValue;
-  const finalBankroll = initialBankroll + moneyProfit;
 
-  // Format as currency
   const formatter = new Intl.NumberFormat("en-US", {
     style: "currency",
     currency: "USD",
   });
-
-  const resEl = document.getElementById("sim-result");
-  const profEl = document.getElementById("sim-profit");
-
-  resEl.textContent = formatter.format(finalBankroll);
+  $("sim-result").textContent = formatter.format(initialBankroll + moneyProfit);
+  const profEl = $("sim-profit");
   profEl.textContent = `${moneyProfit >= 0 ? "+" : ""}${formatter.format(moneyProfit)}`;
-
-  profEl.style.color = moneyProfit >= 0 ? "var(--green)" : "var(--red)";
+  profEl.style.color = moneyProfit >= 0 ? PALETTE.pos : PALETTE.neg;
 }
 
-// Polling for external match results (pushed by browser extensions)
+// ── Polling for external match results (pushed by browser extensions) ──
 function startResultPolling() {
   const POLL_INTERVAL = 3000; // ms
 
   async function checkResult() {
     try {
       const res = await fetch("/api/v1/result");
-      if (!res.ok) return;
-      const data = await res.json();
-      if (data.pending && data.payload) {
-        const payload = data.payload;
-        showResultBanner(payload);
-
-        // Reload dashboard stats to reflect the newly updated match result in DB!
-        fetchGlobalStats();
+      if (res.ok) {
+        const data = await res.json();
+        if (data.pending && data.payload) {
+          showResultBanner(data.payload);
+          // Reload dashboard stats to reflect the newly updated match result
+          fetchGlobalStats();
+        }
       }
     } catch (_) {
       // silently ignore network errors
@@ -843,8 +1017,7 @@ function startResultPolling() {
   }
 
   function showResultBanner(payload) {
-    let existing = document.getElementById("result-push-banner");
-    if (existing) existing.remove();
+    $("result-push-banner")?.remove();
 
     const home = payload.home_team || payload.home?.name || "";
     const away = payload.away_team || payload.away?.name || "";
@@ -855,42 +1028,19 @@ function startResultPolling() {
 
     const banner = document.createElement("div");
     banner.id = "result-push-banner";
-    banner.style.cssText = `
-      position: fixed; bottom: 1.5rem; left: 1.5rem; z-index: 9999;
-      background: linear-gradient(135deg, #3b82f6, #1d4ed8);
-      color: #fff; padding: 1rem 1.5rem; border-radius: 12px;
-      box-shadow: 0 8px 32px rgba(59,130,246,0.35);
-      font-size: 0.9rem; font-weight: 600; display: flex; align-items: center; gap: 0.75rem;
-      animation: slideInLeft 0.35s ease;
-    `;
+    banner.className = "sx-toast";
+    banner.setAttribute("role", "status");
     banner.innerHTML = `
       <span style="font-size:1.4rem">🏆</span>
       <div>
-        <div style="font-size:0.75rem; opacity:0.8; text-transform:uppercase;">Resultado Registrado</div>
-        <div style="font-size:0.88rem; margin-top:2px;">
-          ${home} <strong>${hScore} - ${aScore}</strong> ${away}
-        </div>
+        <div class="sx-kpi__label">Resultado registrado</div>
+        <div style="margin-top:2px">${esc(home)} <strong>${esc(hScore)} - ${esc(aScore)}</strong> ${esc(away)}</div>
       </div>
-      <button onclick="this.parentElement.remove()" style="background:none;border:none;color:#fff;font-size:1.1rem;cursor:pointer;margin-left:0.5rem;">✕</button>
+      <button type="button" aria-label="Cerrar">✕</button>
     `;
-
-    // Add slideInLeft animation style dynamically if not defined
-    if (!document.getElementById("slide-animation-style")) {
-      const style = document.createElement("style");
-      style.id = "slide-animation-style";
-      style.innerHTML = `
-        @keyframes slideInLeft {
-          from { transform: translateX(-100%); opacity: 0; }
-          to { transform: translateX(0); opacity: 1; }
-        }
-      `;
-      document.head.appendChild(style);
-    }
-
+    banner.querySelector("button").addEventListener("click", () => banner.remove());
     document.body.appendChild(banner);
-    setTimeout(() => {
-      if (banner && banner.parentElement) banner.remove();
-    }, 8000);
+    setTimeout(() => banner.remove(), 8000);
   }
 
   setTimeout(checkResult, 2000);
@@ -898,6 +1048,5 @@ function startResultPolling() {
 
 // Generar y descargar reporte detallado de Excel
 function downloadExcelReport() {
-  const queryParams = getDashboardDateParams();
-  window.location.href = `/api/v1/report/excel${queryParams}`;
+  window.location.href = `/api/v1/report/excel${getDashboardDateParams()}`;
 }

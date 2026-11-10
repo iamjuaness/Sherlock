@@ -1,0 +1,14 @@
+{# Navegación única de Sherlock. Activo = por ruta actual. #}
+{% set _p = request.url.path %}
+<nav class="app-nav" aria-label="Navegación principal">
+  <a class="app-nav__brand" href="/">🔍 <span>Sherlock</span></a>
+  <div class="app-nav__links">
+    <a href="/" {% if _p == '/' %}class="is-active" aria-current="page"{% endif %}>📊 Dashboard</a>
+    <a href="/picks" {% if _p == '/picks' %}class="is-active" aria-current="page"{% endif %}>🔎 Picks</a>
+    <a href="/stats" {% if _p == '/stats' %}class="is-active" aria-current="page"{% endif %}>📈 Estadísticas</a>
+    <a href="/leagues" {% if _p == '/leagues' %}class="is-active" aria-current="page"{% endif %}>🏆 Ligas</a>
+    <a href="/rules" {% if _p == '/rules' %}class="is-active" aria-current="page"{% endif %}>📐 Reglas</a>
+    <a href="/compare" {% if _p == '/compare' %}class="is-active" aria-current="page"{% endif %}>⚽ Comparador</a>
+    <a href="/database" {% if _p == '/database' %}class="is-active" aria-current="page"{% endif %}>🗄️ Datos</a>
+  </div>
+</nav>

@@ -1,5 +1,5 @@
 /**
- * Sherlock Admin Panel Client Javascript.
+ * Sherlock data views (picks, stats, database) client script.
  * Handles dynamic UI rendering, filters state, Chart.js integrations, and server API calls.
  */
 
@@ -7,13 +7,13 @@ document.addEventListener('DOMContentLoaded', () => {
   const root = document.getElementById('admin-view-root');
   if (!root) return;
 
-  const activeTab = root.getAttribute('data-active-tab') || 'dashboard';
+  const activeTab = root.getAttribute('data-active-tab') || 'picks';
   initAdminView(activeTab);
 });
 
 // State object
 const adminState = {
-  activeTab: 'dashboard',
+  activeTab: 'picks',
   filters: {
     date_range: '',
     date_from: '',
@@ -47,18 +47,11 @@ const adminState = {
   }
 };
 
-let chartInstances = {};
-
 function initAdminView(tab) {
   adminState.activeTab = tab;
   parseUrlParams();
 
-  if (tab === 'dashboard') {
-    if (document.getElementById('dashboard-content') || document.getElementById('loader')) {
-      return;
-    }
-    renderDashboardView();
-  } else if (tab === 'picks') {
+  if (tab === 'picks') {
     renderPicksView();
   } else if (tab === 'stats') {
     renderStatsView();
@@ -85,236 +78,6 @@ function syncUrlParams() {
   }
   const newUrl = `${window.location.pathname}?${params.toString()}`;
   window.history.replaceState({}, '', newUrl);
-}
-
-// ---------------------------------------------------------------------------
-// TAB 1: Dashboard View
-// ---------------------------------------------------------------------------
-
-async function renderDashboardView() {
-  const root = document.getElementById('admin-view-root');
-  root.innerHTML = `
-    ${renderFiltersBarHtml()}
-    <div id="dashboard-content">
-      <div style="text-align: center; padding: 3rem; color: #94a3b8;">Cargando métricas del dashboard...</div>
-    </div>
-  `;
-  bindFiltersBarEvents(() => renderDashboardView());
-
-  try {
-    const query = buildFilterQueryString();
-    const resp = await fetch(`/api/v1/admin/dashboard/summary?${query}`);
-    if (!resp.ok) throw new Error('Error al cargar datos del dashboard');
-    const data = await resp.json();
-
-    const container = document.getElementById('dashboard-content');
-    container.innerHTML = `
-      <!-- KPIs Grid -->
-      <div class="kpi-grid">
-        <div class="kpi-card">
-          <div class="kpi-title">Picks Resueltos</div>
-          <div class="kpi-value">${data.kpis.picks_resolved}</div>
-          <div class="kpi-subtext">Pendientes: ${data.kpis.picks_pending}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">Hit Rate (Acierto)</div>
-          <div class="kpi-value ${data.kpis.hit_rate >= 50 ? 'positive' : 'negative'}">${data.kpis.hit_rate}%</div>
-          <div class="kpi-subtext">Ganados: ${data.kpis.picks_won} | Perdidos: ${data.kpis.picks_lost}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">ROI / Yield</div>
-          <div class="kpi-value ${data.kpis.roi >= 0 ? 'positive' : 'negative'}">${data.kpis.roi}%</div>
-          <div class="kpi-subtext">Unidades apostadas: ${data.kpis.units_staked} u</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">Beneficio Neto</div>
-          <div class="kpi-value ${data.kpis.net_profit >= 0 ? 'positive' : 'negative'}">${data.kpis.net_profit > 0 ? '+' : ''}${data.kpis.net_profit} u</div>
-          <div class="kpi-subtext">Push: ${data.kpis.picks_push} | Void: ${data.kpis.picks_void}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">Cuota Promedio</div>
-          <div class="kpi-value">${data.kpis.avg_odds}</div>
-          <div class="kpi-subtext">Cuota Ganadora: ${data.kpis.avg_winning_odds}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">Break-Even Rate</div>
-          <div class="kpi-value">${data.kpis.break_even_rate}%</div>
-          <div class="kpi-subtext">Acierto mínimo requerido</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">Edge Promedio</div>
-          <div class="kpi-value positive">+${(data.kpis.avg_edge * 100).toFixed(1)}%</div>
-          <div class="kpi-subtext">Kelly Promedio: ${(data.kpis.avg_kelly * 100).toFixed(1)}%</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">Rendimiento Ajustado (Stake 1)</div>
-          <div class="kpi-value ${data.kpis.yield_rate_adjusted >= 0 ? 'positive' : 'negative'}">${data.kpis.yield_rate_adjusted}%</div>
-          <div class="kpi-subtext">Beneficio Adj: ${data.kpis.net_profit_adjusted > 0 ? '+' : ''}${data.kpis.net_profit_adjusted} u | CLV: ${data.kpis.avg_clv !== null && data.kpis.avg_clv !== undefined ? (data.kpis.avg_clv > 0 ? '+' : '') + data.kpis.avg_clv + '%' : 'N/A'}</div>
-        </div>
-        <div class="kpi-card">
-          <div class="kpi-title">Total Análisis</div>
-          <div class="kpi-value">${data.kpis.total_analyses}</div>
-          <div class="kpi-subtext">Total picks: ${data.kpis.total_picks}</div>
-        </div>
-      </div>
-
-      <!-- Quality Metrics & Calibration -->
-      <div style="background: var(--admin-card-bg); border: 1px solid var(--admin-border); border-radius: 0.75rem; padding: 1.25rem; margin-bottom: 2rem;">
-        <h3 class="chart-title">🎯 Calidad del Modelo & Calibración de Probabilidades</h3>
-        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1rem;">
-          <div><span style="color:#94a3b8; font-size:0.8rem;">PROB. MODELO MEDIA:</span> <strong>${data.quality.avg_model_prob}%</strong></div>
-          <div><span style="color:#94a3b8; font-size:0.8rem;">PROB. IMPLÍCITA MEDIA:</span> <strong>${data.quality.avg_implied_prob}%</strong></div>
-          <div><span style="color:#94a3b8; font-size:0.8rem;">DIFERENCIA ACIERTO REAL:</span> <strong style="color: ${data.quality.actual_vs_expected_diff >= 0 ? '#34d399' : '#f87171'};">${data.quality.actual_vs_expected_diff > 0 ? '+' : ''}${data.quality.actual_vs_expected_diff}%</strong></div>
-          <div><span style="color:#94a3b8; font-size:0.8rem;">BRIER SCORE:</span> <strong>${data.quality.brier_score !== null ? data.quality.brier_score : 'N/A'}</strong></div>
-        </div>
-        
-        <table class="admin-table" style="margin-top: 0.5rem;">
-          <thead>
-            <tr>
-              <th>Banda Probabilidad Modelo</th>
-              <th>Picks Resueltos</th>
-              <th>Prob. Modelo Promedio</th>
-              <th>Acierto Real</th>
-              <th>Desviación (Calibración)</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${data.quality.calibration_bands.map(b => `
-              <tr>
-                <td><strong>${b.band}</strong></td>
-                <td>${b.total_picks}</td>
-                <td>${b.avg_model_prob}%</td>
-                <td>${b.actual_hit_rate}%</td>
-                <td style="color: ${b.diff >= 0 ? '#34d399' : '#f87171'}; font-weight:700;">${b.diff > 0 ? '+' : ''}${b.diff}%</td>
-              </tr>
-            `).join('')}
-          </tbody>
-        </table>
-      </div>
-
-      <!-- Charts Grid -->
-      <div class="charts-grid">
-        <div class="chart-card">
-          <div class="chart-title">📈 Curva de Beneficio Acumulado (Diaria)</div>
-          <canvas id="chart-cumulative-yield" height="220"></canvas>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title">🏆 ROI por Competición / Liga</div>
-          <canvas id="chart-roi-league" height="220"></canvas>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title">🎯 ROI por Mercado de Apuestas</div>
-          <canvas id="chart-roi-market" height="220"></canvas>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title">📊 Rendimiento por Rango de Cuota</div>
-          <canvas id="chart-perf-odds" height="220"></canvas>
-        </div>
-      </div>
-    `;
-
-    renderDashboardCharts(data.charts);
-  } catch (err) {
-    document.getElementById('dashboard-content').innerHTML = `
-      <div class="warning-banner">Error al cargar dashboard: ${err.message}</div>
-    `;
-  }
-}
-
-function renderDashboardCharts(chartsData) {
-  // Destroy existing charts
-  Object.values(chartInstances).forEach(c => c && c.destroy());
-  chartInstances = {};
-
-  // 1. Cumulative Yield Chart
-  const ctxCum = document.getElementById('chart-cumulative-yield');
-  if (ctxCum && chartsData.cumulative_yield.length > 0) {
-    chartInstances.cum = new Chart(ctxCum, {
-      type: 'line',
-      data: {
-        labels: chartsData.cumulative_yield.map(p => p.date),
-        datasets: [{
-          label: 'Unidades Acumuladas',
-          data: chartsData.cumulative_yield.map(p => p.cumulative_profit),
-          borderColor: '#6366f1',
-          backgroundColor: 'rgba(99, 102, 241, 0.1)',
-          fill: true,
-          tension: 0.3,
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: {
-          x: { ticks: { color: '#94a3b8' } },
-          y: { ticks: { color: '#94a3b8' } }
-        }
-      }
-    });
-  }
-
-  // 2. ROI by League
-  const ctxLeague = document.getElementById('chart-roi-league');
-  if (ctxLeague && chartsData.roi_by_league.length > 0) {
-    chartInstances.league = new Chart(ctxLeague, {
-      type: 'bar',
-      data: {
-        labels: chartsData.roi_by_league.slice(0, 8).map(p => p.label),
-        datasets: [{
-          label: 'ROI %',
-          data: chartsData.roi_by_league.slice(0, 8).map(p => p.value),
-          backgroundColor: chartsData.roi_by_league.slice(0, 8).map(p => p.value >= 0 ? '#10b981' : '#ef4444'),
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } }
-      }
-    });
-  }
-
-  // 3. ROI by Market
-  const ctxMarket = document.getElementById('chart-roi-market');
-  if (ctxMarket && chartsData.roi_by_market.length > 0) {
-    chartInstances.market = new Chart(ctxMarket, {
-      type: 'bar',
-      data: {
-        labels: chartsData.roi_by_market.map(p => p.label),
-        datasets: [{
-          label: 'ROI %',
-          data: chartsData.roi_by_market.map(p => p.value),
-          backgroundColor: chartsData.roi_by_market.map(p => p.value >= 0 ? '#38bdf8' : '#f87171'),
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } }
-      }
-    });
-  }
-
-  // 4. Performance by Odds Range
-  const ctxOdds = document.getElementById('chart-perf-odds');
-  if (ctxOdds && chartsData.performance_by_odds_range.length > 0) {
-    chartInstances.odds = new Chart(ctxOdds, {
-      type: 'bar',
-      data: {
-        labels: chartsData.performance_by_odds_range.map(p => p.label),
-        datasets: [{
-          label: 'ROI %',
-          data: chartsData.performance_by_odds_range.map(p => p.value),
-          backgroundColor: '#818cf8',
-        }]
-      },
-      options: {
-        responsive: true,
-        plugins: { legend: { display: false } },
-        scales: { x: { ticks: { color: '#94a3b8' } }, y: { ticks: { color: '#94a3b8' } } }
-      }
-    });
-  }
 }
 
 // ---------------------------------------------------------------------------

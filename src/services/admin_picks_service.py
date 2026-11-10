@@ -216,7 +216,9 @@ def _extract_picks_from_analysis(
             calibrated_prob = calibrated_prob / 100.0 if calibrated_prob <= 100.0 else model_prob
 
         implied_prob = (1.0 / odds) if odds > 1.0 else 0.0
-        edge = float(p.get("edge") or (model_prob - implied_prob))
+        # `edge` persistido por compare.py está en puntos porcentuales; el resto del servicio usa fracción.
+        raw_edge = p.get("edge")
+        edge = float(raw_edge) / 100.0 if raw_edge is not None else (model_prob - implied_prob)
         kelly = float(p.get("kelly") or p.get("kelly_fraction") or 0.0)
         stake = float(p.get("stake_units") or p.get("stake") or ah.stake_units or 1.0)
         is_value = bool(p.get("is_value", False) or edge > 0)

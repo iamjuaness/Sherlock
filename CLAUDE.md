@@ -1,4 +1,4 @@
-# CLAUDE.md
+﻿# CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
@@ -73,7 +73,7 @@ Watson Chrome Extension (SofaScore + Betano scraper)
 
 ### Frontend
 
-Vanilla JS + Jinja2 templates. No build step. Routes: `/compare` (comparator UI), `/main-dashboard` (KPIs + charts), `/leagues`, `/rules` (blacklist admin).
+Vanilla JS + Jinja2 templates. No build step. Routes (one shared nav, `_nav.html`): `/` (dashboard), `/picks`, `/stats`, `/database`, `/leagues`, `/rules`, `/compare`. Old `/admin/*` URLs redirect.
 
 ### Chrome extension (watson/)
 
@@ -92,3 +92,4 @@ Manifest V3. Load unpacked from `watson/` in `chrome://extensions`. `competition
 - El vault de este proyecto es `C:\Users\cardo\OneDrive\Escritorio\Juanes\Me\03_Memoria_Procedimental\Proyectos`. Es el cerebro digital del usuario en Obsidian.
 - Contexto del proyecto: si en ese vault no existe una nota de contexto de Sherlock, crearla antes de seguir trabajando. Si ya existe, leerla y mantenerla actualizada.
 - Cambios: tras cada cambio relevante en el repo, agregar una anotación breve en la nota de Sherlock del vault (qué cambió, archivos afectados, fecha absoluta).
+

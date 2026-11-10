@@ -100,3 +100,44 @@ def test_payload_update_refreshes_season(client):
     assert r.status_code == 200, r.text
     row = _row(client, "Foo vs Bar")
     assert (row.season_id, row.season_year) == ("888", "2026/2027")
+
+
+def test_result_goes_to_twin_row_with_picks_when_team_names_differ(client):
+    """'Amed' (análisis con picks) vs 'Amedspor' (Watson): el resultado debe llegar a la fila con picks."""
+    s = client.session()
+    from datetime import datetime
+    from src.core.domain import Sport
+    d = datetime(2026, 10, 24, 11, 0)
+    s.add(AnalysisHistory(sport=Sport.FOOTBALL, match_title="Samsunspor vs Amed", payload="{}", date=d,
+                          match_date=d, picks_calculados="[]", competition="Liga X"))
+    s.add(AnalysisHistory(sport=Sport.FOOTBALL, match_title="Samsunspor vs Amedspor", payload="{}", date=d,
+                          match_date=d, competition="Liga X", final_score_home=1, final_score_away=2))
+    s.commit()
+    s.close()
+    r = client.post("/api/v1/result", json={
+        "sport": "football", "home_team": "Samsunspor", "away_team": "Amedspor", "competition": "Liga X",
+        "season_year": "2026/2027", "start_timestamp": int(d.replace(tzinfo=None).timestamp()),
+        "final_score_home": 1, "final_score_away": 2})
+    assert r.status_code == 200, r.text
+    row = _row(client, "Samsunspor vs Amed")
+    assert (row.final_score_home, row.final_score_away) == (1, 2)
+
+
+def test_result_with_event_id_also_reaches_twin_row_with_picks(client):
+    from datetime import datetime
+    from src.core.domain import Sport
+    d = datetime(2026, 10, 24, 11, 0)
+    s = client.session()
+    s.add(AnalysisHistory(sport=Sport.FOOTBALL, match_title="Samsunspor vs Amed", payload="{}", date=d,
+                          match_date=d, picks_calculados="[]", competition="Liga X"))
+    s.add(AnalysisHistory(sport=Sport.FOOTBALL, match_title="Samsunspor vs Amedspor", payload='{"event_id": 16483794}',
+                          date=d, match_date=d, competition="Liga X", final_score_home=1, final_score_away=2))
+    s.commit()
+    s.close()
+    r = client.post("/api/v1/result", json={
+        "sport": "football", "home_team": "Samsunspor", "away_team": "Amedspor", "competition": "Liga X",
+        "season_year": "2026/2027", "event_id": 16483794, "final_score_home": 1, "final_score_away": 2})
+    assert r.status_code == 200, r.text
+    row = _row(client, "Samsunspor vs Amed")
+    assert (row.final_score_home, row.final_score_away) == (1, 2)
+    assert json.loads(row.payload).get("event_id") == 16483794

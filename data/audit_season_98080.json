@@ -1,0 +1,17 @@
+{
+  "season_id": 98080,
+  "competition": "Trendyol S\u00fcper Lig",
+  "total_sofascore": 99,
+  "total_db": 103,
+  "total_sofascore_all": 99,
+  "db_with_result": 102,
+  "db_without_result": 1,
+  "pending_not_due": null,
+  "missing_in_db": [],
+  "extra_in_db": [
+    "Gen\u00e7lerbirli\u011fi-Amed",
+    "Amed-Konyaspor",
+    "Samsunspor-Amed",
+    "Amed-Ey\u00fcpspor"
+  ]
+}

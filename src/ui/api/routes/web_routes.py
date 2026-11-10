@@ -78,3 +78,34 @@ def serve_rules(request: Request):
             "css_version": file_version(css_path),
         },
     )
+
+
+def _workspace(request: Request, tab: str, title: str):
+    css_path = os.path.join(WEB_DIR, "static", "css", "styles.css")
+    js_path = os.path.join(WEB_DIR, "static", "js", "admin.js")
+    return templates.TemplateResponse(
+        request=request,
+        name="workspace.html",
+        context={
+            "request": request,
+            "active_tab": tab,
+            "page_title": title,
+            "css_version": file_version(css_path),
+            "js_version": file_version(js_path),
+        },
+    )
+
+
+@router.get("/picks", tags=["Web UI"])
+def serve_picks(request: Request):
+    return _workspace(request, "picks", "Explorador de Picks")
+
+
+@router.get("/stats", tags=["Web UI"])
+def serve_stats(request: Request):
+    return _workspace(request, "stats", "Estadísticas Avanzadas")
+
+
+@router.get("/database", tags=["Web UI"])
+def serve_database(request: Request):
+    return _workspace(request, "database", "Base de Datos")

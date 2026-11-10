@@ -1,4 +1,3 @@
-{% if not embedded_in_admin %}
 <!doctype html>
 <html lang="es">
   <head>
@@ -7,334 +6,581 @@
     <title>Sherlock – Dashboard de Rendimiento</title>
     <meta
       name="description"
-      content="Dashboard de rendimiento y estadísticas generales de la aplicación Sherlock."
+      content="Estado real de los datos y rendimiento de los pronósticos de Sherlock."
     />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
       rel="stylesheet"
     />
     <link rel="stylesheet" href="/static/css/styles.css?v={{ css_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
-{% endif %}
     <style>
-      :root {
-        --dash-glow: rgba(99, 102, 241, 0.15);
+      .sx,
+      .sx-toast {
+        --sx-bg: #0a0e14;
+        --sx-card: #111721;
+        --sx-card-2: #161d29;
+        --sx-line: rgba(148, 163, 184, 0.14);
+        --sx-text: #e6edf6;
+        --sx-text-2: #9aa7b8;
+        --sx-text-3: #6b7a8e;
+        --sx-accent: #22d3ee;
+        --sx-accent-soft: rgba(34, 211, 238, 0.12);
+        --sx-pos: #34d399;
+        --sx-neg: #fb7185;
+        --sx-warn: #fbbf24;
+        --sx-info: #818cf8;
+        --sx-ring: 0 0 0 1px rgba(148, 163, 184, 0.14),
+          0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+        --sx-ease: cubic-bezier(0.2, 0, 0, 1);
+        color: var(--sx-text);
+        font-variant-numeric: tabular-nums;
       }
-
-      .dashboard-container {
-        max-width: 1400px;
+      .sx {
+        max-width: 1480px;
         margin: 0 auto;
-        padding: 2rem 1.5rem 4rem 1.5rem;
+        padding: 1.5rem 1.5rem 4rem;
+      }
+      .sx *,
+      .sx *::before,
+      .sx *::after {
+        box-sizing: border-box;
       }
 
-      /* Grid de Stats */
-      .stats-summary {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-        gap: 1.25rem;
-        margin-bottom: 2.5rem;
+      /* ── Surfaces ── */
+      .sx-card {
+        background: var(--sx-card);
+        border: 1px solid transparent;
+        box-shadow: var(--sx-ring);
+        border-radius: 16px;
+        padding: 1.125rem;
+        min-width: 0;
       }
-
-      .stat-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.5rem;
-        position: relative;
-        overflow: hidden;
-        transition: var(--transition);
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      .sx-card__head {
         display: flex;
-        flex-direction: column;
+        align-items: baseline;
         justify-content: space-between;
+        gap: 0.75rem;
+        margin-bottom: 0.875rem;
       }
-
-      .stat-card:hover {
-        border-color: var(--border-focus);
-        transform: translateY(-2px);
-        box-shadow: 0 8px 30px var(--dash-glow);
+      .sx-card__title {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        letter-spacing: 0.01em;
+        color: var(--sx-text);
       }
-
-      .stat-card::after {
-        content: "";
-        position: absolute;
-        top: -50%;
-        right: -50%;
-        width: 100%;
-        height: 100%;
-        background: radial-gradient(
-          circle,
-          rgba(99, 102, 241, 0.05) 0%,
-          transparent 70%
-        );
-        pointer-events: none;
+      .sx-card__hint {
+        font-size: 0.72rem;
+        color: var(--sx-text-3);
       }
-
-      .stat-card__label {
-        font-size: 0.85rem;
-        font-weight: 500;
-        color: var(--text-secondary);
+      .sx-section {
+        margin-top: 1.75rem;
+      }
+      .sx-section__title {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        font-size: 0.72rem;
+        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
-        margin-bottom: 0.5rem;
+        letter-spacing: 0.1em;
+        color: var(--sx-text-3);
+        margin-bottom: 0.75rem;
+      }
+      .sx-section__title::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: var(--sx-line);
       }
 
-      .stat-card__value {
-        font-size: 2.25rem;
-        font-weight: 800;
-        color: var(--text-primary);
-        line-height: 1.1;
-      }
-
-      .stat-card__subtext {
-        font-size: 0.75rem;
-        color: var(--text-muted);
-        margin-top: 0.5rem;
-      }
-
-      .stat-card--accent .stat-card__value {
-        background: linear-gradient(135deg, #fff, var(--accent-light));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-
-      .stat-card--green .stat-card__value {
-        background: linear-gradient(135deg, #fff, var(--green));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-
-      /* Layout Principal: Dos Columnas */
-      .dashboard-grid {
-        display: grid;
-        grid-template-columns: 2fr 1fr;
-        gap: 1.5rem;
-        margin-bottom: 2.5rem;
-      }
-
-      @media (max-width: 1024px) {
-        .dashboard-grid {
-          grid-template-columns: 1fr;
-        }
-      }
-
-      .chart-container {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-      }
-
-      .chart-container__title {
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin-bottom: 1.25rem;
+      /* ── Toolbar / tabs ── */
+      .sx-topbar {
         display: flex;
+        flex-wrap: wrap;
         align-items: center;
-        gap: 0.5rem;
-        color: var(--text-primary);
-      }
-
-      .chart-wrapper {
-        position: relative;
-        height: 300px;
-        width: 100%;
-      }
-
-      /* Tablas e Items de Rendimiento */
-      .ranking-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.5rem;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        height: fit-content;
-      }
-
-      .ranking-title {
-        font-size: 1.1rem;
-        font-weight: 700;
-        margin-bottom: 1.25rem;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-        border-bottom: 1px solid var(--border);
-        padding-bottom: 0.75rem;
-      }
-
-      .ranking-list {
-        display: flex;
-        flex-direction: column;
+        justify-content: space-between;
         gap: 0.75rem;
       }
-
-      .ranking-item {
+      .sx-tabs {
         display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        padding: 4px;
+        background: var(--sx-card);
+        border-radius: 14px;
+        box-shadow: var(--sx-ring);
+      }
+      .tab-link {
+        display: inline-flex;
         align-items: center;
-        justify-content: space-between;
-        padding: 0.75rem;
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px solid rgba(255, 255, 255, 0.04);
-        border-radius: var(--radius-sm);
-        transition: var(--transition);
-      }
-
-      .ranking-item:hover {
-        background: rgba(255, 255, 255, 0.04);
-        border-color: var(--border-light);
-      }
-
-      .ranking-item__info {
-        display: flex;
-        flex-direction: column;
-        gap: 2px;
-      }
-
-      .ranking-item__name {
-        font-size: 0.9rem;
+        gap: 0.4rem;
+        font: inherit;
+        font-size: 0.8125rem;
         font-weight: 600;
-        color: var(--text-primary);
-      }
-
-      .ranking-item__stats {
-        font-size: 0.75rem;
-        color: var(--text-secondary);
-      }
-
-      .ranking-item__profit {
-        font-size: 0.95rem;
-        font-weight: 700;
-        text-align: right;
-      }
-
-      .profit--positive {
-        color: var(--green);
-      }
-
-      .profit--negative {
-        color: var(--red);
-      }
-
-      /* Botón de navegación principal */
-      .action-banner {
-        background: linear-gradient(
-          135deg,
-          rgba(99, 102, 241, 0.15) 0%,
-          rgba(20, 27, 45, 0.8) 100%
-        );
-        border: 1px solid var(--accent);
-        border-radius: var(--radius);
-        padding: 2.25rem;
-        text-align: center;
-        position: relative;
-        overflow: hidden;
-        box-shadow: 0 8px 32px rgba(99, 102, 241, 0.15);
-        margin-top: 2rem;
-      }
-
-      .action-banner__title {
-        font-size: 1.6rem;
-        font-weight: 800;
-        margin-bottom: 0.5rem;
-        background: linear-gradient(135deg, #fff, var(--accent-light));
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-
-      .action-banner__subtitle {
-        color: var(--text-secondary);
-        font-size: 0.95rem;
-        margin-bottom: 1.5rem;
-        max-width: 600px;
-        margin-left: auto;
-        margin-right: auto;
-      }
-
-      .btn-primary {
-        background: var(--accent);
-        color: #fff;
-        border: none;
-        border-radius: var(--radius-pill);
-        padding: 0.85rem 2rem;
-        font-size: 1rem;
-        font-weight: 700;
+        color: var(--sx-text-2);
+        background: transparent;
+        border: 0;
+        border-radius: 10px;
+        padding: 0.5rem 0.9rem;
         cursor: pointer;
+        text-decoration: none;
+        white-space: nowrap;
+        transition-property: background-color, color, scale;
+        transition-duration: 150ms;
+        transition-timing-function: ease-out;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .tab-link:active {
+        scale: 0.96;
+      }
+      .tab-link--active {
+        color: var(--sx-accent);
+        background: var(--sx-accent-soft);
+      }
+      .sx-chip-cta {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font-size: 0.8125rem;
+        font-weight: 700;
+        color: #04222a;
+        background: var(--sx-accent);
+        border-radius: 12px;
+        padding: 0.55rem 1rem;
+        text-decoration: none;
+        transition-property: background-color, scale;
+        transition-duration: 150ms;
+        transition-timing-function: ease-out;
+      }
+      .sx-chip-cta:active {
+        scale: 0.96;
+      }
+
+      .sx-filters {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.75rem 1.25rem;
+        margin-top: 0.875rem;
+        padding: 0.75rem 1rem;
+        background: var(--sx-card);
+        border-radius: 14px;
+        box-shadow: var(--sx-ring);
+      }
+      .sx-filters label,
+      .sx-filters .sx-lbl {
+        font-size: 0.78rem;
+        font-weight: 500;
+        color: var(--sx-text-2);
+      }
+      .sx-field {
         display: inline-flex;
         align-items: center;
         gap: 0.5rem;
-        box-shadow: 0 4px 14px var(--accent-glow);
-        transition: var(--transition);
-        text-decoration: none;
       }
-
-      .btn-primary:hover {
-        background: var(--accent-light);
-        box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
-        transform: translateY(-1px);
+      .sx-input,
+      .sx-select {
+        font: inherit;
+        font-size: 0.8125rem;
+        color: var(--sx-text);
+        background: var(--sx-bg);
+        border: 1px solid var(--sx-line);
+        border-radius: 9px;
+        padding: 0.4rem 0.6rem;
+        height: 36px;
+        color-scheme: dark;
+        transition-property: border-color, background-color;
+        transition-duration: 150ms;
       }
-
-      .tabs-nav {
-        display: flex;
-        gap: 0.5rem;
-        border-bottom: 1px solid var(--border);
-        margin-bottom: 2rem;
-        padding-bottom: 0.5rem;
+      .sx-input:focus-visible,
+      .sx-select:focus-visible,
+      .tab-link:focus-visible,
+      .sx-btn:focus-visible,
+      .sx-chip-cta:focus-visible {
+        outline: 2px solid var(--sx-accent);
+        outline-offset: 2px;
       }
-
-      .tab-link {
-        background: none;
-        border: none;
-        color: var(--text-secondary);
-        font-size: 1rem;
-        font-weight: 600;
-        padding: 0.5rem 1rem;
+      .sx-check {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
         cursor: pointer;
-        border-radius: var(--radius-sm);
-        transition: var(--transition);
+        user-select: none;
+      }
+      .sx-check input {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--sx-accent);
+        cursor: pointer;
+      }
+      .sx-actions {
+        margin-left: auto;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+      }
+      .sx-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        font: inherit;
+        font-size: 0.8125rem;
+        font-weight: 600;
+        color: var(--sx-text);
+        background: var(--sx-card-2);
+        border: 1px solid transparent;
+        box-shadow: 0 0 0 1px var(--sx-line);
+        border-radius: 10px;
+        padding: 0.45rem 0.85rem;
+        height: 36px;
+        cursor: pointer;
+        transition-property: background-color, color, scale;
+        transition-duration: 150ms;
+        transition-timing-function: ease-out;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .sx-btn:enabled:active {
+        scale: 0.96;
+      }
+      .sx-btn--accent {
+        color: var(--sx-accent);
+        background: var(--sx-accent-soft);
+      }
+      .sx-btn--danger {
+        color: var(--sx-neg);
+        background: rgba(251, 113, 133, 0.1);
+      }
+      @media (hover: hover) {
+        .tab-link:not(.tab-link--active):hover {
+          color: var(--sx-text);
+          background: rgba(148, 163, 184, 0.08);
+        }
+        .sx-btn:hover {
+          background: #1d2634;
+        }
+        .sx-btn--accent:hover {
+          background: rgba(34, 211, 238, 0.2);
+        }
+        .sx-btn--danger:hover {
+          background: rgba(251, 113, 133, 0.18);
+        }
+        .sx-chip-cta:hover {
+          background: #67e8f9;
+        }
+        .sx-row:hover {
+          background: rgba(148, 163, 184, 0.06);
+        }
       }
 
-      .tab-link--active {
-        color: var(--accent-light);
-        background: rgba(99, 102, 241, 0.1);
+      /* ── KPI grid ── */
+      .sx-grid {
+        display: grid;
+        gap: 0.875rem;
+      }
+      .sx-grid--kpi {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+      }
+      .sx-grid--2 {
+        grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));
+      }
+      .sx-grid--3 {
+        grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+      }
+      .sx-grid--main {
+        grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr);
+      }
+      @media (max-width: 1100px) {
+        .sx-grid--main {
+          grid-template-columns: 1fr;
+        }
+      }
+      .sx-kpi__label {
+        font-size: 0.72rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--sx-text-3);
+      }
+      .sx-kpi__value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
+        margin-top: 0.35rem;
+        color: var(--sx-text);
+      }
+      .sx-kpi__sub {
+        font-size: 0.75rem;
+        color: var(--sx-text-2);
+        margin-top: 0.3rem;
+      }
+      .sx-pos {
+        color: var(--sx-pos) !important;
+      }
+      .sx-neg {
+        color: var(--sx-neg) !important;
+      }
+      .sx-warn {
+        color: var(--sx-warn) !important;
+      }
+      .sx-bar {
+        display: flex;
+        height: 8px;
+        border-radius: 99px;
+        overflow: hidden;
+        background: rgba(148, 163, 184, 0.14);
+        margin-top: 0.65rem;
+      }
+      .sx-bar > span {
+        display: block;
+        height: 100%;
+        transition-property: width;
+        transition-duration: 300ms;
+        transition-timing-function: var(--sx-ease);
+      }
+      .sx-legend {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem 0.85rem;
+        margin-top: 0.6rem;
+        font-size: 0.72rem;
+        color: var(--sx-text-2);
+      }
+      .sx-dot {
+        display: inline-block;
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        margin-right: 0.35rem;
       }
 
-      .tab-link:hover:not(.tab-link--active) {
-        color: var(--text-primary);
-        background: rgba(255, 255, 255, 0.03);
+      /* ── Charts ── */
+      .sx-chart {
+        position: relative;
+        height: 260px;
+      }
+      .sx-chart--tall {
+        height: 320px;
+      }
+      .sx-chart--short {
+        height: 220px;
+      }
+      .sx-empty {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        font-size: 0.8rem;
+        color: var(--sx-text-3);
+        padding: 1rem;
+      }
+      .sx-chart[data-empty="true"] canvas {
+        visibility: hidden;
+      }
+      .sx-chart[data-empty="true"] .sx-empty {
+        display: flex;
       }
 
-      /* Loader overlay */
-      .dashboard-loader {
+      /* ── Lists / tables ── */
+      .sx-list {
+        display: flex;
+        flex-direction: column;
+        gap: 2px;
+        max-height: 420px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+      }
+      .sx-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.75rem;
+        padding: 0.55rem 0.6rem;
+        border-radius: 10px;
+        transition-property: background-color;
+        transition-duration: 150ms;
+      }
+      .sx-row__name {
+        font-size: 0.8125rem;
+        font-weight: 600;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .sx-row__meta {
+        font-size: 0.72rem;
+        color: var(--sx-text-3);
+      }
+      .sx-row__val {
+        font-size: 0.8125rem;
+        font-weight: 700;
+        text-align: right;
+        white-space: nowrap;
+      }
+      .sx-row__val small {
+        display: block;
+        font-weight: 500;
+        font-size: 0.7rem;
+        opacity: 0.8;
+      }
+      .sx-row__main {
+        min-width: 0;
+      }
+      .sx-none {
+        padding: 1.25rem 0.5rem;
+        text-align: center;
+        font-size: 0.8rem;
+        color: var(--sx-text-3);
+      }
+      .sx-sev {
+        font-size: 0.65rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        border-radius: 6px;
+        padding: 2px 6px;
+        flex: none;
+      }
+      .sx-sev--high {
+        color: var(--sx-neg);
+        background: rgba(251, 113, 133, 0.12);
+      }
+      .sx-sev--medium {
+        color: var(--sx-warn);
+        background: rgba(251, 191, 36, 0.12);
+      }
+      .sx-sev--low {
+        color: var(--sx-info);
+        background: rgba(129, 140, 248, 0.14);
+      }
+
+      /* ── Simulator ── */
+      .sx-sim {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.75rem;
+        align-items: end;
+      }
+      .sx-sim label {
+        display: block;
+        font-size: 0.75rem;
+        color: var(--sx-text-3);
+        margin-bottom: 0.3rem;
+      }
+      .sx-sim .sx-input {
+        width: 100%;
+      }
+      .sx-sim-result {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        margin-top: 1rem;
+        padding: 1rem 1.125rem;
+        background: var(--sx-bg);
+        border-radius: 12px;
+      }
+      .sx-sim-result strong {
+        display: block;
+        font-size: 1.75rem;
+        letter-spacing: -0.02em;
+        color: var(--sx-accent);
+      }
+
+      /* ── Loader / toast ── */
+      .sx-loader {
         display: flex;
         align-items: center;
         justify-content: center;
-        height: 400px;
-        font-size: 1.2rem;
-        color: var(--text-secondary);
         gap: 0.75rem;
+        height: 360px;
+        color: var(--sx-text-2);
       }
-
       .spinner {
-        width: 24px;
-        height: 24px;
-        border: 3px solid rgba(255, 255, 255, 0.1);
-        border-top-color: var(--accent-light);
+        width: 22px;
+        height: 22px;
+        border: 3px solid rgba(148, 163, 184, 0.2);
+        border-top-color: var(--sx-accent);
         border-radius: 50%;
-        animation: spin 0.8s linear infinite;
+        animation: sx-spin 0.8s linear infinite;
       }
-
-      @keyframes spin {
+      @keyframes sx-spin {
         to {
           transform: rotate(360deg);
         }
       }
+      .sx-toast {
+        position: fixed;
+        left: 1.25rem;
+        bottom: 1.25rem;
+        z-index: 9999;
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        padding: 0.85rem 1.1rem;
+        border-radius: 14px;
+        color: var(--sx-text);
+        background: var(--sx-card-2);
+        border: 1px solid transparent;
+        box-shadow: 0 0 0 1px var(--sx-line), 0 12px 32px rgba(0, 0, 0, 0.5);
+        font-size: 0.85rem;
+      }
+      .sx-toast button {
+        background: none;
+        border: 0;
+        color: var(--sx-text-2);
+        font-size: 1rem;
+        cursor: pointer;
+        margin-left: 0.25rem;
+      }
+
+      /* ── Entrance (first load only) ── */
+      @media (prefers-reduced-motion: no-preference) {
+        .sx-enter > * {
+          animation: sx-in 300ms ease-out both;
+        }
+        .sx-enter > *:nth-child(2) { animation-delay: 100ms; }
+        .sx-enter > *:nth-child(3) { animation-delay: 200ms; }
+        .sx-enter > *:nth-child(4) { animation-delay: 300ms; }
+        .sx-enter > *:nth-child(5) { animation-delay: 400ms; }
+        .sx-enter > *:nth-child(n + 6) { animation-delay: 500ms; }
+        .sx-toast {
+          animation: sx-in 300ms ease-out both;
+        }
+      }
+      @keyframes sx-in {
+        from {
+          opacity: 0;
+          filter: blur(4px);
+          transform: translateY(12px);
+        }
+        to {
+          opacity: 1;
+          filter: blur(0);
+          transform: none;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .sx-enter > *,
+        .sx-toast {
+          animation: sx-fade 200ms ease-out both;
+        }
+        .spinner {
+          animation-duration: 2.4s;
+        }
+      }
+      @keyframes sx-fade {
+        from { opacity: 0; }
+        to { opacity: 1; }
+      }
     </style>
-{% if not embedded_in_admin %}
   </head>
   <body>
+    {% include '_nav.html' %}
     <header class="header">
       <div class="header__brand">
         <span class="header__icon">🔍</span>
@@ -342,114 +588,32 @@
         <span class="header__tag">Rendimiento</span>
       </div>
       <p class="header__subtitle">
-        Estadísticas Globales de Acierto y Rentabilidad de Pronósticos
+        Estado real de los datos y rentabilidad de los pronósticos
       </p>
     </header>
-{% endif %}
 
-    <div class="dashboard-container">
-      <!-- Loader Inicial -->
-      <div id="loader" class="dashboard-loader">
+    <div class="sx">
+      <!-- Loader -->
+      <div id="loader" class="sx-loader" role="status" aria-live="polite">
         <div class="spinner"></div>
         <span>Cargando estadísticas generales...</span>
       </div>
 
-      <!-- Contenedor del Dashboard (oculto al inicio) -->
       <div id="dashboard-content" style="display: none">
-        <!-- Navegación de Categorías -->
-        <div
-          class="tabs-nav"
-          style="
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            width: 100%;
-          "
-        >
-          <div style="display: flex; gap: 0.5rem">
-            <button
-              class="tab-link tab-link--active"
-              onclick="switchCategory('global')"
-            >
-              📊 Vista Global
-            </button>
-            <button class="tab-link" onclick="switchCategory('professional')">
-              🎯 Picks Professional
-            </button>
-            <button class="tab-link" onclick="switchCategory('underdog')">
-              🐕 Picks Underdog
-            </button>
-            <a
-              href="/rules"
-              class="tab-link"
-              style="
-                text-decoration: none;
-                display: inline-flex;
-                align-items: center;
-              "
-              >📐 Reglas de Picks</a
-            >
-            <a
-              href="/leagues"
-              class="tab-link"
-              style="
-                text-decoration: none;
-                display: inline-flex;
-                align-items: center;
-              "
-              >🏆 Vista de Ligas</a
-            >
-          </div>
-          <a
-            href="/compare"
-            class="btn-primary"
-            style="
-              padding: 0.5rem 1.25rem;
-              font-size: 0.85rem;
-              border-radius: var(--radius-pill);
-              white-space: nowrap;
-            "
-          >
-            <span>⚽ Comparador / Value Bet Detector</span>
-          </a>
+        <!-- Navegación -->
+        <div class="sx-topbar">
+          <nav class="sx-tabs" aria-label="Secciones">
+            <button class="tab-link tab-link--active" data-cat="global" onclick="switchCategory('global')">📊 Vista Global</button>
+            <button class="tab-link" data-cat="professional" onclick="switchCategory('professional')">🎯 Picks Professional</button>
+            <button class="tab-link" data-cat="underdog" onclick="switchCategory('underdog')">🐕 Picks Underdog</button>
+          </nav>
         </div>
 
-        <!-- Date Filters Bar -->
-        <div
-          class="date-filters-bar"
-          style="
-            display: flex;
-            gap: 1rem;
-            align-items: center;
-            margin-top: 1rem;
-            margin-bottom: 1rem;
-            padding: 0.75rem 1rem;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            border-radius: 8px;
-            flex-wrap: wrap;
-          "
-        >
-          <div style="display: flex; align-items: center; gap: 0.5rem">
-            <span
-              style="
-                font-size: 0.9rem;
-                color: var(--text-muted);
-                font-weight: 500;
-              "
-              >📅 Rango de Rentabilidad:</span
-            >
-            <select
-              id="dashboard-date-range"
-              class="input"
-              style="
-                width: auto;
-                padding: 0.25rem 2rem 0.25rem 0.75rem;
-                height: 36px;
-                font-size: 0.85rem;
-              "
-              onchange="handleDashboardDateRangeChange()"
-            >
+        <!-- Filtros -->
+        <div class="sx-filters">
+          <div class="sx-field">
+            <span class="sx-lbl">📅 Rango</span>
+            <select id="dashboard-date-range" class="sx-select" onchange="handleDashboardDateRangeChange()">
               <option value="7days">Últimos 7 días</option>
               <option value="3days">Últimos 3 días</option>
               <option value="30days">Últimos 30 días</option>
@@ -458,483 +622,257 @@
               <option value="custom">Personalizado</option>
             </select>
           </div>
-          <div
-            id="dashboard-custom-date-inputs"
-            style="display: none; align-items: center; gap: 0.5rem"
-          >
-            <span style="font-size: 0.85rem; color: var(--text-muted)"
-              >Desde:</span
-            >
-            <input
-              type="date"
-              id="dashboard-date-from"
-              style="
-                background: var(--bg-card);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                padding: 0.35rem 0.5rem;
-                border-radius: 6px;
-                font-size: 0.85rem;
-                color: var(--text-primary);
-              "
-              onchange="reloadDashboardStats()"
-            />
-            <span style="font-size: 0.85rem; color: var(--text-muted)"
-              >Hasta:</span
-            >
-            <input
-              type="date"
-              id="dashboard-date-to"
-              style="
-                background: var(--bg-card);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                padding: 0.35rem 0.5rem;
-                border-radius: 6px;
-                font-size: 0.85rem;
-                color: var(--text-primary);
-              "
-              onchange="reloadDashboardStats()"
-            />
+          <div id="dashboard-custom-date-inputs" class="sx-field" style="display: none">
+            <span class="sx-lbl">Desde</span>
+            <input type="date" id="dashboard-date-from" class="sx-input" onchange="reloadDashboardStats()" />
+            <span class="sx-lbl">Hasta</span>
+            <input type="date" id="dashboard-date-to" class="sx-input" onchange="reloadDashboardStats()" />
           </div>
-          <div
-            style="
-              display: flex;
-              align-items: center;
-              gap: 0.5rem;
-              margin-left: 1rem;
-            "
-          >
-            <label
-              style="
-                display: inline-flex;
-                align-items: center;
-                gap: 0.35rem;
-                cursor: pointer;
-                font-size: 0.85rem;
-                color: var(--text-muted);
-                font-weight: 500;
-                user-select: none;
-              "
-            >
-              <input
-                type="checkbox"
-                checked
-                id="dashboard-use-stake"
-                style="
-                  width: 15px;
-                  height: 15px;
-                  accent-color: var(--accent-light);
-                  cursor: pointer;
-                "
-                onchange="reloadDashboardStats()"
-              />
-              📈 Usar Stakes Variables
+          <label class="sx-check">
+            <input type="checkbox" checked id="dashboard-use-stake" onchange="reloadDashboardStats()" />
+            📈 Stakes variables
+          </label>
+          <div class="sx-field">
+            <label class="sx-check">
+              <input type="checkbox" id="dashboard-use-general-stats" onchange="handleDashboardGeneralStatsChange()" />
+              📊 Stats generales
             </label>
+            <input type="date" id="dashboard-general-stats-date" class="sx-input" style="display: none" onchange="handleDashboardGeneralStatsDateChange()" />
           </div>
-          <div style="display: flex; align-items: center; gap: 0.5rem">
-            <label
-              style="
-                display: inline-flex;
-                align-items: center;
-                gap: 0.35rem;
-                cursor: pointer;
-                font-size: 0.85rem;
-                color: var(--text-muted);
-                font-weight: 500;
-                user-select: none;
-              "
-            >
-              <input
-                type="checkbox"
-                id="dashboard-use-general-stats"
-                style="
-                  width: 15px;
-                  height: 15px;
-                  accent-color: var(--accent-light);
-                  cursor: pointer;
-                "
-                onchange="handleDashboardGeneralStatsChange()"
-              />
-              📊 Stats Generales
-            </label>
-            <input
-              type="date"
-              id="dashboard-general-stats-date"
-              style="
-                background: var(--bg-card);
-                border: 1px solid rgba(255, 255, 255, 0.1);
-                padding: 0.25rem 0.5rem;
-                border-radius: 6px;
-                font-size: 0.85rem;
-                color: var(--text-primary);
-                outline: none;
-                display: none;
-              "
-              onchange="handleDashboardGeneralStatsDateChange()"
-            />
-          </div>
-          <div style="margin-left: auto; display: flex; gap: 0.5rem">
-            <button
-              id="btn-recalculate-all"
-              class="btn-primary"
-              style="
-                padding: 0.35rem 1rem;
-                font-size: 0.85rem;
-                border-radius: 6px;
-                background: rgba(99, 102, 241, 0.2);
-                border: 1px solid var(--accent);
-                display: flex;
-                align-items: center;
-                gap: 0.35rem;
-                cursor: pointer;
-              "
-              onclick="triggerRecalculateAndFetch()"
-              title="Recalcula el acierto de todos los partidos con resultado guardado"
-            >
-              🔄 Recalcular Todo
-            </button>
-            <button
-              id="btn-apply-blacklist"
-              class="btn-primary"
-              style="
-                padding: 0.35rem 1rem;
-                font-size: 0.85rem;
-                border-radius: 6px;
-                background: rgba(244, 63, 94, 0.2);
-                border: 1px solid var(--red, #f43f5e);
-                display: flex;
-                align-items: center;
-                gap: 0.35rem;
-                cursor: pointer;
-              "
-              onclick="triggerApplyBlacklistAndFetch()"
-              title="Aplica la blacklist actual a todos los picks guardados sin recalcular probabilidades"
-            >
-              🛡️ Aplicar Blacklist
-            </button>
-            <button
-              id="btn-download-excel"
-              class="btn-primary"
-              style="
-                padding: 0.35rem 1rem;
-                font-size: 0.85rem;
-                border-radius: 6px;
-                display: flex;
-                align-items: center;
-                gap: 0.35rem;
-              "
-              onclick="downloadExcelReport()"
-            >
-              📊 Exportar Excel
-            </button>
+          <div class="sx-actions">
+            <button id="btn-recalculate-all" class="sx-btn sx-btn--accent" onclick="triggerRecalculateAndFetch()" title="Recalcula el acierto de todos los partidos con resultado guardado">🔄 Recalcular todo</button>
+            <button id="btn-apply-blacklist" class="sx-btn sx-btn--danger" onclick="triggerApplyBlacklistAndFetch()" title="Aplica la blacklist actual a todos los picks guardados sin recalcular probabilidades">🛡️ Aplicar blacklist</button>
+            <button id="btn-download-excel" class="sx-btn" onclick="downloadExcelReport()">📊 Exportar Excel</button>
           </div>
         </div>
 
-        <!-- ══ Grid de Resumen / Cards ══ -->
-        <div class="stats-summary">
-          <div class="stat-card">
-            <div class="stat-card__label">Partidos Analizados</div>
-            <div class="stat-card__value" id="stat-total-matches">-</div>
-            <div class="stat-card__subtext" id="stat-resolved-matches">
-              0 resueltos
-            </div>
-          </div>
-
-          <div class="stat-card stat-card--accent">
-            <div class="stat-card__label">Picks Evaluados</div>
-            <div class="stat-card__value" id="stat-total-picks">-</div>
-            <div class="stat-card__subtext" id="stat-pending-picks">
-              0 pendientes
-            </div>
-          </div>
-
-          <div class="stat-card stat-card--green">
-            <div class="stat-card__label">Acierto Global</div>
-            <div class="stat-card__value" id="stat-accuracy">-</div>
-            <div class="stat-card__subtext" id="stat-hits-ratio">
-              0 hits de 0
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-card__label">Score Exacto (Hits)</div>
-            <div class="stat-card__value" id="stat-exact-scores">-</div>
-            <div class="stat-card__subtext" id="stat-exact-ratio">
-              0 hits de 0
-            </div>
-          </div>
-
-          <div class="stat-card">
-            <div class="stat-card__label">Cuota Promedio</div>
-            <div class="stat-card__value" id="stat-avg-odds">-</div>
-            <div class="stat-card__subtext" id="stat-avg-winning-odds">
-              Ganadoras: -
-            </div>
-          </div>
-
-          <div class="stat-card stat-card--accent">
-            <div class="stat-card__label">Unidades Ganadas</div>
-            <div
-              class="stat-card__value"
-              id="stat-total-profit"
-              style="color: var(--accent-light)"
-            >
-              -
-            </div>
-            <div class="stat-card__subtext" id="stat-roi">ROI estimado: -</div>
-            <div
-              id="category-profit-breakdown"
-              style="
-                display: none;
-                font-size: 0.72rem;
-                color: var(--text-muted);
-                border-top: 1px solid rgba(255, 255, 255, 0.08);
-                margin-top: 8px;
-                padding-top: 8px;
-                line-height: 1.4;
-              "
-            >
-              <div>
-                🎯 Prof:
-                <span id="prof-breakdown-pro" style="font-weight: 700">-</span>
+        <div id="sx-body" class="sx-enter">
+          <!-- ══ 1. Salud de los datos ══ -->
+          <section class="sx-section">
+            <h2 class="sx-section__title">Salud de los datos</h2>
+            <div class="sx-grid sx-grid--kpi">
+              <div class="sx-card">
+                <div class="sx-kpi__label">Partidos analizados</div>
+                <div class="sx-kpi__value" id="stat-total-matches">-</div>
+                <div class="sx-kpi__sub" id="stat-resolved-matches">0 resueltos</div>
+                <div class="sx-bar"><span id="bar-coverage" style="width: 0%; background: var(--sx-accent)"></span></div>
+                <div class="sx-kpi__sub" id="health-coverage-note">Cobertura de resultados: -</div>
               </div>
-              <div>
-                🐕 Dog:
-                <span id="prof-breakdown-und" style="font-weight: 700">-</span>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Picks evaluados</div>
+                <div class="sx-kpi__value" id="stat-total-picks">-</div>
+                <div class="sx-kpi__sub" id="stat-pending-picks">0 pendientes</div>
+                <div class="sx-bar" id="bar-outcomes"></div>
+                <div class="sx-legend" id="legend-outcomes"></div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Anomalías detectadas</div>
+                <div class="sx-kpi__value" id="health-anomalies">-</div>
+                <div class="sx-kpi__sub" id="health-anomalies-sub">Revisando integridad...</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Brier score</div>
+                <div class="sx-kpi__value" id="health-brier">-</div>
+                <div class="sx-kpi__sub" id="health-brier-sub">Menor es mejor (0.25 = azar)</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Modelo vs. realidad</div>
+                <div class="sx-kpi__value" id="health-model-gap">-</div>
+                <div class="sx-kpi__sub" id="health-model-gap-sub">Prob. media del modelo vs. acierto real</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">CLV promedio</div>
+                <div class="sx-kpi__value" id="health-clv">-</div>
+                <div class="sx-kpi__sub">Cuota tomada vs. cierre</div>
               </div>
             </div>
-          </div>
-        </div>
+          </section>
 
-        <!-- ══ Layout Principal ══ -->
-        <div class="dashboard-grid">
-          <!-- Columna Izquierda: Gráficos -->
-          <div>
-            <div class="chart-container">
-              <div class="chart-container__title">
-                📊 Rendimiento por Tipo de Mercado
-              </div>
-              <div class="chart-wrapper">
-                <canvas id="marketChart"></canvas>
-              </div>
-            </div>
-
-            <div
-              style="display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem"
-            >
-              <div class="chart-container" style="margin-bottom: 0">
-                <div class="chart-container__title">
-                  📈 Acierto por Rango de Cuotas
-                </div>
-                <div class="chart-wrapper" style="height: 240px">
-                  <canvas id="oddsChart"></canvas>
+          <!-- ══ 2. Rendimiento ══ -->
+          <section class="sx-section">
+            <h2 class="sx-section__title">Rendimiento</h2>
+            <div class="sx-grid sx-grid--kpi">
+              <div class="sx-card">
+                <div class="sx-kpi__label">Unidades ganadas</div>
+                <div class="sx-kpi__value" id="stat-total-profit">-</div>
+                <div class="sx-kpi__sub" id="stat-roi">ROI (flat stake): -</div>
+                <div id="category-profit-breakdown" style="display: none; margin-top: 0.6rem; padding-top: 0.6rem; border-top: 1px solid var(--sx-line); font-size: 0.75rem; color: var(--sx-text-2); line-height: 1.6">
+                  <div>🎯 Prof: <strong id="prof-breakdown-pro">-</strong></div>
+                  <div>🐕 Dog: <strong id="prof-breakdown-und">-</strong></div>
                 </div>
               </div>
-              <div class="chart-container" style="margin-bottom: 0">
-                <div class="chart-container__title">
-                  ⚡ Acierto por Porcentaje de Edge
-                </div>
-                <div class="chart-wrapper" style="height: 240px">
-                  <canvas id="edgeChart"></canvas>
-                </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Acierto global</div>
+                <div class="sx-kpi__value" id="stat-accuracy">-</div>
+                <div class="sx-kpi__sub" id="stat-hits-ratio">0 hits de 0</div>
+                <div class="sx-kpi__sub" id="kpi-breakeven">Break-even: -</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Cuota promedio</div>
+                <div class="sx-kpi__value" id="stat-avg-odds">-</div>
+                <div class="sx-kpi__sub" id="stat-avg-winning-odds">Ganadoras: -</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Score exacto</div>
+                <div class="sx-kpi__value" id="stat-exact-scores">-</div>
+                <div class="sx-kpi__sub" id="stat-exact-ratio">0 hits de 0</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Máx. drawdown</div>
+                <div class="sx-kpi__value" id="kpi-drawdown">-</div>
+                <div class="sx-kpi__sub" id="kpi-drawdown-sub">Caída desde el máximo acumulado</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Mejor / peor día</div>
+                <div class="sx-kpi__value" id="kpi-bestday" style="font-size: 1.25rem">-</div>
+                <div class="sx-kpi__sub" id="kpi-days-sub">Días con picks resueltos: -</div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-kpi__label">Edge / Kelly medios</div>
+                <div class="sx-kpi__value" id="kpi-edge" style="font-size: 1.25rem">-</div>
+                <div class="sx-kpi__sub" id="kpi-kelly">Kelly: -</div>
               </div>
             </div>
+          </section>
 
-            <!-- Gráfico de Rentabilidad por Día -->
-            <div class="chart-container" style="margin-top: 1.5rem">
-              <div class="chart-container__title">
-                📈 Evolución de Rentabilidad (Unidades Acumuladas)
+          <!-- ══ 3. Curvas ══ -->
+          <section class="sx-section">
+            <h2 class="sx-section__title">Evolución</h2>
+            <div class="sx-card">
+              <div class="sx-card__head">
+                <div class="sx-card__title">📈 Unidades acumuladas</div>
+                <div class="sx-card__hint">Barras = resultado diario</div>
               </div>
-              <div class="chart-wrapper" style="height: 280px">
+              <div class="sx-chart sx-chart--tall" id="wrap-daily">
                 <canvas id="dailyProfitChart"></canvas>
+                <div class="sx-empty">Sin picks resueltos en este rango</div>
               </div>
             </div>
+          </section>
 
-            <!-- Simulador de Capital -->
-            <div
-              class="ranking-card"
-              style="
-                margin-top: 1.5rem;
-                background: linear-gradient(
-                  145deg,
-                  rgba(30, 41, 59, 0.4) 0%,
-                  rgba(15, 23, 42, 0.9) 100%
-                );
-              "
-            >
-              <div
-                class="ranking-title"
-                style="border-bottom: 1px solid rgba(255, 255, 255, 0.1)"
-              >
-                💸 Simulador de Capital (Estimación)
-              </div>
-              <div style="padding-top: 1rem">
-                <p
-                  style="
-                    color: var(--text-secondary);
-                    font-size: 0.9rem;
-                    margin-bottom: 1rem;
-                  "
-                >
-                  Calcula el crecimiento de un bankroll inicial asumiendo un
-                  staking plano (flat stake) basado en las unidades ganadas en
-                  esta categoría.
-                </p>
-                <div
-                  style="
-                    display: flex;
-                    gap: 1rem;
-                    align-items: flex-end;
-                    margin-bottom: 1.5rem;
-                    flex-wrap: wrap;
-                  "
-                >
-                  <div>
-                    <label
-                      style="
-                        display: block;
-                        font-size: 0.8rem;
-                        color: var(--text-muted);
-                        margin-bottom: 0.25rem;
-                      "
-                      >Capital Inicial ($)</label
-                    >
-                    <input
-                      type="number"
-                      id="sim-bankroll"
-                      value="1000"
-                      class="input-base"
-                      style="
-                        width: 140px;
-                        padding: 0.6rem;
-                        background: rgba(0, 0, 0, 0.2);
-                        border: 1px solid var(--border);
-                        border-radius: var(--radius-sm);
-                        color: #fff;
-                      "
-                    />
+          <!-- ══ 4. Desglose ══ -->
+          <section class="sx-section">
+            <h2 class="sx-section__title">Desglose del modelo</h2>
+            <div class="sx-grid sx-grid--main">
+              <div style="display: flex; flex-direction: column; gap: 0.875rem; min-width: 0">
+                <div class="sx-card">
+                  <div class="sx-card__head">
+                    <div class="sx-card__title">📊 Rendimiento por mercado</div>
+                    <div class="sx-card__hint">Acierto (%) y beneficio (u)</div>
                   </div>
-                  <div>
-                    <label
-                      style="
-                        display: block;
-                        font-size: 0.8rem;
-                        color: var(--text-muted);
-                        margin-bottom: 0.25rem;
-                      "
-                      >Valor por Unidad ($)</label
-                    >
-                    <input
-                      type="number"
-                      id="sim-unit"
-                      value="10"
-                      class="input-base"
-                      style="
-                        width: 140px;
-                        padding: 0.6rem;
-                        background: rgba(0, 0, 0, 0.2);
-                        border: 1px solid var(--border);
-                        border-radius: var(--radius-sm);
-                        color: #fff;
-                      "
-                    />
+                  <div class="sx-chart" id="wrap-market">
+                    <canvas id="marketChart"></canvas>
+                    <div class="sx-empty">Sin datos de mercados</div>
                   </div>
-                  <button
-                    id="btn-simulate"
-                    class="btn-primary"
-                    style="
-                      padding: 0.6rem 1.5rem;
-                      border-radius: var(--radius-sm);
-                    "
-                  >
-                    Simular
-                  </button>
                 </div>
-
-                <div
-                  style="
-                    background: rgba(0, 0, 0, 0.3);
-                    border: 1px solid var(--border);
-                    border-radius: var(--radius);
-                    padding: 1.25rem;
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: center;
-                  "
-                >
-                  <div>
-                    <div
-                      style="
-                        font-size: 0.8rem;
-                        color: var(--text-secondary);
-                        text-transform: uppercase;
-                        letter-spacing: 0.05em;
-                        margin-bottom: 0.25rem;
-                      "
-                    >
-                      Capital Actual Proyectado
-                    </div>
-                    <div
-                      id="sim-result"
-                      style="
-                        font-size: 2rem;
-                        font-weight: 800;
-                        color: var(--accent-light);
-                      "
-                    >
-                      $1,000.00
+                <div class="sx-grid sx-grid--2">
+                  <div class="sx-card">
+                    <div class="sx-card__head"><div class="sx-card__title">Acierto por cuota</div></div>
+                    <div class="sx-chart sx-chart--short" id="wrap-odds">
+                      <canvas id="oddsChart"></canvas>
+                      <div class="sx-empty">Sin datos</div>
                     </div>
                   </div>
-                  <div style="text-align: right">
-                    <div
-                      style="
-                        font-size: 0.8rem;
-                        color: var(--text-secondary);
-                        text-transform: uppercase;
-                        letter-spacing: 0.05em;
-                        margin-bottom: 0.25rem;
-                      "
-                    >
-                      Beneficio Neto
+                  <div class="sx-card">
+                    <div class="sx-card__head"><div class="sx-card__title">Acierto por edge</div></div>
+                    <div class="sx-chart sx-chart--short" id="wrap-edge">
+                      <canvas id="edgeChart"></canvas>
+                      <div class="sx-empty">Sin datos</div>
                     </div>
-                    <div
-                      id="sim-profit"
-                      style="
-                        font-size: 1.25rem;
-                        font-weight: 700;
-                        color: var(--text-muted);
-                      "
-                    >
-                      $0.00
+                  </div>
+                  <div class="sx-card">
+                    <div class="sx-card__head"><div class="sx-card__title">Acierto por confianza</div></div>
+                    <div class="sx-chart sx-chart--short" id="wrap-conf">
+                      <canvas id="confChart"></canvas>
+                      <div class="sx-empty">Sin datos</div>
+                    </div>
+                  </div>
+                  <div class="sx-card">
+                    <div class="sx-card__head">
+                      <div class="sx-card__title">Calibración</div>
+                      <div class="sx-card__hint">Prob. modelo vs. acierto real</div>
+                    </div>
+                    <div class="sx-chart sx-chart--short" id="wrap-calib">
+                      <canvas id="calibChart"></canvas>
+                      <div class="sx-empty">Sin picks resueltos para calibrar</div>
                     </div>
                   </div>
                 </div>
               </div>
-            </div>
-          </div>
 
-          <!-- Columna Derecha: Ligas y Equipos Top -->
-          <div style="display: flex; flex-direction: column; gap: 1.5rem">
-            <div class="ranking-card">
-              <div class="ranking-title">🏆 Rendimiento Ligas</div>
-              <div class="ranking-list" id="list-best-leagues">
-                <!-- Se rellena dinámicamente -->
+              <div style="display: flex; flex-direction: column; gap: 0.875rem; min-width: 0">
+                <div class="sx-card">
+                  <div class="sx-card__head"><div class="sx-card__title">🏆 Rendimiento ligas</div></div>
+                  <div class="sx-list" id="list-best-leagues"></div>
+                </div>
+                <div class="sx-card">
+                  <div class="sx-card__head"><div class="sx-card__title">⚽ Rendimiento equipos</div></div>
+                  <div class="sx-list" id="list-best-teams"></div>
+                </div>
+                <div class="sx-card">
+                  <div class="sx-card__head">
+                    <div class="sx-card__title">⚠️ Mercados débiles</div>
+                    <div class="sx-card__hint">Candidatos a blacklist</div>
+                  </div>
+                  <div class="sx-list" id="list-worst-markets"></div>
+                </div>
               </div>
             </div>
+          </section>
 
-            <div class="ranking-card">
-              <div class="ranking-title">⚽ Rendimiento Equipos</div>
-              <div class="ranking-list" id="list-best-teams">
-                <!-- Se rellena dinámicamente -->
+          <!-- ══ 5. Integridad y deportes ══ -->
+          <section class="sx-section">
+            <h2 class="sx-section__title">Integridad y cobertura</h2>
+            <div class="sx-grid sx-grid--2">
+              <div class="sx-card">
+                <div class="sx-card__head">
+                  <div class="sx-card__title">🩺 Anomalías de datos</div>
+                  <div class="sx-card__hint" id="anomalies-hint"></div>
+                </div>
+                <div class="sx-list" id="list-anomalies"></div>
+              </div>
+              <div class="sx-card">
+                <div class="sx-card__head"><div class="sx-card__title">🌍 Picks por deporte</div></div>
+                <div class="sx-list" id="list-sports"></div>
               </div>
             </div>
-          </div>
+          </section>
+
+          <!-- ══ 6. Simulador ══ -->
+          <section class="sx-section">
+            <h2 class="sx-section__title">Simulador</h2>
+            <div class="sx-card">
+              <div class="sx-card__head">
+                <div class="sx-card__title">💸 Simulador de capital (estimación)</div>
+                <div class="sx-card__hint">Flat stake sobre las unidades de la categoría activa</div>
+              </div>
+              <div class="sx-sim">
+                <div>
+                  <label for="sim-bankroll">Capital inicial ($)</label>
+                  <input type="number" id="sim-bankroll" value="1000" class="sx-input" />
+                </div>
+                <div>
+                  <label for="sim-unit">Valor por unidad ($)</label>
+                  <input type="number" id="sim-unit" value="10" class="sx-input" />
+                </div>
+                <button id="btn-simulate" class="sx-btn sx-btn--accent" style="justify-content: center">Simular</button>
+              </div>
+              <div class="sx-sim-result">
+                <div>
+                  <div class="sx-kpi__label">Capital actual proyectado</div>
+                  <strong id="sim-result">$1,000.00</strong>
+                </div>
+                <div style="text-align: right">
+                  <div class="sx-kpi__label">Beneficio neto</div>
+                  <strong id="sim-profit" style="font-size: 1.25rem; color: var(--sx-text-3)">$0.00</strong>
+                </div>
+              </div>
+            </div>
+          </section>
         </div>
       </div>
     </div>
 
-{% if not embedded_in_admin %}
-    <!-- Script de control principal -->
     <script src="/static/js/dashboard_main.js?v={{ js_version }}"></script>
   </body>
 </html>
-{% endif %}

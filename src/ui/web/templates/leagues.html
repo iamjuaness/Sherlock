@@ -11,282 +11,173 @@
     />
     <link rel="stylesheet" href="/static/css/styles.css?v={{ css_version }}" />
     <style>
+      :root {
+        --lg-card: #111721;
+        --lg-card-2: #161d29;
+        --lg-line: rgba(148, 163, 184, 0.14);
+        --lg-text-3: #6b7a8e;
+        --lg-accent: #22d3ee;
+        --lg-accent-soft: rgba(34, 211, 238, 0.12);
+        --lg-pos: #34d399;
+        --lg-neg: #fb7185;
+        --lg-warn: #fbbf24;
+        --lg-ring: 0 0 0 1px rgba(148, 163, 184, 0.14),
+          0 1px 2px rgba(0, 0, 0, 0.35), 0 8px 24px -12px rgba(0, 0, 0, 0.55);
+      }
       .leagues-container {
         max-width: 1750px;
         margin: 0 auto;
-        padding: 1.5rem 1.5rem 2rem 1.5rem;
+        padding: 1.5rem 1.5rem 2rem;
+        font-variant-numeric: tabular-nums;
       }
       .leagues-layout {
         display: grid;
-        grid-template-columns: 420px 1fr;
-        gap: 1.5rem;
-        margin-top: 1rem;
+        grid-template-columns: 400px minmax(0, 1fr);
+        gap: 1.25rem;
         align-items: start;
       }
       @media (max-width: 900px) {
-        .leagues-layout {
-          grid-template-columns: 1fr;
-        }
+        .leagues-layout { grid-template-columns: minmax(0, 1fr); }
+        .sidebar-card { position: static !important; max-height: none !important; }
+      }
+
+      /* Cards */
+      .sidebar-card, .detail-header, .match-card {
+        background: var(--lg-card);
+        border: 1px solid transparent;
+        box-shadow: var(--lg-ring);
+        border-radius: 16px;
       }
       .sidebar-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.25rem;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-        max-height: calc(100vh - 120px);
+        padding: 1.125rem;
+        max-height: calc(100vh - 2rem);
         overflow-y: auto;
+        overscroll-behavior: contain;
         position: sticky;
         top: 1rem;
         z-index: 10;
       }
-      #matches-list {
-        max-height: calc(100vh - 280px);
-        overflow-y: auto;
-        padding-right: 6px;
+      .sidebar-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.875rem; }
+      .sidebar-title { font-size: 0.9rem; font-weight: 700; color: var(--text-primary); }
+      .lg-check {
+        display: inline-flex; align-items: center; gap: 0.4rem; cursor: pointer; user-select: none;
+        font-size: 0.78rem; font-weight: 500; color: #9aa7b8;
       }
-      .sidebar-title {
-        font-size: 1.05rem;
-        font-weight: 700;
-        margin-bottom: 1rem;
-        padding-bottom: 0.5rem;
-        border-bottom: 1px solid var(--border);
-        color: var(--text-primary);
+      .lg-check input { width: 15px; height: 15px; accent-color: var(--lg-accent); cursor: pointer; }
+      .lg-check--pill {
+        font-size: 0.8125rem; font-weight: 600; background: var(--lg-card-2);
+        padding: 5px 12px; border-radius: 10px; box-shadow: 0 0 0 1px var(--lg-line);
       }
+      .lg-input, #selected-season {
+        font: inherit; font-size: 0.82rem; color: var(--text-primary); background: #0a0e14;
+        border: 1px solid var(--lg-line); border-radius: 10px; padding: 0.5rem 0.75rem;
+        outline: none; color-scheme: dark; transition: border-color 150ms ease-out;
+      }
+      .lg-input { width: 100%; margin-bottom: 0.75rem; }
+      .lg-input:focus-visible, #selected-season:focus-visible { border-color: var(--lg-accent); outline: 2px solid var(--lg-accent); outline-offset: 1px; }
+      #matches-list { max-height: calc(100vh - 260px); overflow-y: auto; overscroll-behavior: contain; padding-right: 6px; }
+
       .league-list-item {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.75rem 1rem;
-        border-radius: var(--radius-sm);
-        cursor: pointer;
-        transition: var(--transition);
-        margin-bottom: 0.5rem;
-        border: 1px solid transparent;
-        background: rgba(255, 255, 255, 0.01);
+        display: flex; justify-content: space-between; align-items: center;
+        padding: 0.65rem 0.8rem; border-radius: 10px; cursor: pointer; margin-bottom: 2px;
+        border: 1px solid transparent; background: transparent;
+        transition-property: background-color, color; transition-duration: 150ms; transition-timing-function: ease-out;
       }
-      .league-list-item:hover {
-        background: rgba(255, 255, 255, 0.04);
-        border-color: var(--border-light);
+      @media (hover: hover) { .league-list-item:hover { background: rgba(148, 163, 184, 0.07); } }
+      .league-list-item--active, .league-list-item--active:hover {
+        background: var(--lg-accent-soft); color: var(--lg-accent);
       }
-      .league-list-item--active {
-        background: rgba(99, 102, 241, 0.15);
-        border-color: var(--accent);
-        color: var(--accent-light);
-      }
-      .league-list-item--pending {
-        border-left: 4px solid #eab308 !important;
-      }
+      .league-list-item--pending { box-shadow: inset 3px 0 0 var(--lg-warn); }
       .league-list-item__name {
-        font-size: 0.9rem;
-        font-weight: 600;
-        overflow: hidden;
-        text-overflow: ellipsis;
-        white-space: nowrap;
-        flex: 1;
-        min-width: 0;
-        margin-right: 0.75rem;
+        font-size: 0.85rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis;
+        white-space: nowrap; flex: 1; min-width: 0; margin-right: 0.75rem;
       }
-      .league-list-item__profit {
-        font-size: 0.85rem;
-        font-weight: 700;
-        white-space: nowrap;
-        flex-shrink: 0;
-      }
+      .league-list-item__profit { font-size: 0.82rem; font-weight: 700; white-space: nowrap; flex-shrink: 0; }
 
-      /* Detail section */
-      .detail-header {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        padding: 1.5rem;
-        margin-bottom: 1.5rem;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
+      .profit--positive { color: var(--lg-pos); }
+      .profit--negative { color: var(--lg-neg); }
+
+      /* Detail */
+      .detail-header { padding: 1.25rem; margin-bottom: 1.25rem; }
+      .detail-header__title { font-size: 1.5rem; font-weight: 800; letter-spacing: -0.02em; color: #fff; }
+      .detail-top { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1rem; }
+      .detail-top__left { display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap; }
+      .lg-danger {
+        font: inherit; font-size: 0.8rem; font-weight: 600; color: var(--lg-neg); cursor: pointer;
+        background: rgba(251, 113, 133, 0.1); border: 1px solid transparent;
+        box-shadow: 0 0 0 1px rgba(251, 113, 133, 0.25); border-radius: 10px; padding: 0.45rem 0.85rem;
+        transition-property: background-color, scale; transition-duration: 150ms; transition-timing-function: ease-out;
       }
-      .detail-header__title {
-        font-size: 1.5rem;
-        font-weight: 800;
-        margin-bottom: 1rem;
-        color: #fff;
-      }
-      .league-stats-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        gap: 1rem;
-      }
+      .lg-danger:active { scale: 0.96; }
+      @media (hover: hover) { .lg-danger:hover { background: rgba(251, 113, 133, 0.2); } }
+      .league-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 0.75rem; }
       .league-stat-box {
-        background: rgba(255, 255, 255, 0.02);
-        border: 1px solid var(--border);
-        padding: 0.75rem 1rem;
-        border-radius: var(--radius-sm);
-        text-align: center;
+        background: #0a0e14; padding: 0.75rem 1rem; border-radius: 12px; text-align: left;
+        box-shadow: 0 0 0 1px var(--lg-line);
       }
-      .league-stat-box__val {
-        font-size: 1.4rem;
-        font-weight: 800;
-        color: #fff;
-      }
+      .league-stat-box__val { font-size: 1.35rem; font-weight: 700; letter-spacing: -0.02em; color: #fff; }
       .league-stat-box__lbl {
-        font-size: 0.72rem;
-        color: var(--text-muted);
-        text-transform: uppercase;
-        margin-top: 0.25rem;
-        letter-spacing: 0.05em;
+        font-size: 0.7rem; font-weight: 600; color: var(--lg-text-3); text-transform: uppercase;
+        margin-top: 0.25rem; letter-spacing: 0.06em;
       }
 
-      .match-card {
-        background: var(--bg-card);
-        border: 1px solid var(--border);
-        border-radius: var(--radius);
-        margin-bottom: 1rem;
-        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.15);
-        overflow: hidden;
-      }
+      .match-card { margin-bottom: 0.875rem; overflow: hidden; }
       .match-card__header {
-        padding: 1rem 1.25rem;
-        background: rgba(255, 255, 255, 0.01);
-        border-bottom: 1px solid var(--border);
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        flex-wrap: wrap;
-        gap: 0.5rem;
+        padding: 0.875rem 1.125rem; border-bottom: 1px solid var(--lg-line);
+        display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem;
       }
-      .match-card__title {
-        font-weight: 700;
-        font-size: 1.05rem;
-      }
-      .match-card__date {
-        font-size: 0.8rem;
-        color: var(--text-muted);
-      }
-      .match-card__body {
-        padding: 1.25rem;
-      }
+      .match-card__title { font-weight: 700; font-size: 1rem; }
+      .match-card__date { font-size: 0.78rem; color: var(--lg-text-3); }
+      .match-card__body { padding: 1.125rem; }
       .pick-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        padding: 0.6rem 0.8rem;
-        background: rgba(0, 0, 0, 0.2);
-        border: 1px solid rgba(255, 255, 255, 0.04);
-        border-radius: 6px;
-        margin-bottom: 0.5rem;
+        display: flex; justify-content: space-between; align-items: center; padding: 0.6rem 0.8rem;
+        background: #0a0e14; border-radius: 10px; margin-bottom: 0.4rem;
       }
-      .pick-row:last-child {
-        margin-bottom: 0;
+      .pick-row:last-child { margin-bottom: 0; }
+      .badge-success, .badge-fail, .badge-pending, .badge-stats-missing, .badge-void {
+        padding: 2px 7px; border-radius: 6px; font-size: 0.72rem; font-weight: 700; border: 1px solid transparent;
       }
-      .badge-success {
-        background: rgba(16, 185, 129, 0.15);
-        color: var(--green);
-        border: 1px solid rgba(16, 185, 129, 0.3);
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 700;
-      }
-      .badge-fail {
-        background: rgba(239, 68, 68, 0.15);
-        color: var(--red);
-        border: 1px solid rgba(239, 68, 68, 0.3);
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 700;
-      }
-      .badge-pending {
-        background: rgba(245, 158, 11, 0.15);
-        color: #f59e0b;
-        border: 1px solid rgba(245, 158, 11, 0.3);
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.75rem;
-        font-weight: 700;
-      }
-      .badge-stats-missing {
-        background: rgba(100, 116, 139, 0.15);
-        color: #94a3b8;
-        border: 1px solid rgba(100, 116, 139, 0.3);
-        padding: 2px 6px;
-        border-radius: 4px;
-        font-size: 0.72rem;
-        font-weight: 600;
-      }
+      .badge-success { background: rgba(52, 211, 153, 0.14); color: var(--lg-pos); }
+      .badge-fail { background: rgba(251, 113, 133, 0.14); color: var(--lg-neg); }
+      .badge-pending { background: rgba(251, 191, 36, 0.14); color: var(--lg-warn); }
+      .badge-void, .badge-stats-missing { background: rgba(148, 163, 184, 0.14); color: #9aa7b8; }
+
+      .toolbar-row { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.25rem; }
       .tabs-container {
-        display: flex;
-        gap: 0.5rem;
-        margin-bottom: 1.5rem;
-        background: rgba(0, 0, 0, 0.2);
-        padding: 4px;
-        border-radius: 8px;
-        width: fit-content;
-        border: 1px solid var(--border);
+        display: flex; gap: 0.25rem; padding: 4px; background: var(--lg-card);
+        border-radius: 14px; width: fit-content; box-shadow: var(--lg-ring);
       }
       .tab-btn {
-        background: transparent;
-        color: var(--text-secondary);
-        border: none;
-        padding: 0.5rem 1.25rem;
-        border-radius: 6px;
-        font-weight: 600;
-        font-size: 0.85rem;
-        cursor: pointer;
-        transition: var(--transition);
+        font: inherit; background: transparent; color: #9aa7b8; border: none; padding: 0.5rem 1.1rem;
+        border-radius: 10px; font-weight: 600; font-size: 0.8125rem; cursor: pointer;
+        transition-property: background-color, color, scale; transition-duration: 150ms; transition-timing-function: ease-out;
       }
-      .tab-btn:hover {
-        color: #fff;
-        background: rgba(255, 255, 255, 0.05);
+      .tab-btn:enabled:active { scale: 0.96; }
+      @media (hover: hover) { .tab-btn:hover { color: #fff; background: rgba(148, 163, 184, 0.08); } }
+      .tab-btn.active, .tab-btn.active:hover { background: var(--lg-accent-soft); color: var(--lg-accent); }
+      .tab-btn:focus-visible { outline: 2px solid var(--lg-accent); outline-offset: 2px; }
+      .season-card {
+        display: none; align-items: center; gap: 0.5rem; background: var(--lg-card);
+        padding: 4px 10px; border-radius: 12px; box-shadow: var(--lg-ring); margin-left: auto;
       }
-      .tab-btn.active {
-        background: var(--accent);
-        color: #fff;
+      .season-card span { font-size: 0.8125rem; font-weight: 600; color: var(--lg-text-3); white-space: nowrap; }
+
+      .dashboard-loader { display: flex; align-items: center; justify-content: center; gap: 0.75rem; height: 360px; color: #9aa7b8; }
+      .spinner {
+        width: 22px; height: 22px; border: 3px solid rgba(148, 163, 184, 0.2);
+        border-top-color: var(--lg-accent); border-radius: 50%; animation: lg-spin 0.8s linear infinite;
       }
+      @keyframes lg-spin { to { transform: rotate(360deg); } }
+      @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 2.4s; } }
     </style>
   </head>
   <body>
+    {% include '_nav.html' %}
     <header class="header">
       <div class="header__brand">
-        <a
-          href="/"
-          style="text-decoration: none; font-size: 1.4rem; margin-right: 0.5rem"
-          >⬅️</a
-        >
         <span class="header__icon">🏆</span>
         <h1 class="header__title">Sherlock</h1>
         <span class="header__tag">Ligas</span>
-      </div>
-      <div style="display: flex; align-items: center; gap: 0.75rem">
-        <a
-          href="/rules"
-          style="
-            text-decoration: none;
-            color: var(--text-secondary, #94a3b8);
-            font-size: 0.85rem;
-            font-weight: 600;
-            padding: 0.4rem 0.75rem;
-            border-radius: 6px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-            transition: 0.2s;
-          "
-          onmouseover="this.style.color = '#a5b4fc'"
-          onmouseout="this.style.color = 'var(--text-secondary,#94a3b8)'"
-          >📐 Reglas de Picks</a
-        >
-        <a
-          href="/compare"
-          style="
-            text-decoration: none;
-            color: var(--text-secondary, #94a3b8);
-            font-size: 0.85rem;
-            font-weight: 600;
-            padding: 0.4rem 0.75rem;
-            border-radius: 6px;
-            background: rgba(255, 255, 255, 0.03);
-            border: 1px solid rgba(255, 255, 255, 0.06);
-          "
-          >⚽ Comparador</a
-        >
       </div>
       <p class="header__subtitle">
         Desglose detallado por competición, partidos y cuotas evaluadas
@@ -302,71 +193,21 @@
       <div id="leagues-content" style="display: none" class="leagues-layout">
         <!-- Columna Izquierda: Lista de Ligas -->
         <div class="sidebar-card">
-          <div
-            style="
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              margin-bottom: 1rem;
-              padding-bottom: 0.5rem;
-              border-bottom: 1px solid var(--border);
-            "
-          >
-            <div
-              class="sidebar-title"
-              style="margin-bottom: 0; padding-bottom: 0; border: none"
-            >
-              Competiciones
-            </div>
-            <label
-              style="
-                display: inline-flex;
-                align-items: center;
-                gap: 0.25rem;
-                cursor: pointer;
-                font-size: 0.75rem;
-                color: var(--text-muted);
-                font-weight: 500;
-                user-select: none;
-              "
-            >
-              <input
-                type="checkbox"
-                id="leagues-use-stake"
-                style="
-                  width: 13px;
-                  height: 13px;
-                  accent-color: var(--accent-light);
-                  cursor: pointer;
-                "
-                onchange="toggleLeaguesStake()"
-              />
+          <div class="sidebar-head">
+            <div class="sidebar-title">Competiciones</div>
+            <label class="lg-check">
+              <input type="checkbox" id="leagues-use-stake" onchange="toggleLeaguesStake()" />
               📈 Stakes
             </label>
           </div>
-          <!-- Buscador de Ligas -->
-          <div style="margin-bottom: 0.75rem;">
-            <input
-              type="text"
-              id="league-search-input"
-              placeholder="🔍 Buscar liga..."
-              oninput="filterLeaguesList()"
-              style="
-                width: 100%;
-                background: rgba(0, 0, 0, 0.4);
-                border: 1px solid var(--border);
-                padding: 0.45rem 0.75rem;
-                border-radius: var(--radius-sm);
-                font-size: 0.82rem;
-                color: #fff;
-                outline: none;
-                box-sizing: border-box;
-                transition: border-color 0.2s;
-              "
-              onfocus="this.style.borderColor='var(--accent)'"
-              onblur="this.style.borderColor='var(--border)'"
-            />
-          </div>
+          <input
+            type="text"
+            id="league-search-input"
+            class="lg-input"
+            placeholder="🔍 Buscar liga..."
+            aria-label="Buscar liga"
+            oninput="filterLeaguesList()"
+          />
           <div id="leagues-list">
             <!-- Rellenado dinámicamente -->
           </div>
@@ -375,79 +216,17 @@
         <!-- Columna Derecha: Detalles de la Liga seleccionada -->
         <div id="league-detail-section">
           <div class="detail-header">
-            <div
-              style="
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                flex-wrap: wrap;
-                gap: 1rem;
-                margin-bottom: 1rem;
-              "
-            >
-              <div
-                style="
-                  display: flex;
-                  align-items: center;
-                  gap: 0.75rem;
-                  flex-wrap: wrap;
-                "
-              >
-                <div
-                  class="detail-header__title"
-                  id="selected-league-name"
-                  style="margin-bottom: 0"
-                >
+            <div class="detail-top">
+              <div class="detail-top__left">
+                <div class="detail-header__title" id="selected-league-name">
                   Selecciona una liga
                 </div>
-                <label
-                  id="league-profit-toggle-card"
-                  style="
-                    display: inline-flex;
-                    align-items: center;
-                    gap: 0.4rem;
-                    font-size: 0.85rem;
-                    font-weight: 600;
-                    color: var(--text-muted);
-                    cursor: pointer;
-                    user-select: none;
-                    background: rgba(255, 255, 255, 0.03);
-                    padding: 5px 12px;
-                    border-radius: 6px;
-                    border: 1px solid var(--border);
-                  "
-                >
-                  <input
-                    type="checkbox"
-                    id="chk-league-profitability"
-                    style="
-                      width: 15px;
-                      height: 15px;
-                      accent-color: var(--accent);
-                      cursor: pointer;
-                    "
-                    onchange="toggleActiveLeagueProfitability(this.checked)"
-                  />
+                <label id="league-profit-toggle-card" class="lg-check lg-check--pill">
+                  <input type="checkbox" id="chk-league-profitability" onchange="toggleActiveLeagueProfitability(this.checked)" />
                   <span>Contar en Rentabilidad</span>
                 </label>
               </div>
-              <button
-                id="btn-delete-league"
-                onclick="deleteCurrentLeague()"
-                style="
-                  background: rgba(239, 68, 68, 0.15);
-                  color: var(--red);
-                  border: 1px solid rgba(239, 68, 68, 0.3);
-                  padding: 0.4rem 0.85rem;
-                  border-radius: 6px;
-                  font-weight: 600;
-                  font-size: 0.8rem;
-                  cursor: pointer;
-                  transition: 0.2s;
-                "
-                onmouseover="this.style.background = 'rgba(239, 68, 68, 0.3)'"
-                onmouseout="this.style.background = 'rgba(239, 68, 68, 0.15)'"
-              >
+              <button id="btn-delete-league" class="lg-danger" onclick="deleteCurrentLeague()">
                 🗑️ Eliminar competición
               </button>
             </div>
@@ -472,18 +251,18 @@
                 <div class="league-stat-box__lbl">Beneficio (ROI)</div>
               </div>
               <div class="league-stat-box">
-                <div class="league-stat-box__val" id="lbl-avg-odds" style="color: #f59e0b;">0.00</div>
+                <div class="league-stat-box__val" id="lbl-avg-odds" style="color: #fbbf24;">0.00</div>
                 <div class="league-stat-box__lbl">Cuota Media</div>
               </div>
               <div class="league-stat-box">
-                <div class="league-stat-box__val" id="lbl-break-even" style="color: #38bdf8;">0.0%</div>
+                <div class="league-stat-box__val" id="lbl-break-even" style="color: #22d3ee;">0.0%</div>
                 <div class="league-stat-box__lbl">% Equilibrio</div>
               </div>
             </div>
           </div>
 
-          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem; margin-bottom: 1.5rem;">
-            <div class="tabs-container" style="margin-bottom: 0;">
+          <div class="toolbar-row">
+            <div class="tabs-container">
               <button
                 id="tab-matches"
                 class="tab-btn active"
@@ -538,34 +317,9 @@
             </div>
 
             <!-- Filtro de Temporadas de la Liga -->
-            <div
-              id="season-filter-card"
-              style="
-                display: none;
-                align-items: center;
-                gap: 0.5rem;
-                background: rgba(255, 255, 255, 0.03);
-                padding: 4px 10px;
-                border-radius: var(--radius-sm);
-                border: 1px solid var(--border);
-                margin-left: auto;
-              "
-            >
-              <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); white-space: nowrap;">📅 Temporada:</span>
-              <select
-                id="selected-season"
-                style="
-                  background: rgba(0, 0, 0, 0.4);
-                  border: 1px solid var(--border);
-                  padding: 0.35rem 0.65rem;
-                  border-radius: var(--radius-sm);
-                  font-size: 0.85rem;
-                  color: #fff;
-                  cursor: pointer;
-                  outline: none;
-                "
-                onchange="changeSelectedSeason()"
-              >
+            <div id="season-filter-card" class="season-card">
+              <span>📅 Temporada:</span>
+              <select id="selected-season" aria-label="Temporada" onchange="changeSelectedSeason()">
                 <option value="all">Todas las temporadas</option>
               </select>
             </div>

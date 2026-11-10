@@ -3,23 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Sherlock – Panel de Administración</title>
-    <meta name="description" content="Panel de administración, auditoría de picks, estadísticas y explorador de base de datos para Sherlock." />
+    <title>Sherlock – {{ page_title }}</title>
+    <meta name="description" content="Picks, estadísticas avanzadas y explorador de datos de Sherlock." />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/static/css/styles.css" />
+    <link rel="stylesheet" href="/static/css/styles.css?v={{ css_version }}" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js"></script>
     <style>
       :root {
-        --dash-glow: rgba(99, 102, 241, 0.15);
-        --admin-accent: #6366f1;
-        --admin-accent-hover: #4f46e5;
-        --admin-success: #10b981;
-        --admin-danger: #ef4444;
-        --admin-warning: #f59e0b;
+                --admin-accent: #0891b2;
+        --admin-accent-hover: #0e7490;
+        --admin-success: #34d399;
+        --admin-danger: #fb7185;
+        --admin-warning: #fbbf24;
         --admin-bg-dark: var(--bg-base, #030712);
-        --admin-card-bg: var(--bg-elevated, #0b0f19);
-        --admin-border: var(--border, rgba(255, 255, 255, 0.08));
+        --admin-card-bg: #111721;
+        --admin-border: rgba(148, 163, 184, 0.14);
       }
 
       .admin-layout {
@@ -29,52 +28,6 @@
         background: var(--bg-base, #030712);
         color: var(--text-primary, #f8fafc);
         font-family: 'Inter', sans-serif;
-      }
-
-      .admin-header {
-        background: var(--bg-elevated, #0b0f19);
-        border-bottom: 1px solid var(--admin-border);
-        padding: 1rem 2rem;
-        display: flex;
-        justify-content: space-between;
-        align-items: center;
-        sticky: top;
-        z-index: 100;
-      }
-
-      .admin-brand {
-        display: flex;
-        align-items: center;
-        gap: 0.75rem;
-        font-size: 1.35rem;
-        font-weight: 800;
-        background: linear-gradient(135deg, #38bdf8, #818cf8);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-      }
-
-      .admin-nav {
-        display: flex;
-        gap: 0.5rem;
-      }
-
-      .admin-nav-item {
-        padding: 0.6rem 1.2rem;
-        border-radius: 0.5rem;
-        font-size: 0.9rem;
-        font-weight: 600;
-        color: #94a3b8;
-        text-decoration: none;
-        transition: all 0.2s ease;
-        display: flex;
-        align-items: center;
-        gap: 0.5rem;
-      }
-
-      .admin-nav-item:hover, .admin-nav-item.active {
-        color: #ffffff;
-        background: rgba(99, 102, 241, 0.2);
-        border: 1px solid rgba(99, 102, 241, 0.4);
       }
 
       .admin-content {
@@ -137,7 +90,7 @@
         font-size: 0.85rem;
         font-weight: 600;
         cursor: pointer;
-        transition: background 0.2s;
+        transition-property: background-color, scale; transition-duration: 150ms; transition-timing-function: ease-out;
         display: inline-flex;
         align-items: center;
         gap: 0.4rem;
@@ -281,8 +234,9 @@
       .modal-backdrop.show { display: flex; }
 
       .modal-content {
-        background: #1e293b;
+        background: #111721;
         border: 1px solid var(--admin-border);
+        overscroll-behavior: contain;
         border-radius: 0.75rem;
         max-width: 900px;
         width: 90%;
@@ -351,43 +305,14 @@
   </head>
   <body class="admin-layout">
 
-    <!-- Header Navigation -->
-    <header class="admin-header">
-      <div class="admin-brand">
-        🔍 Sherlock Admin Panel
-      </div>
-      <nav class="admin-nav">
-        <a href="/admin/dashboard" class="admin-nav-item {% if active_tab == 'dashboard' %}active{% endif %}">
-          📊 Dashboard
-        </a>
-        <a href="/admin/picks" class="admin-nav-item {% if active_tab == 'picks' %}active{% endif %}">
-          🔎 Explorador de Picks
-        </a>
-        <a href="/admin/stats" class="admin-nav-item {% if active_tab == 'stats' %}active{% endif %}">
-          📈 Estadísticas Avanzadas
-        </a>
-        <a href="/admin/database" class="admin-nav-item {% if active_tab == 'database' %}active{% endif %}">
-          🗄️ Base de Datos
-        </a>
-      </nav>
-      <div>
-        <span style="font-size:0.8rem; color:#94a3b8; background:#0f172a; padding:0.4rem 0.8rem; border-radius:0.4rem; border:1px solid #334155;">
-          Rol: <strong>Administrador</strong>
-        </span>
-      </div>
-    </header>
+    {% include '_nav.html' %}
 
     <!-- Main Dynamic Content -->
     <main class="admin-content">
       <div id="admin-view-root" data-active-tab="{{ active_tab }}">
-        {% if active_tab == 'dashboard' %}
-          {% include 'main_dashboard.html' %}
-        {% else %}
-          <!-- Tab Content dynamically mounted by admin.js -->
-          <div style="text-align: center; padding: 4rem;">
-            <p style="color: #94a3b8;">Cargando Sherlock Admin Panel...</p>
-          </div>
-        {% endif %}
+        <div style="text-align: center; padding: 4rem;">
+          <p style="color: #94a3b8;">Cargando...</p>
+        </div>
       </div>
     </main>
 
@@ -404,7 +329,6 @@
       </div>
     </div>
 
-    <script src="/static/js/dashboard_main.js?v={{ js_version }}"></script>
-    <script src="/static/js/admin.js"></script>
+    <script src="/static/js/admin.js?v={{ js_version }}"></script>
   </body>
 </html>

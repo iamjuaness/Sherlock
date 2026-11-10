@@ -84,6 +84,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
             # ── ESTRATEGIA 1: Busqueda directa por event_id (la mas rapida) ──
             event_id = payload.get("event_id")
             matched = None
+            match_date_val = None
             if event_id:
                 matched = (
                     db.query(AnalysisHistory)
@@ -191,6 +192,37 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                             matched = h
                             break
 
+            # ── Gemelo con picks: el mismo partido puede existir dos veces con distinto nombre de equipo
+            # ("Amed" en el análisis vs "Amedspor" en Watson). El resultado debe llegar a la fila con picks. ──
+            twin_date = match_date_val or (matched and (matched.match_date or matched.date))
+            if (not matched or not matched.picks_calculados) and twin_date:
+                from datetime import timedelta
+                from sqlalchemy import func
+                from src.core.entity_resolver import split_title
+
+                def _same_team(a: str, b: str) -> bool:
+                    a, b = a.strip().casefold(), b.strip().casefold()
+                    return a == b or (min(len(a), len(b)) >= 3 and (a in b or b in a))
+
+                twins = (
+                    db.query(AnalysisHistory)
+                    .filter(
+                        AnalysisHistory.sport == sport_enum,
+                        AnalysisHistory.picks_calculados.isnot(None),
+                        AnalysisHistory.final_score_home.is_(None),
+                        func.coalesce(AnalysisHistory.match_date, AnalysisHistory.date)
+                        >= twin_date - timedelta(days=2),
+                        func.coalesce(AnalysisHistory.match_date, AnalysisHistory.date)
+                        <= twin_date + timedelta(days=2),
+                    )
+                    .all()
+                )
+                for t in twins:
+                    th, ta = split_title(t.match_title)
+                    if th and ta and _same_team(th, home_name) and _same_team(ta, away_name):
+                        matched = t
+                        break
+
             # ── Si encontramos el partido, actualizamos ──
             if matched:
                 h = matched
@@ -199,7 +231,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                 try:
                     _p = json.loads(str(h.payload))
                     _changed = False
-                    for _k in ("event_id", "season_id"):
+                    for _k in ("event_id", "season_id", "stage"):
                         if payload.get(_k) and not _p.get(_k):
                             _p[_k] = payload[_k]
                             _changed = True
@@ -407,6 +439,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
             "round": payload.get("round"),
             "start_timestamp": payload.get("start_timestamp"),
             "event_id": payload.get("event_id"),
+            "stage": payload.get("stage"),
         }
 
         print(f"Reconstruido payload: {cleaned_payload}")

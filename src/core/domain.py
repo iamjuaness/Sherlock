@@ -69,8 +69,26 @@ class Competition(Base):
     season = Column(String(20), nullable=True)
     external_id = Column(String(100), nullable=True)
     source = Column(String(50), nullable=True)
+    # ── Datos de SofaScore (sync desde Watson) ──
+    slug = Column(String(200), nullable=True)
+    category = Column(String(100), nullable=True)  # grupo/pais de SofaScore (ej. "Colombia", "Europe")
+    country_code = Column(String(3), nullable=True)  # alpha2 (CO); NULL en torneos internacionales
+    tier = Column(Integer, nullable=True)  # 1 = primera division / maximo nivel
+    user_count = Column(Integer, nullable=True)  # popularidad en SofaScore
+    primary_color = Column(String(9), nullable=True)
+    secondary_color = Column(String(9), nullable=True)
+    logo_id = Column(Integer, nullable=True)
+    season_id = Column(String(30), nullable=True)  # temporada vigente (SofaScore season id)
+    season_name = Column(String(200), nullable=True)
+    season_year = Column(String(20), nullable=True)  # "2026" o "2025/2026"
+    active = Column(Boolean, nullable=False, default=True, server_default="1")
+    synced_at = Column(DateTime, nullable=True)
+    aliases = Column(Text, nullable=True)  # JSON: otros nombres con los que llegan partidos (ej. "Liga DIMAYOR")
+    # Las columnas de arriba (external_id, season_*, tier...) son un espejo de la fuente vigente;
+    # la verdad por torneo de SofaScore vive en `sources`.
 
     matches = relationship("Match", back_populates="competition")
+    sources = relationship("CompetitionSource", back_populates="competition", cascade="all, delete-orphan")
 
     __table_args__ = (
         UniqueConstraint("sport", "name", "season", name="uq_competition_sport_name_season"),
@@ -78,6 +96,42 @@ class Competition(Base):
 
     def __repr__(self) -> str:
         return f"<Competition {self.name} ({self.sport.value}, {self.season})>"
+
+
+class CompetitionSource(Base):
+    """Un unique-tournament de SofaScore que alimenta una competencia.
+
+    Primera A: 1 fuente. Liga MX: 2 (Apertura y Clausura son unique-tournaments distintos).
+    """
+
+    __tablename__ = "competition_sources"
+
+    id = Column(String(36), primary_key=True, default=_new_id)
+    competition_id = Column(String(36), ForeignKey("competitions.id"), nullable=False, index=True)
+    external_id = Column(String(100), nullable=False, unique=True)  # SofaScore unique-tournament id
+    name = Column(String(200), nullable=True)  # nombre en SofaScore (ej. "Liga MX, Apertura")
+    stage = Column(String(50), nullable=True)  # "Apertura" / "Clausura"; NULL si no aplica
+    slug = Column(String(200), nullable=True)
+    tier = Column(Integer, nullable=True)
+    grade = Column(String(30), nullable=True)  # meta.grade (professional...)
+    user_count = Column(Integer, nullable=True)
+    primary_color = Column(String(9), nullable=True)
+    secondary_color = Column(String(9), nullable=True)
+    logo_id = Column(Integer, nullable=True)
+    teams_count = Column(Integer, nullable=True)
+    rounds_count = Column(Integer, nullable=True)
+    games_count = Column(Integer, nullable=True)
+    tables_count = Column(Integer, nullable=True)  # >1 = grupos/fases
+    relegating_teams_count = Column(Integer, nullable=True)
+    frequency = Column(Integer, nullable=True)
+    season_id = Column(String(30), nullable=True)
+    season_name = Column(String(200), nullable=True)
+    season_year = Column(String(20), nullable=True)
+    current_round = Column(Integer, nullable=True)
+    active = Column(Boolean, nullable=False, default=True, server_default="1")
+    synced_at = Column(DateTime, nullable=True)  # NULL = descubierta, sin enriquecer
+
+    competition = relationship("Competition", back_populates="sources")
 
 
 class Team(Base):
@@ -304,6 +358,8 @@ class AnalysisHistory(Base):
     season_id = Column(String(30), nullable=True)
     season_year = Column(String(30), nullable=True)
     season_label = Column(String(30), nullable=True)
+    # Torneo dentro de la liga ("Apertura"/"Clausura"); NULL si la liga no se parte.
+    stage = Column(String(50), nullable=True)
 
     # Final Results
     final_score_home = Column(Integer, nullable=True)
@@ -469,6 +525,16 @@ def _sync_season(mapper, connection, target):
         target.season_id, target.season_year, target.season_label = extract_season_columns(target.payload)
 
 
+def _sync_stage(mapper, connection, target):
+    from src.core.entity_resolver import extract_stage
+
+    st = _sa_inspect(target)
+    if st.transient or st.pending or st.attrs.payload.history.has_changes() or st.attrs.competition.history.has_changes():
+        target.stage = extract_stage(target.payload, target.competition) or target.stage
+
+
+event.listen(AnalysisHistory, "before_insert", _sync_stage)
+event.listen(AnalysisHistory, "before_update", _sync_stage)
 event.listen(AnalysisHistory, "before_insert", _sync_season)
 event.listen(AnalysisHistory, "before_update", _sync_season)
 event.listen(AnalysisHistory, "before_insert", _sync_entity_ids)

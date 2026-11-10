@@ -185,19 +185,99 @@ function setupEventListeners() {
 // ═══════════════════════════════════════════════════════════════
 // EXTRACCIÓN MASIVA (BULK) DE PARTIDOS / RESULTADOS
 // ═══════════════════════════════════════════════════════════════
+const COMP_SYNC_MAX_AGE_MS = 24 * 3600 * 1000;
+let _compSyncing = false;
+
+async function syncCompetitionsToSherlock(baseUrl, comps) {
+  if (_compSyncing) return null;
+  _compSyncing = true;
+  try {
+    const slim = comps.map((c) => ({ id: c.id, name: c.name, active: c.active }));
+    const r = await chrome.runtime.sendMessage({
+      action: "syncCompetitions",
+      data: { baseUrl, competitions: slim },
+    });
+    if (!r?.success) console.warn("Sync de competiciones falló:", r?.error);
+    return r;
+  } finally {
+    _compSyncing = false;
+  }
+}
+
+async function fetchCompetitionCatalog(baseUrl, includeInactive = false) {
+  const res = await fetch(
+    `${baseUrl}/api/v1/competitions/catalog${includeInactive ? "?include_inactive=true" : ""}`,
+  );
+  if (!res.ok) return [];
+  const data = await res.json();
+  return Array.isArray(data) ? data : [];
+}
+
+/** Botón "Sincronizar competiciones": catálogo de la BD + ligas nuevas de competitions.json, todas contra SofaScore. */
+async function handleSyncCompetitionsUI() {
+  if (!sherlockEndpoint) {
+    showStatus("error", "Configura el endpoint de Sherlock en Settings");
+    return;
+  }
+  let baseUrl = sherlockEndpoint;
+  if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
+
+  const btn = document.getElementById("btnSyncCompetitions");
+  if (btn) btn.disabled = true;
+  showStatus("loading", "Sincronizando competiciones con SofaScore (~2 min)...");
+  try {
+    const seed = await fetch(chrome.runtime.getURL("competitions.json"))
+      .then((r) => (r.ok ? r.json() : []))
+      .catch(() => []);
+    // Las "descubiertas" (sin enriquecer) no se re-consultan una por una: solo las conocidas.
+    const catalog = (await fetchCompetitionCatalog(baseUrl, true).catch(() => [])).filter(
+      (c) => !c.discovered,
+    );
+    const byId = new Map();
+    for (const c of [...seed, ...catalog]) byId.set(String(c.id), c); // la BD gana sobre el JSON
+    const r = await syncCompetitionsToSherlock(baseUrl, [...byId.values()]);
+    if (r?.success) {
+      showStatus(
+        "success",
+        `✅ Competiciones: ${r.created} nuevas, ${r.updated} actualizadas`,
+      );
+    } else {
+      showStatus("error", `❌ ${r?.error || "Sincronización ya en curso"}`);
+    }
+  } catch (err) {
+    showStatus("error", `❌ Error: ${err.message}`);
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 async function getActiveCompetitions() {
-  // 1. Intentar consultar las competiciones directamente a la API de Sherlock si el endpoint está configurado
+  // 1. La BD de Sherlock es la fuente de verdad (id/temporada vigente vienen de SofaScore vía sync)
   if (sherlockEndpoint) {
+    let baseUrl = sherlockEndpoint;
+    if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
     try {
-      let baseUrl = sherlockEndpoint;
-      if (baseUrl.includes("/api/v1")) baseUrl = baseUrl.split("/api/v1")[0];
-      const res = await fetch(`${baseUrl}/api/v1/competitions`);
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          return data.filter((c) => c.active !== false);
+      let catalog = await fetchCompetitionCatalog(baseUrl);
+
+      if (catalog.length === 0) {
+        // Primera vez: sembrar la BD con competitions.json y volver a leer
+        const seed = await fetch(chrome.runtime.getURL("competitions.json"))
+          .then((r) => (r.ok ? r.json() : []))
+          .catch(() => []);
+        if (seed.length > 0) {
+          await syncCompetitionsToSherlock(baseUrl, seed);
+          catalog = await fetchCompetitionCatalog(baseUrl);
+        }
+      } else {
+        // Temporada vigente puede cambiar: refrescar en segundo plano si el sync tiene > 24h
+        const newest = Math.max(...catalog.map((c) => Date.parse(c.synced_at) || 0));
+        if (Date.now() - newest > COMP_SYNC_MAX_AGE_MS) {
+          syncCompetitionsToSherlock(baseUrl, catalog);
         }
       }
+
+      const active = catalog.filter((c) => c.active !== false && c.season);
+      if (active.length > 0) return active;
     } catch (e) {
       console.warn(
         "No se pudo obtener competiciones desde la API de Sherlock:",
@@ -206,7 +286,7 @@ async function getActiveCompetitions() {
     }
   }
 
-  // 2. Fallback a intentar cargar localmente competitions.json del paquete de la extensión
+  // 2. Sin API de Sherlock: competitions.json del paquete de la extensión
   try {
     const res = await fetch(chrome.runtime.getURL("competitions.json"));
     if (res.ok) {
@@ -987,6 +1067,8 @@ function showNoMatch() {
   if (btnSettings) {
     btnSettings.onclick = () => chrome.runtime.openOptionsPage();
   }
+  const btnSync = document.getElementById("btnSyncCompetitions");
+  if (btnSync) btnSync.onclick = handleSyncCompetitionsUI;
 }
 // ═══════════════════════════════════════════════════════════════
 // MOSTRAR PREVIEW DE ESTADÍSTICAS

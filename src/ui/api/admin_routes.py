@@ -73,35 +73,26 @@ def require_admin_write(role: str = Depends(get_current_admin_role)) -> str:
 # HTML Page Views
 # ---------------------------------------------------------------------------
 
-@admin_router.get("/admin", include_in_schema=False)
-async def admin_root():
-    """Redirect /admin to /admin/dashboard."""
-    return RedirectResponse(url="/admin/dashboard", status_code=307)
+# Rutas antiguas /admin/*: redirigen a las vistas principales (/picks, /stats, /database).
+_LEGACY_ADMIN_REDIRECTS = {
+    "/admin": "/",
+    "/admin/dashboard": "/",
+    "/admin/picks": "/picks",
+    "/admin/stats": "/stats",
+    "/admin/database": "/database",
+}
 
 
-@admin_router.get("/admin/dashboard", response_class=HTMLResponse, include_in_schema=False)
-async def admin_dashboard_page(request: Request):
-    """Render Admin Dashboard view."""
-    return templates.TemplateResponse(request=request, name="admin_panel.html", context={"active_tab": "dashboard", "embedded_in_admin": True, "css_version": "1", "js_version": "1"})
+def _make_redirect(target: str):
+    async def _redirect(request: Request):
+        qs = request.url.query
+        return RedirectResponse(url=f"{target}?{qs}" if qs else target, status_code=307)
+
+    return _redirect
 
 
-@admin_router.get("/admin/picks", response_class=HTMLResponse, include_in_schema=False)
-async def admin_picks_page(request: Request):
-    """Render Picks Explorer view."""
-    return templates.TemplateResponse(request=request, name="admin_panel.html", context={"active_tab": "picks", "embedded_in_admin": True, "css_version": "1", "js_version": "1"})
-
-
-@admin_router.get("/admin/stats", response_class=HTMLResponse, include_in_schema=False)
-async def admin_stats_page(request: Request):
-    """Render Advanced Analytics view."""
-    return templates.TemplateResponse(request=request, name="admin_panel.html", context={"active_tab": "stats", "embedded_in_admin": True, "css_version": "1", "js_version": "1"})
-
-
-@admin_router.get("/admin/database", response_class=HTMLResponse, include_in_schema=False)
-async def admin_database_page(request: Request):
-    """Render Database Explorer view."""
-    return templates.TemplateResponse(request=request, name="admin_panel.html", context={"active_tab": "database", "embedded_in_admin": True, "css_version": "1", "js_version": "1"})
-
+for _src, _dst in _LEGACY_ADMIN_REDIRECTS.items():
+    admin_router.add_api_route(_src, _make_redirect(_dst), methods=["GET"], include_in_schema=False)
 
 
 # ---------------------------------------------------------------------------

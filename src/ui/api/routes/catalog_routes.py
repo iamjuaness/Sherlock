@@ -7,7 +7,7 @@ import json
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from src.core.database import get_db
-from src.core.domain import Competition, Match, Sport, AnalysisHistory
+from src.core.domain import AnalysisHistory, Competition, CompetitionSource, Match, Sport
 from src.ui.api.schemas import (
     CompetitionOut,
     MatchOut,
@@ -54,6 +54,61 @@ def list_competitions(
         except ValueError:
             raise HTTPException(status_code=400, detail=f"Invalid sport: {sport}")
     return [CompetitionOut.model_validate(c) for c in query.all()]
+
+
+@router.get("/api/v1/competitions/catalog", tags=["Competitions"])
+def competitions_catalog(include_inactive: bool = Query(False), db: Session = Depends(get_db)):
+    """Catálogo para Watson: una entrada por fuente (unique-tournament) con su temporada vigente.
+
+    id = SofaScore unique-tournament, season = season_id vigente, name = liga (Liga MX tiene 2 fuentes:
+    Apertura y Clausura). `discovered`: fuente sin enriquecer (aún sin temporada).
+    """
+    q = (
+        db.query(CompetitionSource, Competition)
+        .join(Competition, CompetitionSource.competition_id == Competition.id)
+    )
+    if not include_inactive:
+        q = q.filter(CompetitionSource.active.is_(True), Competition.active.is_(True))
+    out = []
+    for s, c in q.order_by(Competition.name, CompetitionSource.stage).all():
+        if not str(s.external_id).isdigit():
+            continue
+        out.append({
+            "name": c.name, "id": int(s.external_id),
+            "season": int(s.season_id) if str(s.season_id or "").isdigit() else None,
+            "active": bool(s.active and c.active), "stage": s.stage, "source_name": s.name,
+            "season_year": s.season_year, "tier": s.tier, "grade": s.grade, "category": c.category,
+            "country_code": c.country_code, "teams_count": s.teams_count, "rounds_count": s.rounds_count,
+            "tables_count": s.tables_count, "discovered": s.synced_at is None,
+            "synced_at": s.synced_at.isoformat() if s.synced_at else None,
+        })
+    return out
+
+
+@router.post("/api/v1/competitions/sync", tags=["Competitions"])
+def sync_competitions(payload: dict, db: Session = Depends(get_db)):
+    """Watson envía unique-tournaments de SofaScore (enriquecidos o solo descubiertos); upsert en `competitions`."""
+    from src.core.entity_resolver import sync_sofascore_competition
+
+    comps = [c for c in (payload.get("competitions") or [])
+             if isinstance(c, dict) and c.get("name") and c.get("id") is not None]
+    res = [sync_sofascore_competition(db, c) for c in comps]
+    db.commit()
+    return {"status": "ok", "received": len(comps), "created": res.count("created"),
+            "updated": res.count("updated"), "skipped": res.count("skipped")}
+
+
+@router.put("/api/v1/competitions/{competition_id}/active", tags=["Competitions"])
+def set_competition_active(competition_id: str, active: bool = Query(...), db: Session = Depends(get_db)):
+    """Activa/desactiva una competencia (y todas sus fuentes) para que Watson la incluya en las extracciones."""
+    comp = db.get(Competition, competition_id)
+    if not comp:
+        raise HTTPException(status_code=404, detail="Competencia no encontrada")
+    comp.active = active
+    for s in comp.sources:
+        s.active = active
+    db.commit()
+    return {"status": "ok", "id": comp.id, "name": comp.name, "active": active}
 
 
 @router.get("/api/v1/matches", response_model=list[MatchOut], tags=["Matches"])

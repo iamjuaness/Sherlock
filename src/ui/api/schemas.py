@@ -16,6 +16,18 @@ class CompetitionOut(BaseModel):
     name: str
     country: str | None = None
     season: str | None = None
+    external_id: str | None = None
+    slug: str | None = None
+    category: str | None = None
+    country_code: str | None = None
+    tier: int | None = None
+    user_count: int | None = None
+    primary_color: str | None = None
+    secondary_color: str | None = None
+    season_id: str | None = None
+    season_name: str | None = None
+    season_year: str | None = None
+    active: bool = True
 
     class Config:
         from_attributes = True
