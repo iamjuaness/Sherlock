@@ -301,6 +301,50 @@ def estimate_nb_dispersion(values: List[float], weights: Optional[List[float]] =
 # Motor Predictor Matemático por Liga
 # ---------------------------------------------------------------------------
 
+
+_H2H_CANDIDATES_CACHE: dict = {}
+
+
+def _h2h_fixture_candidates(matches, h_lower: str, a_lower: str, kickoff, exclude_match_id) -> list:
+    """
+    Partidos previos al kickoff entre ambos equipos (local/visitante o inverso).
+
+    No depende del mercado, y compute_h2h_hit_rate se llama decenas de veces por partido
+    con los mismos equipos: se recorre el histórico completo una sola vez por enfrentamiento.
+    """
+    key = (id(matches), len(matches), h_lower, a_lower, kickoff, str(exclude_match_id).strip() if exclude_match_id is not None else None)
+    hit = _H2H_CANDIDATES_CACHE.get(key)
+    if hit is not None and hit[0] is matches:
+        return hit[1]
+
+    out = []
+    for m in matches:
+        m_id = m.get("id") or m.get("match_id")
+        if exclude_match_id is not None and m_id is not None:
+            if str(m_id).strip() == str(exclude_match_id).strip():
+                continue
+
+        title = m.get("match_title", "") or ""
+        ht_raw = m.get("home_team") or (title.split(" vs ")[0] if " vs " in title else "")
+        at_raw = m.get("away_team") or (title.split(" vs ")[1] if " vs " in title else "")
+        ht = ht_raw.strip().lower()
+        at = at_raw.strip().lower()
+
+        is_exact = ((h_lower == ht) or (h_lower in ht)) and ((a_lower == at) or (a_lower in at))
+        is_reverse = ((a_lower == ht) or (a_lower in ht)) and ((h_lower == at) or (h_lower in at))
+        if not (is_exact or is_reverse):
+            continue
+
+        date_val = record_date(m)
+        if date_val is None or not date_val < kickoff:
+            continue
+        out.append((m, ht_raw, at_raw, date_val, is_exact))
+
+    if len(_H2H_CANDIDATES_CACHE) >= 8:
+        _H2H_CANDIDATES_CACHE.clear()
+    _H2H_CANDIDATES_CACHE[key] = (matches, out)
+    return out
+
 class LeagueMathEngine:
     """
     Calcula probabilidades de partido integrando promedios por liga, fuerza relativa
@@ -1184,29 +1228,9 @@ class LeagueMathEngine:
         fam = market_family.lower().strip()
         is_strict_venue_market = bool(strict_venue and fam in {"result", "moneyline", "1x2", "double_chance", "doublechance"})
 
-        for m in matches:
-            m_id = m.get("id") or m.get("match_id")
-
-            if exclude_match_id is not None and m_id is not None:
-                if str(m_id).strip() == str(exclude_match_id).strip():
-                    continue
-
-            if not cutoff.allows_record(m):
-                continue
-
-            date_val = record_date(m)
-
-            ht_raw = m.get("home_team") or (m.get("match_title", "").split(" vs ")[0] if " vs " in m.get("match_title", "") else "")
-            at_raw = m.get("away_team") or (m.get("match_title", "").split(" vs ")[1] if " vs " in m.get("match_title", "") else "")
-            ht = ht_raw.strip().lower()
-            at = at_raw.strip().lower()
-
-            is_exact_fixture = ((h_lower == ht) or (h_lower in ht)) and ((a_lower == at) or (a_lower in at))
-            is_reverse_fixture = ((a_lower == ht) or (a_lower in ht)) and ((h_lower == at) or (h_lower in at))
-
-            if not (is_exact_fixture or is_reverse_fixture):
-                continue
-
+        for m, ht_raw, at_raw, date_val, is_exact_fixture in _h2h_fixture_candidates(
+            matches, h_lower, a_lower, cutoff.kickoff, exclude_match_id
+        ):
             total_any_venue_count += 1
 
             # Si el mercado depende estrictamente del estadio (1X2, Doble Oportunidad)

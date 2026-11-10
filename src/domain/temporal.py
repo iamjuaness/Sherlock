@@ -39,6 +39,8 @@ un único sitio y de forma declarada, no implícita en cada comparación.
 
 from __future__ import annotations
 
+from functools import lru_cache
+
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Iterable, Mapping, Sequence
@@ -87,7 +89,13 @@ def parse_utc(value: Any) -> datetime | None:
         except (OverflowError, OSError, ValueError):
             return None
 
-    text = str(value).strip()
+    return _parse_utc_text(str(value))
+
+
+@lru_cache(maxsize=200_000)
+def _parse_utc_text(raw: str) -> datetime | None:
+    """Parte textual de parse_utc, memoizada: el mismo histórico se re-parsea miles de veces."""
+    text = raw.strip()
     if not text:
         return None
 

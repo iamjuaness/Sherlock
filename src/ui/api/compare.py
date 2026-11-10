@@ -4,6 +4,7 @@ from typing import Optional
 import json
 import os, math
 import re
+import time
 import logging
 from pathlib import Path
 from dotenv import load_dotenv
@@ -582,7 +583,8 @@ _version_cache: "dict[str, Any]" = {"mtime": None, "versions": []}
 # Caché para get_calibrator_for_timestamp: evita cargar todos los archivos
 # de history en cada llamada (crítico en recalculate-all paralelo).
 # La clave es un frozenset de (path, mtime) de los archivos cargados.
-_history_cal_cache: "dict[str, Any]" = {"key": None, "cals": None}
+_history_cal_cache: "dict[str, Any]" = {"key": None, "cals": None, "path": None, "checked": 0.0}
+_CAL_RECHECK_SECONDS = 1.0
 
 
 def _build_history_cache_key(artifacts: list) -> frozenset:
@@ -617,43 +619,56 @@ def get_calibrator_for_timestamp(predicted_at: "datetime | str | None"):
     # IMPORTANTE: se usa CALIBRATION_ARTIFACT_PATH (variable de módulo) en vez de
     # os.getenv(...) directamente para que el monkeypatch de tests funcione correctamente.
     active_path_str = os.getenv("SHERLOCK_CALIBRATION_PATH", CALIBRATION_ARTIFACT_PATH)
-    base_dir = Path(active_path_str).parent
-    history_dir = base_dir / "history"
-    artifacts: list = []
-
-    if history_dir.exists():
-        for f in history_dir.glob("*.json"):
-            # Ignorar archivos legacy con sufijo _until_ (no son versiones independientes)
-            if "_until_" in f.name:
-                continue
-            artifacts.append(f)
-    active_p = Path(active_path_str)
-    if active_p.exists() and active_p not in artifacts:
-        artifacts.append(active_p)
-
-    # Verificar si el caché sigue vigente
-    cache_key = _build_history_cache_key(artifacts)
-    if _history_cal_cache["key"] == cache_key and _history_cal_cache["cals"] is not None:
+    _now = time.monotonic()
+    if (
+        _history_cal_cache.get("path") == active_path_str
+        and _history_cal_cache["cals"] is not None
+        and _now - _history_cal_cache.get("checked", -1e9) < _CAL_RECHECK_SECONDS
+    ):
+        # Revisión de disco (glob + stat de cada artefacto) como mucho una vez por segundo:
+        # antes se hacía en cada pick (~60k stats por cada 50 partidos).
         loaded_cals = _history_cal_cache["cals"]
     else:
-        # Recargar desde disco
-        loaded_cals = []
-        for p in artifacts:
-            try:
-                cal = HierarchicalCalibrator.load(p)
-                act_str = cal.activated_at_utc or cal.fitted_at or cal.metadata.get("fitted_at")
-                act_dt = _coerce_datetime(act_str)
-                if act_dt:
-                    loaded_cals.append((act_dt, cal))
-            except Exception:
-                continue
-        loaded_cals.sort(key=lambda x: x[0])
-        _history_cal_cache["key"] = cache_key
-        _history_cal_cache["cals"] = loaded_cals
-        logger.debug(
-            "Cache de calibradores reconstruida: %d versiones cargadas.",
-            len(loaded_cals),
-        )
+        base_dir = Path(active_path_str).parent
+        history_dir = base_dir / "history"
+        artifacts: list = []
+
+        if history_dir.exists():
+            for f in history_dir.glob("*.json"):
+                # Ignorar archivos legacy con sufijo _until_ (no son versiones independientes)
+                if "_until_" in f.name:
+                    continue
+                artifacts.append(f)
+        active_p = Path(active_path_str)
+        if active_p.exists() and active_p not in artifacts:
+            artifacts.append(active_p)
+
+        # Verificar si el caché sigue vigente
+        cache_key = _build_history_cache_key(artifacts)
+        if _history_cal_cache["key"] == cache_key and _history_cal_cache["cals"] is not None:
+            loaded_cals = _history_cal_cache["cals"]
+        else:
+            # Recargar desde disco
+            loaded_cals = []
+            for p in artifacts:
+                try:
+                    cal = HierarchicalCalibrator.load(p)
+                    act_str = cal.activated_at_utc or cal.fitted_at or cal.metadata.get("fitted_at")
+                    act_dt = _coerce_datetime(act_str)
+                    if act_dt:
+                        loaded_cals.append((act_dt, cal))
+                except Exception:
+                    continue
+            loaded_cals.sort(key=lambda x: x[0])
+            _history_cal_cache["key"] = cache_key
+            _history_cal_cache["cals"] = loaded_cals
+            logger.debug(
+                "Cache de calibradores reconstruida: %d versiones cargadas.",
+                len(loaded_cals),
+            )
+
+        _history_cal_cache["path"] = active_path_str
+        _history_cal_cache["checked"] = _now
 
     if not loaded_cals:
         return get_calibrator()
@@ -688,6 +703,7 @@ def reset_calibrator_cache() -> None:
     _version_cache["mtime"] = None
     _history_cal_cache["key"] = None
     _history_cal_cache["cals"] = None
+    _history_cal_cache["checked"] = 0.0
     _version_cache["versions"] = []
 
 
@@ -1693,6 +1709,21 @@ def resolve_match_picks_correlation(
         correlation_rules=correlation_rules
     )
 
+_LEAGUE_PENALTIES_CACHE: dict = {}
+
+
+def _load_league_penalties(data_path: str):
+    """league_penalties.json parseado, cacheado por (ruta, mtime): antes se releía por cada pick."""
+    mtime = os.stat(data_path).st_mtime_ns
+    hit = _LEAGUE_PENALTIES_CACHE.get(data_path)
+    if hit is None or hit[0] != mtime:
+        with open(data_path, "r", encoding="utf-8") as f:
+            content = f.read().strip()
+        hit = (mtime, json.loads(content) if content else None)
+        _LEAGUE_PENALTIES_CACHE[data_path] = hit
+    return hit[1]
+
+
 def is_market_blacklisted_for_league(
     league_name: str,
     selection: str,
@@ -1767,15 +1798,9 @@ def is_market_blacklisted_for_league(
         if not os.path.exists(data_path):
             return False
 
-        with open(data_path, "r", encoding="utf-8") as file:
-            content = file.read().strip()
+        penalties = _load_league_penalties(data_path)
 
-        if not content:
-            return False
-
-        penalties = json.loads(content)
-
-        if not isinstance(penalties, list):
+        if not penalties or not isinstance(penalties, list):
             return False
 
         family = str(
@@ -1881,14 +1906,9 @@ def get_market_stake_modifier_for_league(league_name: str, selection: str, categ
         data_path = os.path.join(os.path.dirname(__file__), "..", "..", "..", "data", "league_penalties.json")
         if not os.path.exists(data_path):
             return 1.0
-        import json
-        with open(data_path, "r", encoding="utf-8") as f:
-            content = f.read().strip()
-            if not content:
-                return 1.0
-            penalties = json.loads(content)
+        penalties = _load_league_penalties(data_path)
 
-        if not isinstance(penalties, list):
+        if not penalties or not isinstance(penalties, list):
             return 1.0
 
         family = _market_family(selection)

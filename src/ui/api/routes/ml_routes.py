@@ -26,19 +26,13 @@ def train_calibrator_endpoint(req: TrainRequest, db: Session = Depends(get_db)):
     si mejora Brier Y log loss fuera de muestra: un reentrenamiento no puede
     empeorar el sistema por el simple hecho de haberse ejecutado.
     """
-    from src.core.train_calibration import (
-        DEFAULT_MIN_SAMPLES,
-        DEFAULT_PRIOR_STRENGTH,
-        run_training,
-    )
+    from src.core.train_calibration import run_training
     from src.ui.api.compare import reset_calibrator_cache
 
     try:
         report = run_training(
-            prior_strength=req.prior_strength
-            if req.prior_strength is not None
-            else DEFAULT_PRIOR_STRENGTH,
-            min_samples=req.min_samples if req.min_samples is not None else DEFAULT_MIN_SAMPLES,
+            prior_strength=req.prior_strength,  # None → búsqueda automática
+            min_samples=req.min_samples,
             n_folds=req.n_folds,
             limit=req.limit,
             until_date=req.until_date,

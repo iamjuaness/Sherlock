@@ -5,10 +5,11 @@ plus exact categorical market probability normalization.
 """
 from __future__ import annotations
 
-from typing import Dict, Optional, Sequence, Union
+from typing import TYPE_CHECKING, Dict, Optional, Sequence, Union
 import numpy as np
-from sklearn.linear_model import LogisticRegression
-from sklearn.isotonic import IsotonicRegression
+
+if TYPE_CHECKING:  # sklearn tarda ~1.5 s en importar: se carga solo al ajustar un calibrador
+    from sklearn.linear_model import LogisticRegression
 
 
 def normalize_categorical_market(prob_dict: Dict[str, float], epsilon: float = 1e-9) -> Dict[str, float]:
@@ -55,6 +56,8 @@ class PlattCalibrator:
             return self
 
         logits = self._to_logit(p_arr).reshape(-1, 1)
+        from sklearn.linear_model import LogisticRegression
+
         self.model = LogisticRegression(solver="lbfgs", C=1.0)
         self.model.fit(logits, y_arr)
         self._is_fitted = True
@@ -84,6 +87,8 @@ class IsotonicCalibrator:
         self.out_of_bounds = out_of_bounds
         self.y_min = y_min
         self.y_max = y_max
+        from sklearn.isotonic import IsotonicRegression
+
         self.model = IsotonicRegression(
             out_of_bounds=self.out_of_bounds,
             y_min=self.y_min,

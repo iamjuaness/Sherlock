@@ -311,6 +311,10 @@ def extract_samples(
             if not isinstance(pick, dict):
                 continue
 
+            # prob y cuota de lados distintos: la prob no corresponde al evento, contaminaría la curva
+            if pick.get("odds_suspect"):
+                continue
+
             stats.picks_seen += 1
 
             # Issue #41: Evaluar en la región de decisión si se solicita
@@ -741,6 +745,7 @@ class TrainingReport:
     artifact_path: str | None = None
     segments: list[str] = field(default_factory=list)
     active_comparison: dict = field(default_factory=dict)
+    tuning: dict = field(default_factory=dict)
 
     def as_dict(self) -> dict:
         return {
@@ -753,6 +758,7 @@ class TrainingReport:
             "calibrator_version": self.calibrator_version,
             "artifact_path": self.artifact_path,
             "segments": self.segments,
+            "tuning": self.tuning,
         }
 
     def summary(self) -> str:
@@ -776,11 +782,59 @@ class TrainingReport:
         return "\n".join(l for l in lines if l)
 
 
+# Rejilla de la búsqueda automática: κ (prior) y mínimo de muestras por segmento.
+AUTO_PRIOR_STRENGTHS = (10.0, 25.0, 40.0, 60.0, 100.0, 150.0, 250.0, 400.0)
+AUTO_MIN_SAMPLES = (30.0, 50.0, 80.0, 120.0, 200.0)
+# Mezcla curva/crudo: acota el salto de la curva en segmentos con poca muestra.
+AUTO_BLENDS = (1.0, 0.75, 0.5, 0.35)
+
+
+def _run_walk_forward(samples, n_folds: int, prior_strength: float, min_samples: float) -> WalkForwardResult:
+    return walk_forward_calibrate(
+        samples=samples,
+        n_folds=n_folds,
+        prior_strength=prior_strength,
+        min_samples=min_samples,
+        min_line_samples=120.0,
+        min_league_samples=min(min_samples, 40.0),
+        min_train=max(120.0, min_samples * 2.0),
+    )
+
+
+def tune_hyperparameters(samples: Sequence[CalibrationSample], n_folds: int = 5) -> dict:
+    """
+    Busca (prior_strength, min_samples) con walk-forward out-of-sample, sin tocar
+    el artefacto. Prefiere combinaciones que mejoran al crudo (`improved()`) y,
+    entre ellas, la de menor log loss OOF (desempate: Brier). Si ninguna mejora,
+    devuelve la de menor log loss igualmente: `train_calibrator` decidirá no promover.
+    """
+    best = None
+    trials = []
+    for ps in AUTO_PRIOR_STRENGTHS:
+        for ms in AUTO_MIN_SAMPLES:
+            base = _run_walk_forward(samples, n_folds, ps, ms)
+            if not base.outcomes:
+                continue
+            for bl in AUTO_BLENDS:  # la mezcla no necesita reajustar: se evalúa sobre el mismo OOF
+                wf = base if bl == 1.0 else base.with_blend(bl)
+                cal = evaluate(wf.calibrated_probs, wf.outcomes)
+                ok = wf.improved()
+                trials.append({"prior_strength": ps, "min_samples": ms, "blend": bl, "improved": ok,
+                               "log_loss": cal["log_loss"], "brier": cal["brier"]})
+                key = (not ok, cal["log_loss"], cal["brier"])
+                if best is None or key < best[0]:
+                    best = (key, ps, ms, bl, wf)
+    if best is None:
+        return {}
+    return {"prior_strength": best[1], "min_samples": best[2], "blend": best[3],
+            "wf": best[4], "trials": trials}
+
+
 def train_calibrator(
     samples: Sequence[CalibrationSample],
     artifact_path: Path | str = DEFAULT_ARTIFACT_PATH,
-    prior_strength: float = DEFAULT_PRIOR_STRENGTH,
-    min_samples: float = DEFAULT_MIN_SAMPLES,
+    prior_strength: float | None = None,
+    min_samples: float | None = None,
     n_folds: int = 5,
     force: bool = False,
     dry_run: bool = False,
@@ -795,6 +849,8 @@ def train_calibrator(
     las MISMAS muestras OOF y, si el activo registra `trained_until`, solo sobre
     muestras posteriores a lo que el activo ya vio.
 
+    `prior_strength` / `min_samples` = None → se buscan solos (`tune_hyperparameters`);
+    si se pasan, se usan tal cual.
     `force` publica el artefacto aunque no mejore — solo para depuración.
     `dry_run` calcula todo y no escribe nada.
     `cutoff_label`: si se especifica (formato 'YYYY-MM-DD'), la copia en history
@@ -808,6 +864,20 @@ def train_calibrator(
         extraction=extraction_stats or {}, artifact_path=str(artifact_path),
     )
 
+    blend = 1.0
+    auto = prior_strength is None or min_samples is None
+    if auto and n >= DEFAULT_MIN_SAMPLES:
+        tuned = tune_hyperparameters(samples, n_folds)
+        if tuned:
+            prior_strength = tuned["prior_strength"] if prior_strength is None else prior_strength
+            min_samples = tuned["min_samples"] if min_samples is None else min_samples
+            blend = tuned["blend"]
+            report.tuning = {k: tuned[k] for k in ("prior_strength", "min_samples", "blend", "trials")}
+            logger.info("Parámetros automáticos: prior_strength=%s min_samples=%s blend=%s",
+                        tuned["prior_strength"], tuned["min_samples"], blend)
+    prior_strength = DEFAULT_PRIOR_STRENGTH if prior_strength is None else prior_strength
+    min_samples = DEFAULT_MIN_SAMPLES if min_samples is None else min_samples
+
     if n < min_samples:
         report.reason = (
             f"Muestra insuficiente: {n} < {min_samples:.0f}. Se mantiene la "
@@ -817,15 +887,9 @@ def train_calibrator(
 
     min_league_samples = min(min_samples, 40.0)
 
-    wf: WalkForwardResult = walk_forward_calibrate(
-        samples=samples,
-        n_folds=n_folds,
-        prior_strength=prior_strength,
-        min_samples=min_samples,
-        min_line_samples=120.0,
-        min_league_samples=min_league_samples,
-        min_train=max(120.0, min_samples * 2.0),
-    )
+    wf: WalkForwardResult = _run_walk_forward(samples, n_folds, prior_strength, min_samples)
+    if blend != 1.0:
+        wf = wf.with_blend(blend)
     report.walk_forward = wf.metrics()
 
     if not wf.outcomes:
@@ -896,6 +960,7 @@ def train_calibrator(
         min_line_samples=120.0,
         min_league_samples=min_league_samples,
     )
+    calibrator.blend = blend
     calibrator.metadata["walk_forward"] = report.walk_forward
     calibrator.metadata["extraction"] = report.extraction
     calibrator.metadata["forced"] = bool(force and not improves)
@@ -906,6 +971,7 @@ def train_calibrator(
     if stamps:
         calibrator.metadata["trained_until"] = max(stamps).isoformat()
     calibrator.metadata["n_train_samples"] = n
+    calibrator.metadata["tuned"] = bool(report.tuning)
 
     if status == "ok":
         calibrator.metadata["vs_previous_active"] = {
@@ -922,6 +988,9 @@ def train_calibrator(
                 hour=23, minute=59, second=59, tzinfo=timezone.utc
             )
             calibrator.version = cutoff_dt.strftime("cal-v2-%Y%m%dT%H%M%SZ")
+            # Vigente desde el cierre del corte: los partidos posteriores usan esta
+            # curva; los anteriores no (sin fuga de futuro al recalcular el histórico).
+            calibrator.activated_at_utc = cutoff_dt.isoformat()
         except ValueError:
             pass  # Si el label no es parseable, mantener la versión original
 
@@ -979,8 +1048,8 @@ def _league_already_calibrated(
 
 def run_training(
     artifact_path: Path | str = DEFAULT_ARTIFACT_PATH,
-    prior_strength: float = DEFAULT_PRIOR_STRENGTH,
-    min_samples: float = DEFAULT_MIN_SAMPLES,
+    prior_strength: float | None = None,
+    min_samples: float | None = None,
     n_folds: int = 5,
     limit: int | None = None,
     require_timestamp: bool = True,
@@ -1071,9 +1140,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         description="Entrena el calibrador de Sherlock desde picks liquidados."
     )
     ap.add_argument("--artifact", default=str(DEFAULT_ARTIFACT_PATH))
-    ap.add_argument("--prior-strength", type=float, default=DEFAULT_PRIOR_STRENGTH,
-                    help="κ: fuerza del prior. Más alto = más conservador.")
-    ap.add_argument("--min-samples", type=float, default=DEFAULT_MIN_SAMPLES)
+    ap.add_argument("--prior-strength", type=float, default=None,
+                    help="κ: fuerza del prior. Sin valor: se busca el mejor automáticamente.")
+    ap.add_argument("--min-samples", type=float, default=None,
+                    help="Mínimo de muestras por segmento. Sin valor: se busca el mejor automáticamente.")
     ap.add_argument("--folds", type=int, default=5)
     ap.add_argument("--limit", type=int, default=None)
     ap.add_argument(

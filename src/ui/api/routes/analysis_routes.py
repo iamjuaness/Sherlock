@@ -1589,72 +1589,75 @@ async def recalculate_all_accuracy(
 
     # ── OPTIMIZACIÓN: Precomputar estadísticas históricas por liga en una sola pasada en memoria ──
     # Evita que cada partido individual en paralelo o secuencial ejecute SELECTs adicionales a la BD
-    shared_league_stats: dict[str, dict] = {}
-    try:
-        from src.ui.api.shared import _check_pick_success, _calculate_pick_profit, _is_pick_hit
+    def _compute_shared_league_stats() -> dict[str, dict]:
+        """Estadísticas por liga en una pasada; en modo paralelo corre mientras los workers arrancan."""
+        shared_league_stats: dict[str, dict] = {}
+        try:
+            from src.ui.api.shared import _check_pick_success, _calculate_pick_profit, _is_pick_hit
 
-        _q_leagues_batch = _sql_text("""
-            SELECT competition, picks_calculados,
-                   final_score_home, final_score_away,
-                   final_corners_home, final_corners_away,
-                   final_yellow_cards_home, final_yellow_cards_away,
-                   final_shots_home, final_shots_away,
-                   final_shots_on_target_home, final_shots_on_target_away,
-                   final_fouls_home, final_fouls_away
-            FROM analysis_history
-            WHERE picks_calculados IS NOT NULL AND competition IS NOT NULL AND sport = 'FOOTBALL'
-        """)
-        league_batch_rows = db.execute(_q_leagues_batch).mappings().all()
-        for l_row in league_batch_rows:
-            comp_name = (l_row.get("competition") or "").strip().lower()
-            if not comp_name or comp_name in ("desconocida", "general"):
-                continue
-            if comp_name not in shared_league_stats:
-                shared_league_stats[comp_name] = {
-                    "historical_matches": 0,
-                    "historical_picks": 0,
-                    "historical_hits": 0,
-                    "historical_profit": 0.0,
-                }
-            l_entry = shared_league_stats[comp_name]
-            l_entry["historical_matches"] += 1
+            _q_leagues_batch = _sql_text("""
+                SELECT competition, picks_calculados,
+                       final_score_home, final_score_away,
+                       final_corners_home, final_corners_away,
+                       final_yellow_cards_home, final_yellow_cards_away,
+                       final_shots_home, final_shots_away,
+                       final_shots_on_target_home, final_shots_on_target_away,
+                       final_fouls_home, final_fouls_away
+                FROM analysis_history
+                WHERE picks_calculados IS NOT NULL AND competition IS NOT NULL AND sport = 'FOOTBALL'
+            """)
+            league_batch_rows = db.execute(_q_leagues_batch).mappings().all()
+            for l_row in league_batch_rows:
+                comp_name = (l_row.get("competition") or "").strip().lower()
+                if not comp_name or comp_name in ("desconocida", "general"):
+                    continue
+                if comp_name not in shared_league_stats:
+                    shared_league_stats[comp_name] = {
+                        "historical_matches": 0,
+                        "historical_picks": 0,
+                        "historical_hits": 0,
+                        "historical_profit": 0.0,
+                    }
+                l_entry = shared_league_stats[comp_name]
+                l_entry["historical_matches"] += 1
 
-            has_res = (
-                l_row.get("final_score_home") is not None
-                and l_row.get("final_score_away") is not None
-            )
-            res_d = dict(l_row) if has_res else None
+                has_res = (
+                    l_row.get("final_score_home") is not None
+                    and l_row.get("final_score_away") is not None
+                )
+                res_d = dict(l_row) if has_res else None
 
-            p_raw = _unpack_text(l_row.get("picks_calculados"))
-            if p_raw:
-                try:
-                    p_list = json.loads(p_raw) if isinstance(p_raw, str) else p_raw
-                    if isinstance(p_list, list):
-                        for pk in p_list:
-                            if not isinstance(pk, dict):
-                                continue
-                            stk = float(pk.get("stake", pk.get("stake_units", 0)) or 0)
-                            if stk <= 0:
-                                continue
-                            l_entry["historical_picks"] += 1
-                            if has_res and res_d:
-                                outcome = _check_pick_success(pk, res_d)
-                                if _is_pick_hit(outcome):
-                                    l_entry["historical_hits"] += 1
-                                odds_val = float(pk.get("odds", 1.0) or 1.0)
-                                l_entry["historical_profit"] += _calculate_pick_profit(
-                                    outcome, odds_val
-                                )
-                except Exception:
-                    pass
-    except Exception as ex_ls:
-        print(f"Advertencia optimizando league stats batch: {ex_ls}", flush=True)
+                p_raw = _unpack_text(l_row.get("picks_calculados"))
+                if p_raw:
+                    try:
+                        p_list = json.loads(p_raw) if isinstance(p_raw, str) else p_raw
+                        if isinstance(p_list, list):
+                            for pk in p_list:
+                                if not isinstance(pk, dict):
+                                    continue
+                                stk = float(pk.get("stake", pk.get("stake_units", 0)) or 0)
+                                if stk <= 0:
+                                    continue
+                                l_entry["historical_picks"] += 1
+                                if has_res and res_d:
+                                    outcome = _check_pick_success(pk, res_d)
+                                    if _is_pick_hit(outcome):
+                                        l_entry["historical_hits"] += 1
+                                    odds_val = float(pk.get("odds", 1.0) or 1.0)
+                                    l_entry["historical_profit"] += _calculate_pick_profit(
+                                        outcome, odds_val
+                                    )
+                    except Exception:
+                        pass
+        except Exception as ex_ls:
+            print(f"Advertencia optimizando league stats batch: {ex_ls}", flush=True)
+        return shared_league_stats
 
     if parallel:
-        from concurrent.futures import ProcessPoolExecutor
-        from src.core.parallel_recalc import split_into_chunks, _recalc_chunk
+        from concurrent.futures import ProcessPoolExecutor, as_completed
+        from src.core.parallel_recalc import _recalc_chunk, init_worker, split_into_chunks, warmup
 
-        n_workers = max((os.cpu_count() or 2) - 1, 1)
+        n_workers = int(os.environ.get("SHERLOCK_RECALC_WORKERS") or max((os.cpu_count() or 2) - 1, 1))
 
         matches_plain = []
         for h in history_list:
@@ -1682,38 +1685,61 @@ async def recalculate_all_accuracy(
                 }
             )
 
-        chunks = split_into_chunks(matches_plain, n_workers)
-        chunk_payloads = []
-        for ch in chunks:
-            chunk_payloads.append(
-                {
-                    "matches": ch,
-                    "shared_historical_records": shared_historical_records,
-                    "shared_league_stats": shared_league_stats,
-                    "use_general_stats": use_general_stats,
-                    "threshold_dt_iso": threshold_dt.isoformat() if threshold_dt else None,
-                    "enabled_rules": enabled_rules,
-                }
-            )
+        # Chunks pequeños (~12 partidos) para balancear la cola: el costo por partido varía mucho.
+        chunks = split_into_chunks(matches_plain, max(n_workers * 4, -(-len(matches_plain) // 12)))
 
         print(
-            f"Iniciando recalculate-all PARALELO con {n_workers} workers en {len(chunk_payloads)} chunks "
+            f"Iniciando recalculate-all PARALELO con {n_workers} workers en {len(chunks)} chunks "
             f"({total_to_process} partidos totales)...",
             flush=True,
         )
         t_start = time.perf_counter()
         results_by_id = {}
 
-        with ProcessPoolExecutor(max_workers=n_workers) as executor:
-            for chunk_idx, chunk_results in enumerate(
-                executor.map(_recalc_chunk, chunk_payloads), start=1
-            ):
-                print(
-                    f"Chunk [{chunk_idx}/{len(chunk_payloads)}] completado ({len(chunk_results)} partidos)",
-                    flush=True,
+        # El histórico y las reglas viajan UNA vez por worker (initializer), no en cada chunk.
+        import pickle
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(prefix="sherlock_hist_", suffix=".pkl", delete=False) as _tmp:
+            pickle.dump(shared_historical_records, _tmp, protocol=pickle.HIGHEST_PROTOCOL)
+            records_path = _tmp.name
+
+        with ProcessPoolExecutor(
+            max_workers=n_workers,
+            initializer=init_worker,
+            initargs=(records_path, enabled_rules),
+        ) as executor:
+            # Arranca los procesos ya (imports + índice + calibrador) mientras el principal calcula
+            # las estadísticas por liga, que antes se hacían en serie antes de lanzar nada.
+            warm = [executor.submit(warmup) for _ in range(n_workers)]
+            shared_league_stats = _compute_shared_league_stats()
+            for f in warm:
+                f.result()
+
+            futures = [
+                executor.submit(
+                    _recalc_chunk,
+                    {
+                        "matches": ch,
+                        "shared_league_stats": shared_league_stats,
+                        "use_general_stats": use_general_stats,
+                        "threshold_dt_iso": threshold_dt.isoformat() if threshold_dt else None,
+                        "compress_results": True,
+                    },
                 )
+                for ch in chunks
+            ]
+            for done_idx, fut in enumerate(as_completed(futures), start=1):
+                chunk_results = fut.result()
+                if done_idx % n_workers == 0 or done_idx == len(futures):
+                    print(f"Chunks completados [{done_idx}/{len(futures)}]", flush=True)
                 for res in chunk_results:
                     results_by_id[res["id"]] = res
+
+        try:
+            os.remove(records_path)
+        except OSError:
+            pass
 
         for history in history_list:
             res = results_by_id.get(history.id)
@@ -1755,6 +1781,7 @@ async def recalculate_all_accuracy(
         }
 
     # ── FALLBACK SECUENCIAL (parallel=False) ──
+    shared_league_stats = _compute_shared_league_stats()
     _team_index: dict[str, list] = {}
     for r in shared_historical_records:
         title = r.get("match_title", "") or ""

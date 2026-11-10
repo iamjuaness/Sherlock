@@ -54,3 +54,6 @@ scratch/
 *.db-shm
 *.db-wal
 *.db.bak
+
+# Backups locales de DB/calibraciones
+data/backups/

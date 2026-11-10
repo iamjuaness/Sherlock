@@ -6,14 +6,17 @@ con ProcessPoolExecutor sin importar main.py (compatible con spawn en Windows).
 """
 from __future__ import annotations
 
+
 import asyncio
 import json
 import os
+import pickle
 import re
 import time
 from datetime import datetime
 from typing import Any, Union
 
+from src.core.compressed_text import pack
 from src.core.domain import Sport
 from src.core.pick_rules_engine import evaluate_pick_rules, StatSource
 from src.ui.api.compare_service import compare_football
@@ -391,27 +394,13 @@ def _check_pick_success(pick: dict, res: dict) -> PickOutcome:
     return None
 
 
-def _recalc_chunk(chunk_data: dict) -> list[dict]:
-    """
-    Procesa un chunk de partidos en un proceso secundario (worker).
-    """
-    matches = chunk_data.get("matches", [])
-    shared_historical_records = chunk_data.get("shared_historical_records", [])
-    shared_league_stats = chunk_data.get("shared_league_stats", {})
-    use_general_stats = chunk_data.get("use_general_stats", False)
-    threshold_dt_iso = chunk_data.get("threshold_dt_iso")
-    enabled_rules = chunk_data.get("enabled_rules", [])
+_WORKER: dict = {}
 
-    threshold_dt = None
-    if threshold_dt_iso:
-        try:
-            threshold_dt = datetime.fromisoformat(threshold_dt_iso)
-        except Exception:
-            pass
 
-    # Reconstruir team_index para O(1) lookups
+def _build_team_index(records: list) -> dict[str, list]:
+    """Índice equipo (y liga::equipo) -> registros, para lookups O(1)."""
     team_index: dict[str, list] = {}
-    for r in shared_historical_records:
+    for r in records:
         title = r.get("match_title", "") or ""
         comp = (r.get("competition") or "").strip().lower()
         ht = (r.get("home_team") or (title.split(" vs ")[0] if " vs " in title else "")).strip().lower()
@@ -424,6 +413,66 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
             team_index.setdefault(at, []).append(r)
             if comp:
                 team_index.setdefault(f"{comp}::{at}", []).append(r)
+    return team_index
+
+
+def init_worker(records_path: str, enabled_rules: list) -> None:
+    """
+    Initializer del ProcessPoolExecutor: corre una vez por proceso.
+
+    Recibe el histórico una sola vez (antes viajaba por pickle en CADA chunk), construye el
+    índice de equipos una sola vez y precarga el calibrador para que el primer partido no
+    pague la lectura de los JSON de calibración.
+    """
+    # El histórico se lee de un archivo temporal: pasarlo en initargs bloqueaba Process.start()
+    # (Windows escribe el pickle al hijo, que solo lee tras importar) y arrancaba los workers en serie.
+    with open(records_path, "rb") as fh:
+        shared_historical_records = pickle.load(fh)
+    _WORKER["records"] = shared_historical_records
+    _WORKER["team_index"] = _build_team_index(shared_historical_records)
+    _WORKER["rules"] = enabled_rules
+    try:
+        from src.ui.api.compare import get_calibrator, get_calibrator_for_timestamp
+
+        get_calibrator()
+        get_calibrator_for_timestamp("2100-01-01T00:00:00+00:00")
+    except Exception:
+        pass
+
+
+def warmup() -> int:
+    """Tarea vacía: fuerza el arranque de los procesos mientras el proceso principal prepara datos."""
+    return os.getpid()
+
+
+def _recalc_chunk(chunk_data: dict) -> list[dict]:
+    """
+    Procesa un chunk de partidos en un proceso secundario (worker).
+    """
+    matches = chunk_data.get("matches", [])
+    shared_historical_records = chunk_data.get("shared_historical_records")
+    if shared_historical_records is None:
+        shared_historical_records = _WORKER.get("records", [])
+    shared_league_stats = chunk_data.get("shared_league_stats", {})
+    use_general_stats = chunk_data.get("use_general_stats", False)
+    threshold_dt_iso = chunk_data.get("threshold_dt_iso")
+    enabled_rules = chunk_data.get("enabled_rules")
+    if enabled_rules is None:
+        enabled_rules = _WORKER.get("rules", [])
+    compress_results = bool(chunk_data.get("compress_results"))
+
+    threshold_dt = None
+    if threshold_dt_iso:
+        try:
+            threshold_dt = datetime.fromisoformat(threshold_dt_iso)
+        except Exception:
+            pass
+
+    # team_index: el del worker (init_worker) si el histórico es el compartido; si no, se reconstruye.
+    if chunk_data.get("shared_historical_records") is None and "team_index" in _WORKER:
+        team_index = _WORKER["team_index"]
+    else:
+        team_index = _build_team_index(shared_historical_records)
 
     results = []
     # Un solo event loop por chunk (antes: asyncio.run por partido, creaba/destruía loop cada vez).
@@ -549,6 +598,11 @@ def _recalc_chunk(chunk_data: dict) -> list[dict]:
                             if _is_pick_hit(success):
                                 hits += 1
                     accuracy_percentage = (hits / total) * 100 if total > 0 else None
+
+                if compress_results:
+                    # zlib en el worker (paralelo) y bytes más chicos por el pipe; CompressedText acepta bytes.
+                    picks_json = pack(picks_json)
+                    snapshot_json = pack(snapshot_json)
 
                 results.append({
                     "id": match_id,

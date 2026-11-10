@@ -6,7 +6,6 @@ Extraído de src/ui/api/compare.py (Lote 3). Depende de compare.py para el motor
 from __future__ import annotations
 
 from typing import Optional, Any
-from openai import AsyncOpenAI
 from src.core.entity_resolver import competition_filter
 from src.domain.eligibility import (
     BlockReason,
@@ -319,6 +318,8 @@ async def _call_openrouter(prompt: str) -> str:
         return "Para generar el análisis con IA, configura OPENROUTER_MODEL en tu .env"
 
     fallback_model = os.environ.get("OPENROUTER_FALLBACK_MODEL")
+    from openai import AsyncOpenAI  # import diferido: ~1.8 s que los workers de recálculo no necesitan
+
     client = AsyncOpenAI(
         base_url="https://openrouter.ai/api/v1",
         api_key=api_key,
@@ -1308,77 +1309,88 @@ async def compare_football(
 
     current_match_time = _to_naive_utc(current_match_time)
     curr_date_only = current_match_time.date() if current_match_time else None
-    historical_records = []
-    if precomputed_historical_records is not None:
-        source_rows = precomputed_historical_records
-    elif db is not None:
-        try:
-            from sqlalchemy import text
+    def _build_historical_records() -> list:
+        """Filtra el histórico por liga y fecha (O(N) con parseo de fechas): se construye solo si hace falta."""
+        historical_records = []
+        if precomputed_historical_records is not None:
+            source_rows = precomputed_historical_records
+        elif db is not None:
+            try:
+                from sqlalchemy import text
 
-            q_hist = text("""
-                SELECT id, match_title, match_date, competition,
-                       final_score_home, final_score_away,
-                       final_corners_home, final_corners_away,
-                       final_yellow_cards_home, final_yellow_cards_away,
-                       final_shots_home, final_shots_away,
-                       final_shots_on_target_home, final_shots_on_target_away,
-                       final_fouls_home, final_fouls_away
-                FROM analysis_history
-                WHERE final_score_home IS NOT NULL AND final_score_away IS NOT NULL
-                ORDER BY match_date DESC
-            """)
-            source_rows = [dict(r) for r in db.execute(q_hist).mappings().all()]
-        except Exception:
+                q_hist = text("""
+                    SELECT id, match_title, match_date, competition,
+                           final_score_home, final_score_away,
+                           final_corners_home, final_corners_away,
+                           final_yellow_cards_home, final_yellow_cards_away,
+                           final_shots_home, final_shots_away,
+                           final_shots_on_target_home, final_shots_on_target_away,
+                           final_fouls_home, final_fouls_away
+                    FROM analysis_history
+                    WHERE final_score_home IS NOT NULL AND final_score_away IS NOT NULL
+                    ORDER BY match_date DESC
+                """)
+                source_rows = [dict(r) for r in db.execute(q_hist).mappings().all()]
+            except Exception:
+                source_rows = []
+        else:
             source_rows = []
-    else:
-        source_rows = []
 
-    if source_rows:
-        for r_dict in source_rows:
-            m_id = r_dict.get("id")
+        if source_rows:
+            for r_dict in source_rows:
+                m_id = r_dict.get("id")
 
-            if (
-                exclude_analysis_id
-                and m_id
-                and str(m_id).strip() == str(exclude_analysis_id).strip()
-            ):
-                continue
-
-            # Filtro por competición/liga para evitar contaminar con estadísticas de otras ligas/homónimos
-            if target_competition:
-                r_comp = (r_dict.get("competition") or "").strip().lower()
                 if (
-                    r_comp
-                    and r_comp != target_competition
-                    and target_competition not in r_comp
-                    and r_comp not in target_competition
+                    exclude_analysis_id
+                    and m_id
+                    and str(m_id).strip() == str(exclude_analysis_id).strip()
                 ):
                     continue
 
-            m_date = r_dict.get("match_date")
-            m_dt = None
-            if m_date:
-                try:
-                    if isinstance(m_date, datetime):
-                        m_dt = m_date
-                    else:
-                        m_s = str(m_date).replace("Z", "+00:00")
-                        if "T" in m_s or " " in m_s:
-                            m_dt = datetime.fromisoformat(m_s)
-                        elif len(m_s) >= 10:
-                            m_dt = datetime.strptime(m_s[:10], "%Y-%m-%d")
-                except Exception:
-                    m_dt = None
+                # Filtro por competición/liga para evitar contaminar con estadísticas de otras ligas/homónimos
+                if target_competition:
+                    r_comp = (r_dict.get("competition") or "").strip().lower()
+                    if (
+                        r_comp
+                        and r_comp != target_competition
+                        and target_competition not in r_comp
+                        and r_comp not in target_competition
+                    ):
+                        continue
 
-            m_dt = _to_naive_utc(m_dt)
+                m_date = r_dict.get("match_date")
+                m_dt = None
+                if m_date:
+                    try:
+                        if isinstance(m_date, datetime):
+                            m_dt = m_date
+                        else:
+                            m_s = str(m_date).replace("Z", "+00:00")
+                            if "T" in m_s or " " in m_s:
+                                m_dt = datetime.fromisoformat(m_s)
+                            elif len(m_s) >= 10:
+                                m_dt = datetime.strptime(m_s[:10], "%Y-%m-%d")
+                    except Exception:
+                        m_dt = None
 
-            if current_match_time and m_dt and m_dt >= current_match_time:
-                continue
+                m_dt = _to_naive_utc(m_dt)
 
-            if curr_date_only and m_dt and m_dt.date() >= curr_date_only:
-                continue
+                if current_match_time and m_dt and m_dt >= current_match_time:
+                    continue
 
-            historical_records.append(r_dict)
+                if curr_date_only and m_dt and m_dt.date() >= curr_date_only:
+                    continue
+
+                historical_records.append(r_dict)
+        return historical_records
+
+    _hist_memo: list = []
+
+    def _historical_records() -> list:
+        if not _hist_memo:
+            _hist_memo.append(_build_historical_records())
+        return _hist_memo[0]
+
 
     from src.core.math_engine import LeagueMathEngine, get_league_profile
     from src.domain.temporal import TemporalCutoff
@@ -1458,7 +1470,7 @@ async def compare_football(
                     ]
                 return exact
             # Fallback: solo si el nombre no está en el índice
-            return [r for r in historical_records if team_lower in r.get("match_title", "").lower()]
+            return [r for r in _historical_records() if team_lower in r.get("match_title", "").lower()]
 
         _seen_ids = set()
         relevant_records = []
@@ -1469,7 +1481,7 @@ async def compare_football(
             _seen_ids.add(rid)
             relevant_records.append(r)
     else:
-        relevant_records = [r for r in historical_records if _record_involves_team(r)]
+        relevant_records = [r for r in _historical_records() if _record_involves_team(r)]
 
     # ── Filtro por Temporada Actual para Hit Rates de Equipos ──
     target_year = current_match_time.year if current_match_time else datetime.now().year

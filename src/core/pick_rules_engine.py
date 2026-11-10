@@ -428,16 +428,35 @@ def classify_correlation_severity(
 
 
 
+_PICK_RULES_CACHE: dict = {}
+
+
 def load_pick_rules_data(rules_path: Optional[str] = None) -> tuple[list[dict], dict]:
     """
     Carga el archivo pick_rules.json y devuelve tuple (rules_list, correlation_rules_dict).
     Soporta formato antiguo (lista de reglas) y formato nuevo (objeto con "rules" y "correlation_rules").
+    Cacheado por (ruta, mtime): se llamaba una vez por pick leyendo el JSON del disco.
     """
     import os
-    import json
 
     if rules_path is None:
         rules_path = os.path.join(os.path.dirname(__file__), "..", "..", "data", "pick_rules.json")
+
+    try:
+        mtime = os.stat(rules_path).st_mtime_ns
+    except OSError:
+        mtime = None
+    key = (os.path.abspath(rules_path), mtime)
+    hit = _PICK_RULES_CACHE.get(key)
+    if hit is None:
+        _PICK_RULES_CACHE.clear()
+        hit = _PICK_RULES_CACHE[key] = _read_pick_rules(rules_path)
+    return list(hit[0]), dict(hit[1])
+
+
+def _read_pick_rules(rules_path: str) -> tuple[list[dict], dict]:
+    import os
+    import json
 
     rules_list: list[dict] = []
     correlation_rules: dict = dict(DEFAULT_CORRELATION_RULES)

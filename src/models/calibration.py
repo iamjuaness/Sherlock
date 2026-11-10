@@ -511,6 +511,8 @@ class HierarchicalCalibrator:
     activated_at_utc: str | None = None
     deactivated_at_utc: str | None = None
     metadata: dict = field(default_factory=dict)
+    # Mezcla con la prob. cruda: p' = p + blend·(curva(p) − p). 1 = curva completa.
+    blend: float = 1.0
 
     def resolve_curve(
         self,
@@ -558,7 +560,8 @@ class HierarchicalCalibrator:
             line_bucket=line_bucket,
             league=league,
         )
-        return curve.apply(prob)
+        cal = curve.apply(prob)
+        return cal if self.blend == 1.0 else prob + self.blend * (cal - prob)
 
     @property
     def is_trained(self) -> bool:
@@ -780,6 +783,7 @@ class HierarchicalCalibrator:
             "min_samples_league_family_side": self.min_samples_league_family_side,
             "min_samples_league_family_side_bucket": self.min_samples_league_family_side_bucket,
             "calibration_half_life_days": self.calibration_half_life_days,
+            "blend": self.blend,
             "metadata": self.metadata,
             "curves": {key: curve.to_dict() for key, curve in sorted(self.curves.items())},
         }
@@ -807,6 +811,7 @@ class HierarchicalCalibrator:
             activated_at_utc=data.get("activated_at_utc"),
             deactivated_at_utc=data.get("deactivated_at_utc"),
             metadata=data.get("metadata", {}),
+            blend=float(data.get("blend", 1.0)),
         )
 
     def save(self, path: str | Path) -> Path:
@@ -947,20 +952,62 @@ class WalkForwardResult:
             "skipped_no_train": self.skipped,
         }
 
-    def improved(self, max_allowed_segment_brier_degradation: float = 0.05) -> bool:
+    def with_blend(self, blend: float) -> "WalkForwardResult":
+        """Copia con las prob. calibradas mezcladas con las crudas (sin reajustar).
+        `segment_metrics` queda con la mezcla original (`improved()` no lo usa)."""
+        out = WalkForwardResult(
+            raw_probs=self.raw_probs,
+            calibrated_probs=[r + blend * (c - r) for r, c in zip(self.raw_probs, self.calibrated_probs)],
+            outcomes=self.outcomes, samples=self.samples, n_folds=self.n_folds,
+            skipped=self.skipped, segment_metrics=self.segment_metrics,
+        )
+        return out
+
+    def improved(
+        self,
+        max_allowed_segment_brier_degradation: float = 0.05,
+        z_global: float = 2.0,
+        z_segment: float = 3.0,
+    ) -> bool:
+        """Promueve solo si la mejora es estadísticamente significativa (diferencias pareadas OOF).
+
+        1. Log loss global: mejora con z <= -z_global (≈95% unilateral).
+        2. Brier global: no empeora significativamente (z < z_global).
+        3. Ningún segmento (n >= 30) empeora el Brier en más de `max_allowed...` Y de forma
+           significativa (z > z_segment, umbral alto por las ~250 comparaciones).
+        """
         if not self.outcomes:
             return False
-        raw = evaluate(self.raw_probs, self.outcomes)
-        cal = evaluate(self.calibrated_probs, self.outcomes)
 
-        # 1. Mejora global en Brier y Log Loss
-        if cal["brier"] > raw["brier"] or cal["log_loss"] > raw["log_loss"]:
+        def _z(diffs: list[float]) -> tuple[float, float]:
+            n = len(diffs)
+            mean = sum(diffs) / n
+            if n < 2:
+                return mean, 0.0
+            var = sum((d - mean) ** 2 for d in diffs) / (n - 1)
+            se = (var / n) ** 0.5
+            return mean, (mean / se if se > 0 else (0.0 if mean == 0 else math.copysign(math.inf, mean)))
+
+        eps = 1e-12
+        def _ll(p: float, y: float) -> float:
+            p = min(1 - eps, max(eps, p))
+            return -(y * math.log(p) + (1 - y) * math.log(1 - p))
+
+        pairs = list(zip(self.raw_probs, self.calibrated_probs, self.outcomes))
+        d_ll = [_ll(c, y) - _ll(r, y) for r, c, y in pairs]
+        d_br = [(c - y) ** 2 - (r - y) ** 2 for r, c, y in pairs]
+        m_ll, z_ll = _z(d_ll)
+        m_br, z_br = _z(d_br)
+        if m_ll >= 0 or z_ll > -z_global or z_br >= z_global:
             return False
 
-        # 2. Regla de rechazo: ningún segmento de alto volumen (n >= 30) puede empeorar materialmente
-        for seg_key, seg_eval in self.segment_metrics.items():
-            if seg_eval.n >= 30:
-                if seg_eval.calibrated_brier > seg_eval.raw_brier + max_allowed_segment_brier_degradation:
+        seg_d: dict[str, list[float]] = {}
+        for s, d in zip(self.samples, d_br):
+            seg_d.setdefault(market_group_key(s.league, s.market_family, s.side, s.line_bucket), []).append(d)
+        for ds in seg_d.values():
+            if len(ds) >= 30:
+                m, z = _z(ds)
+                if m > max_allowed_segment_brier_degradation and z > z_segment:
                     return False
 
         return True

@@ -386,6 +386,25 @@ def test_walk_forward_empty_input():
     assert res.improved() is False
 
 
+def test_improved_requires_significance_and_blend_roundtrips():
+    import random
+    rnd = random.Random(3)
+    ys = [1.0 if rnd.random() < 0.3 else 0.0 for _ in range(4000)]
+    res = walk_forward_calibrate([], n_folds=5)
+    res.outcomes = ys
+    res.raw_probs = [0.5] * len(ys)
+    res.calibrated_probs = [0.3] * len(ys)  # mejora clara -> significativa
+    assert res.improved() is True
+    # mejora ínfima (ruido) -> no significativa
+    res.calibrated_probs = [0.5 - 1e-6 * (1 if i % 2 else -1) for i in range(len(ys))]
+    assert res.improved() is False
+    # mezcla 0 = crudo; ida y vuelta por JSON conserva blend
+    res.calibrated_probs = [0.3] * len(ys)
+    assert res.with_blend(0.0).calibrated_probs == res.raw_probs
+    cal = HierarchicalCalibrator(blend=0.5)
+    assert HierarchicalCalibrator.from_dict(cal.to_dict()).blend == 0.5
+
+
 def test_improved_is_false_when_calibration_hurts():
     res = walk_forward_calibrate([], n_folds=5)
     res.raw_probs = [0.5, 0.5]

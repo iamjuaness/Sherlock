@@ -20,7 +20,10 @@ from src.ui.api.compare_models import FootballCompareRequest, CompareResponse
 from src.core.prediction.score_matrix import split_asian_line
 from fastapi.templating import Jinja2Templates
 import os
-import pandas as pd
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:  # pandas se importa solo donde se usa (carga lenta en cada worker)
+    import pandas as pd
 import time
 from threading import Lock
 from typing import List
@@ -1182,6 +1185,8 @@ def build_equity_curve(df_match_level: pd.DataFrame, bankroll_units: float = 100
     Returns:
         (df_equity, max_drawdown_u, max_drawdown_pct)
     """
+    import pandas as pd
+
     equity_rows = []
     max_drawdown_u = 0.0
     max_drawdown_pct = 0.0

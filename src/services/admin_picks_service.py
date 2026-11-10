@@ -158,6 +158,8 @@ def _extract_picks_from_analysis(
     for idx, p in enumerate(raw_picks):
         if not isinstance(p, dict):
             continue
+        if p.get("odds_suspect"):  # cuota mal capturada: sin odds no hay stake/ROI/edge válidos
+            continue
 
         is_bl = bool(p.get("is_blacklisted"))
         is_blocked = bool(p.get("is_rule_blocked"))
