@@ -70,10 +70,8 @@ def get_league_matches(
     if season and season.strip().lower() != "all":
         s_str = season.strip()
         season_conds = [
-            AnalysisHistory.payload.like(f'%"season_year": {s_str}%'),
-            AnalysisHistory.payload.like(f'%"season_year": "{s_str}"%'),
-            AnalysisHistory.payload.like(f'%"season": "{s_str}"%'),
-            AnalysisHistory.payload.like(f'%"season": {s_str}%'),
+            AnalysisHistory.season_year == s_str,
+            AnalysisHistory.season_label == s_str,
         ]
         if s_str.isdigit():
             season_conds.append(func.strftime("%Y", AnalysisHistory.match_date) == s_str)
@@ -441,15 +439,15 @@ def blacklist_markets_batch(
     try:
         entries: list = []
         if os.path.exists(penalties_path):
-            try:
-                with open(penalties_path, "r", encoding="utf-8") as f:
-                    raw_content = f.read().strip()
-                    if raw_content:
-                        loaded = json.loads(raw_content)
-                        if isinstance(loaded, list):
-                            entries = loaded
-            except Exception:
-                entries = []
+            # Si el archivo existe pero no se puede leer, abortar: seguir con []
+            # sobrescribiría todas las reglas previas y apply_blacklist las desbloquearía.
+            with open(penalties_path, "r", encoding="utf-8") as f:
+                raw_content = f.read().strip()
+            if raw_content:
+                loaded = json.loads(raw_content)
+                if not isinstance(loaded, list):
+                    raise ValueError("league_penalties.json no contiene una lista")
+                entries = loaded
 
         added_count = 0
 
@@ -533,8 +531,10 @@ def blacklist_markets_batch(
                 added_count += 1
 
         os.makedirs(os.path.dirname(penalties_path), exist_ok=True)
-        with open(penalties_path, "w", encoding="utf-8") as f:
+        tmp_path = penalties_path + ".tmp"
+        with open(tmp_path, "w", encoding="utf-8") as f:
             json.dump(entries, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, penalties_path)  # escritura atómica
 
         # Aplicar blacklist automáticamente al historial
         res = apply_blacklist(db=db)

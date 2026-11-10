@@ -38,6 +38,7 @@ from src.models.calibration import (
     walk_forward_calibrate,
 )
 from src.domain.market_taxonomy import line_bucket_for, normalize_market_family, normalize_market_side
+from src.core.compressed_text import unpack
 
 
 # ???????????????????????????????????????????????????????????????????????????
@@ -143,7 +144,7 @@ def load_historical_picks_from_db(
         query = "SELECT id, date, match_date, competition, picks_calculados, "\
                 "final_score_home, final_score_away, stake_units, count_in_profitability "\
                 "FROM analysis_history "\
-                "WHERE picks_calculados IS NOT NULL AND picks_calculados != '[]'"
+                "WHERE picks_calculados IS NOT NULL"
         if count_in_profitability_only:
             query += " AND count_in_profitability = 1"
         query += " ORDER BY COALESCE(match_date, date) ASC"
@@ -177,6 +178,9 @@ def load_historical_picks_from_db(
 
         # Parsear picks_calculados
         try:
+            picks_json = unpack(picks_json)
+            if picks_json == "[]":
+                continue
             parsed = _json.loads(picks_json)
         except Exception as exc:
             warnings.append(f"[{ah_id}] JSON inválido en picks_calculados: {exc}")

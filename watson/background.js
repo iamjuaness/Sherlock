@@ -135,7 +135,32 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
  * Devuelve un objeto { betano: {...}, betplay: {...}, ... } con el resultado
  * de cada una (success true/false), sin que un fallo bloquee a las demás.
  */
+/**
+ * Completa un equipo (string u objeto SofaScore {id,name,shortName}) con fullName y aliases
+ * guardados en Sherlock. Si falla o no existe, devuelve el equipo tal cual.
+ */
+async function withDbAliases(team) {
+  try {
+    if (!team) return team;
+    const obj = typeof team === "string" ? { name: team } : team;
+    const stored = await chrome.storage.sync.get(["endpointUrl"]);
+    const root = (stored.endpointUrl || "http://localhost:8000").split("/api/v1")[0].replace(/\/+$/, "");
+    const url = new URL(`${root}/api/v1/teams/aliases`);
+    if (obj.id != null) url.searchParams.set("ext_id", String(obj.id));
+    const nm = obj.shortName || obj.name;
+    if (nm) url.searchParams.set("name", nm);
+    const r = await fetch(url.toString());
+    if (!r.ok) return team;
+    const j = await r.json();
+    if (!j.found) return team;
+    return { ...obj, fullName: j.full_name || obj.fullName, aliases: j.aliases };
+  } catch (e) {
+    return team;
+  }
+}
+
 async function fetchAllBookmakerOdds(homeTeam, awayTeam, leagueName) {
+  [homeTeam, awayTeam] = await Promise.all([withDbAliases(homeTeam), withDbAliases(awayTeam)]);
   const results = await Promise.allSettled(
     BOOKMAKER_FETCHERS.map((b) => b.fetch(homeTeam, awayTeam, leagueName)),
   );
@@ -465,8 +490,8 @@ async function handleRefetchBetanoOdds(data) {
     "";
 
   const betanoOdds = await fetchBetanoOddsForTeams(
-    homeTeamName,
-    awayTeamName,
+    await withDbAliases(homeTeamName),
+    await withDbAliases(awayTeamName),
     leagueName,
   );
   if (betanoOdds?.success) {
@@ -899,6 +924,8 @@ function extractEventInfo(event) {
     slug: event.slug,
     startTimestamp: event.startTimestamp,
     matchDate,
+    homeId: event.homeTeam?.id ?? null,
+    awayId: event.awayTeam?.id ?? null,
     homeShort: event.homeTeam?.shortName || event.homeTeam?.name || "",
     awayShort: event.awayTeam?.shortName || event.awayTeam?.name || "",
     tournamentId: event.tournament?.uniqueTournament?.id,
@@ -921,6 +948,14 @@ function buildMatchKey(info) {
   const home = normalizeText(info.homeShort || "");
   const away = normalizeText(info.awayShort || "");
   return `${dateStr}|${home}|${away}`;
+}
+
+function normalizeSeasonYear(year) {
+  const s = String(year ?? "").trim();
+  const m = s.match(/^(\d{2}|\d{4})\s*[/-]\s*(\d{2}|\d{4})$/);
+  if (!m) return s; // "2025" u otros formatos quedan igual
+  const full = (v) => (v.length === 2 ? `20${v}` : v);
+  return `${full(m[1])}/${full(m[2])}`;
 }
 
 async function handleExtractHistoricalData(data) {
@@ -955,6 +990,9 @@ async function handleExtractHistoricalData(data) {
       );
     }
   }
+
+  // "26/27" -> "2026/2027" (formato guardado en toda la DB)
+  seasons = seasons.map((s) => ({ ...s, year: normalizeSeasonYear(s.year) }));
 
   const currentSeasonId =
     seasonsData.seasons.length > 0 ? String(seasonsData.seasons[0].id) : null;
@@ -1019,6 +1057,7 @@ async function handleExtractHistoricalData(data) {
     let page = 0;
     let hasNextPage = true;
     const rawSeasonEvents = [];
+    let listingComplete = true;
 
     while (hasNextPage) {
       if (_historicalCancelled) break;
@@ -1046,15 +1085,60 @@ async function handleExtractHistoricalData(data) {
         await delay(1500);
       } catch (e) {
         console.warn(`Error en pág ${page} de temp ${season.year}:`, e.message);
+        listingComplete = false;
         hasNextPage = false;
       }
     }
 
+    // SofaScore repite eventos entre páginas de /events/last: dedup por id
+    const seenIds = new Set();
+    const uniqueSeasonEvents = rawSeasonEvents.filter((e) => {
+      if (seenIds.has(e.id)) return false;
+      seenIds.add(e.id);
+      return true;
+    });
+
     // Mapear con extractEventInfo y filtrar terminados para detalle
-    const mappedSeasonEvents = rawSeasonEvents.map((e) => ({
+    const mappedSeasonEvents = uniqueSeasonEvents.map((e) => ({
       raw: e,
       info: extractEventInfo(e),
     }));
+
+    // Guardar datos de equipos (nombre largo, slug, código, colores...) de TODOS los eventos
+    try {
+      const teamsById = new Map();
+      for (const e of uniqueSeasonEvents) {
+        for (const t of [e.homeTeam, e.awayTeam]) {
+          if (t && t.id != null && !teamsById.has(t.id)) {
+            teamsById.set(t.id, {
+              id: t.id,
+              name: t.name,
+              shortName: t.shortName,
+              slug: t.slug,
+              nameCode: t.nameCode,
+              gender: t.gender,
+              country: { name: t.country?.name },
+              teamColors: t.teamColors,
+            });
+          }
+        }
+      }
+      if (teamsById.size > 0) {
+        const tr = await fetch(`${baseUrl}/api/v1/teams/sync`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ teams: [...teamsById.values()] }),
+        });
+        const tj = tr.ok ? await tr.json().catch(() => ({})) : {};
+        sendProgress({
+          phase: "incremental_check",
+          seasonYear: season.year,
+          message: `T.${season.year} — equipos: ${tj.updated ?? "?"}/${teamsById.size} actualizados con nombre largo y datos`,
+        });
+      }
+    } catch (teamErr) {
+      console.warn("[Watson-Histórico] No se pudieron guardar equipos:", teamErr.message);
+    }
 
     const finishedEvents = mappedSeasonEvents.filter(
       (item) => item.info.status === "finished",
@@ -1106,7 +1190,8 @@ async function handleExtractHistoricalData(data) {
     if (!isForce) {
       try {
         const histUrl = new URL(`${baseUrl}/api/v1/history/matches`);
-        histUrl.searchParams.set("competition", tournamentName || "");
+        // Mismo nombre normalizado con el que se guarda (buildHistoricalPayload)
+        histUrl.searchParams.set("competition", (tournamentName || "").split(",")[0].trim());
         histUrl.searchParams.set("season", String(season.year));
         const histRes = await fetch(histUrl.toString());
 
@@ -1114,31 +1199,148 @@ async function handleExtractHistoricalData(data) {
           const histData = await histRes.json();
           const dbMatches = histData.matches || [];
 
-          // Construir sets de comparación DB (id externo y clave normalizada)
-          const dbEventIdSet = new Set(
-            dbMatches
-              .map((m) => String(m.event_id))
-              .filter((id) => id && id !== "null" && id !== "undefined"),
+          // Lista virtual "local-visitante" (multiconjunto: un cruce puede repetirse en copas/playoffs)
+          const pairKey = (h, a) => `${normalizeText(h || "")}-${normalizeText(a || "")}`;
+          const takeFrom = (counts, key) => {
+            const n = counts.get(key) || 0;
+            if (n <= 0) return false;
+            counts.set(key, n - 1);
+            return true;
+          };
+          // Clave por external_id de equipo (SofaScore); si falta el id, cae a nombre
+          const nameToExt = new Map();
+          mappedSeasonEvents.forEach((x) => {
+            for (const t of [x.raw.homeTeam, x.raw.awayTeam]) {
+              if (t?.id == null) continue;
+              [t.name, t.shortName].forEach((n) => n && nameToExt.set(normalizeText(n), t.id));
+            }
+          });
+          const idKey = (hid, aid, h, a) =>
+            hid != null && aid != null ? `#${hid}-${aid}` : pairKey(h, a);
+          const sofaKey = (i) => idKey(i.homeId, i.awayId, i.homeShort, i.awayShort);
+          const dbKey = (m) =>
+            idKey(
+              m.home_ext ?? nameToExt.get(normalizeText(m.home || "")),
+              m.away_ext ?? nameToExt.get(normalizeText(m.away || "")),
+              m.home,
+              m.away,
+            );
+          const countKeys = (keys) => {
+            const m = new Map();
+            keys.forEach((k) => m.set(k, (m.get(k) || 0) + 1));
+            return m;
+          };
+
+          // Solo filas de esta temporada: por season_id; si falta, por season_year;
+          // si tampoco, por fecha dentro de la ventana de la temporada en SofaScore.
+          const starts = mappedSeasonEvents
+            .map((x) => x.info.startTimestamp * 1000)
+            .filter(Boolean);
+          const winMin = Math.min(...starts) - 86400000;
+          const winMax = Math.max(...starts) + 86400000;
+          const seasonDb = dbMatches.filter((m) => {
+            if (m.season_id) return String(m.season_id) === seasonKey;
+            if (m.season_year) return normalizeSeasonYear(m.season_year) === season.year;
+            const t = Date.parse(`${m.match_date}T12:00:00Z`);
+            return t >= winMin && t <= winMax;
+          });
+          // 1) Emparejar por event_id exacto; 2) lo restante por clave local-visitante
+          const sofaIds = new Set(mappedSeasonEvents.map((x) => String(x.info.eventId)));
+          const dbIds = new Set(seasonDb.map((m) => m.event_id).filter(Boolean));
+          const dbLeft = seasonDb.filter((m) => !(m.event_id && sofaIds.has(m.event_id)));
+          const sofaLeft = mappedSeasonEvents.filter((x) => !dbIds.has(String(x.info.eventId)));
+          const virtualCounts = countKeys(
+            sofaLeft.map((x) => sofaKey(x.info)),
           );
-          const dbKeySet = new Set(
-            dbMatches.map((m) => m.key).filter(Boolean),
+          // Para faltantes, una fila de DB sin resultado cuenta como ausente (se reprocesa)
+          const withResult = seasonDb.filter((m) => m.has_result);
+          const dbIdsRes = new Set(withResult.map((m) => m.event_id).filter(Boolean));
+          const dbCounts = countKeys(
+            withResult
+              .filter((m) => !(m.event_id && sofaIds.has(m.event_id)))
+              .map((m) => dbKey(m)),
           );
+
+          // Backfill: filas viejas sin event_id/season_id emparejadas 1 a 1 por local-visitante
+          try {
+            const sofaByKey = new Map();
+            mappedSeasonEvents.forEach((x) => {
+              const k = sofaKey(x.info);
+              sofaByKey.set(k, [...(sofaByKey.get(k) || []), x.info]);
+            });
+            const dbByKey = new Map();
+            seasonDb
+              .filter((m) => !m.event_id || !m.season_id || !m.season_year)
+              .forEach((m) => {
+                const k = dbKey(m);
+                dbByKey.set(k, [...(dbByKey.get(k) || []), m]);
+              });
+            const allByKey = countKeys(seasonDb.map((m) => dbKey(m)));
+            const backfill = [];
+            dbByKey.forEach((rows, k) => {
+              const evs = sofaByKey.get(k) || [];
+              if (rows.length === 1 && evs.length === 1 && allByKey.get(k) === 1) {
+                backfill.push({
+                  id: rows[0].id,
+                  event_id: String(evs[0].eventId),
+                  season_id: String(season.id),
+                  season_year: season.year,
+                });
+              }
+            });
+            if (backfill.length > 0) {
+              await fetch(`${baseUrl}/api/v1/history/backfill-season`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(backfill),
+              });
+              console.log(`[Watson-Histórico] T.${season.year}: backfill de ${backfill.length} filas antiguas`);
+            }
+          } catch (bfErr) {
+            console.warn("[Watson-Histórico] Backfill falló:", bfErr.message);
+          }
 
           const totalInListing = enrichedSeasonEvents.length;
-          const totalInDb = dbMatches.length;
+          const totalInDb = seasonDb.length;
 
-          // Filtrar faltantes: primero por id externo SofaScore, luego por buildMatchKey
+          // /history/matches ya excluye filas sin resultado que no terminaron (< 4 h desde el inicio),
+          // así que las filas sin resultado que llegan aquí son partidos terminados sin resultado.
+          const noRes = seasonDb.filter((m) => !m.has_result);
+
+          // Faltantes: terminados de SofaScore sin pareja con resultado en DB
           eventsToProcess = enrichedSeasonEvents.filter((e) => {
-            const info = e._eventInfo;
-            if (info.eventId && dbEventIdSet.has(String(info.eventId))) {
-              return false;
-            }
-            const matchKey = buildMatchKey(info);
-            return !dbKeySet.has(matchKey);
+            const i = e._eventInfo;
+            const key = sofaKey(i);
+            return !dbIdsRes.has(String(i.eventId)) && !takeFrom(dbCounts, key);
           });
 
+          // Sobrantes: filas DB (con season_id propio) sin pareja en la lista virtual
+          // Protección: si algún evento de SofaScore empieza a la misma hora (±5 min) y comparte
+          // al menos un equipo (nombres distintos entre DB y SofaScore), no es sobrante.
+          const fuzzy = (a, b) => {
+            const x = normalizeText(a || "");
+            const y = normalizeText(b || "");
+            return Boolean(x && y && (x === y || x.includes(y) || y.includes(x)));
+          };
+          const sameKickoffInSofa = (m) =>
+            Boolean(m.start_timestamp) &&
+            mappedSeasonEvents.some(
+              (x) =>
+                Math.abs((x.info.startTimestamp || 0) - m.start_timestamp) <= 300 &&
+                (fuzzy(m.home, x.info.homeShort) || fuzzy(m.away, x.info.awayShort)),
+            );
+          const extraRows = dbLeft.filter(
+            (m) =>
+              !takeFrom(virtualCounts, dbKey(m)) &&
+              m.season_id &&
+              m.id &&
+              !sameKickoffInSofa(m),
+          );
+
           const missingCount = eventsToProcess.length;
-          const missingKeys = eventsToProcess.map((e) => buildMatchKey(e._eventInfo));
+          const missingKeys = eventsToProcess.map((e) =>
+            pairKey(e._eventInfo.homeShort, e._eventInfo.awayShort), // legible (el diff usa ids)
+          );
           const missingEventIds = eventsToProcess.map((e) => e._eventInfo.eventId).filter(Boolean);
 
           // Reporte de auditoría estructurado
@@ -1146,9 +1348,12 @@ async function handleExtractHistoricalData(data) {
             season_id: season.id,
             competition: tournamentName || "",
             total_sofascore: totalInListing,
+            total_sofascore_all: mappedSeasonEvents.length,
             total_db: totalInDb,
+            db_with_result: withResult.length,
+            db_without_result: noRes.length,
             missing_in_db: missingEventIds.length > 0 ? missingEventIds : missingKeys,
-            extra_in_db: [],
+            extra_in_db: extraRows.map((m) => m.event_id || `${m.home}-${m.away}`),
           };
           console.log("[Watson-Histórico Audit Report]", JSON.stringify(auditReport));
 
@@ -1179,6 +1384,26 @@ async function handleExtractHistoricalData(data) {
             missingKeys,
           });
 
+          // Sobrantes: NO se borran; se reportan para verificación manual
+          if (extraRows.length > 0) {
+            const extraLabels = extraRows.map((m) => {
+              const d = m.start_timestamp
+                ? new Date(m.start_timestamp * 1000).toISOString().slice(0, 10)
+                : "s/f";
+              return `${m.home} vs ${m.away} (${d}, id ${m.id}${m.event_id ? `, ev ${m.event_id}` : ""})`;
+            });
+            console.warn(
+              `[Watson-Histórico] T.${season.year}: ${extraRows.length} en DB y no en SofaScore${listingComplete ? "" : " (listado incompleto, puede ser falso)"}`,
+              extraLabels,
+            );
+            sendProgress({
+              phase: "incremental_check",
+              seasonYear: season.year,
+              message: `T.${season.year} — ${extraRows.length} en DB pero no en SofaScore (revisar a mano)${listingComplete ? "" : " [listado incompleto]"}:\n${extraLabels.join("\n")}`,
+              extraInDb: extraLabels,
+            });
+          }
+
           if (missingCount === 0) {
             sendProgress({
               phase: "season_skipped",
@@ -1189,9 +1414,20 @@ async function handleExtractHistoricalData(data) {
             });
             continue;
           }
+        } else {
+          throw new Error(`history/matches HTTP ${histRes.status}`);
         }
       } catch (e) {
+        // Sin diff fiable no se procesa nada (antes reextraía toda la temporada)
         console.warn(`[Histórico] No se pudo consultar DB para diff incremental T.${season.year}:`, e.message);
+        sendProgress({
+          phase: "season_skipped",
+          seasonIndex: si,
+          totalSeasons: seasons.length,
+          seasonYear: season.year,
+          message: `⚠ T.${season.year} omitida: no se pudo consultar la DB (${e.message}). Usa --force para extraer todo`,
+        });
+        continue;
       }
     } else {
       console.log(`[Watson-Histórico] Modo force activo: reextrayendo todos los ${enrichedSeasonEvents.length} eventos`);
@@ -1242,6 +1478,7 @@ async function handleExtractHistoricalData(data) {
         const payload = buildHistoricalPayload(
           event,
           statisticsData,
+          null,
           tournamentName,
         );
 
@@ -1251,10 +1488,25 @@ async function handleExtractHistoricalData(data) {
           body: JSON.stringify(payload),
         });
 
-        if (res.ok) {
+        // El backend responde 200 aunque no cree nada (duplicado, ignorado, error): mirar el cuerpo
+        const body = res.ok ? await res.json().catch(() => ({})) : {};
+        if (res.ok && body.created_new) {
           totalSaved++;
           seasonSaved++;
+        } else if (res.ok && body.status === "ok") {
+          // Ya existía (duplicado o actualizado): no es un guardado nuevo
+          console.warn(
+            `[Watson-Histórico] Evento ${event.id} NO creado: ${body.message}`,
+          );
+          sendProgress({
+            phase: "incremental_check",
+            seasonYear: season.year,
+            message: `⚠ ${event.homeTeam?.shortName || event.homeTeam?.name} vs ${event.awayTeam?.shortName || event.awayTeam?.name} (ev ${event.id}) no se creó: ${body.message}`,
+          });
         } else {
+          if (res.ok) {
+            console.warn(`Evento ${event.id} rechazado: ${body.message || body.status}`);
+          }
           totalErrors++;
           seasonErrors++;
           console.warn(`Error guardando evento ${event.id}: ${res.status}`);
@@ -1329,8 +1581,11 @@ function buildHistoricalPayload(
 ) {
   // Normalizar nombre: tomar sólo la parte antes de la primera coma
   // p.ej. "LigaPro Serie A, Playoffs" → "LigaPro Serie A"
-  const rawName = tournamentName || event.tournament?.name || null;
-  const normalizedName = rawName ? rawName.split(",")[0].trim() : null;
+  // Prioridad absoluta a uniqueTournament.name (nombre canónico de la competición)
+  const normalizedName =
+    event.tournament?.uniqueTournament?.name ||
+    (tournamentName || event.tournament?.name || "").split(",")[0].trim() ||
+    null;
 
   const payload = {
     sport: "football",
@@ -2085,8 +2340,8 @@ async function handlePollClosingOdds() {
       `[Watson CLV] Buscando cuotas de cierre para: ${match.match_title}`,
     );
     const betanoResult = await fetchBetanoOddsForTeams(
-      match.home_team,
-      match.away_team,
+      await withDbAliases(match.home_team),
+      await withDbAliases(match.away_team),
       match.competition,
     );
 

@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from pydantic import BaseModel
 from sqlalchemy import or_
 from src.core.domain import Sport, AnalysisHistory
+from src.core.entity_resolver import competition_filter
 from src.ui.api.schemas import (
     AnalysisHistoryOut,
 )
@@ -250,7 +251,7 @@ def _compute_league_season_corners(
             AnalysisHistory.match_date,
             AnalysisHistory.date,
         ).filter(
-            AnalysisHistory.competition == competition,
+            competition_filter(s, competition),
             AnalysisHistory.sport == Sport.FOOTBALL,
             AnalysisHistory.final_corners_home.isnot(None),
             AnalysisHistory.final_corners_away.isnot(None),
@@ -268,11 +269,8 @@ def _compute_league_season_corners(
                 or_(
                     AnalysisHistory.date.like(f"{target_year}%"),
                     AnalysisHistory.match_date.like(f"{target_year}%"),
-                    AnalysisHistory.payload.like(f'%"season": "{target_year}"%'),
-                    AnalysisHistory.payload.like(f'%"season":"{target_year}"%'),
-                    AnalysisHistory.payload.like(f'%"season": {target_year}%'),
-                    # Also match short-form: "25/26"
-                    AnalysisHistory.payload.like(f'%"season_year": "{target_year}%'),
+                    AnalysisHistory.season_label == target_year,
+                    AnalysisHistory.season_year.like(f"{target_year}%"),
                 )
             ).order_by(AnalysisHistory.date.desc())
             rows = q_season.all()
@@ -813,12 +811,25 @@ async def _enrich_with_results(
 
     # 2. Si no hay exacto, buscar con ambos nombres pero respetando orden + fecha cercana
     if not history:
+        from sqlalchemy import and_, or_
+        from src.core.entity_resolver import find_team_id
+
+        _hid, _aid = find_team_id(db, home), find_team_id(db, away)
+        if _hid and _aid:
+            _teams_filter = or_(
+                and_(AnalysisHistory.home_team_id == _hid, AnalysisHistory.away_team_id == _aid),
+                and_(AnalysisHistory.home_team_id == _aid, AnalysisHistory.away_team_id == _hid),
+            )
+        else:
+            _teams_filter = and_(
+                AnalysisHistory.match_title.ilike(f"%{home}%"),
+                AnalysisHistory.match_title.ilike(f"%{away}%"),
+            )
         candidates = (
             db.query(AnalysisHistory)
             .filter(
                 AnalysisHistory.sport == sport,
-                AnalysisHistory.match_title.ilike(f"%{home}%"),
-                AnalysisHistory.match_title.ilike(f"%{away}%"),
+                _teams_filter,
                 AnalysisHistory.final_score_home != None,
                 (
                     (
@@ -920,6 +931,10 @@ class SeasonAuditPayload(BaseModel):
     competition: str | None = None
     total_sofascore: int
     total_db: int
+    total_sofascore_all: int | None = None  # total_sofascore = solo terminados
+    db_with_result: int | None = None
+    db_without_result: int | None = None
+    pending_not_due: int | None = None  # sin resultado y empezaron hace < 2 h
     missing_in_db: list[Any] = []
     extra_in_db: list[Any] = []
 
@@ -1020,12 +1035,10 @@ def _update_segment_governance_file(
     target_key = keys_to_update[0]
 
     data = {}
-    if os.path.exists(gov_path):
-        try:
-            with open(gov_path, "r", encoding="utf-8") as f:
-                data = json.load(f)
-        except Exception:
-            data = {}
+    if os.path.exists(gov_path) and os.path.getsize(gov_path) > 0:
+        # Sin try/except: un archivo corrupto no debe reemplazarse por uno casi vacío.
+        with open(gov_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
 
     if "segments" not in data or not isinstance(data["segments"], dict):
         data["segments"] = {}
@@ -1060,8 +1073,10 @@ def _update_segment_governance_file(
     data["total_segments"] = len(data["segments"])
 
     os.makedirs(os.path.dirname(gov_path), exist_ok=True)
-    with open(gov_path, "w", encoding="utf-8") as f:
+    tmp_path = gov_path + ".tmp"
+    with open(tmp_path, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+    os.replace(tmp_path, gov_path)  # escritura atómica
 
     reset_governance_cache()
     return target_key

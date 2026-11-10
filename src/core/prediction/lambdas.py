@@ -47,12 +47,13 @@ def _estimate_league_variance(
     ):
         try:
             from src.core.domain import AnalysisHistory
+            from src.core.entity_resolver import competition_filter
 
             # Solo columnas de resultado: evita hidratar payload/snapshots JSON de cada fila.
             rows = (
                 db.query(*[getattr(AnalysisHistory, c) for c in _FINAL_STAT_COLS])
                 .filter(
-                    AnalysisHistory.competition == competition_name,
+                    competition_filter(db, competition_name),
                     AnalysisHistory.final_score_home.isnot(None),
                     AnalysisHistory.final_score_away.isnot(None),
                 )

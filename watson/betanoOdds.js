@@ -63,6 +63,11 @@ function getNameVariants(teamOrName) {
   const arr = [];
   if (teamOrName.shortName) arr.push(teamOrName.shortName.trim());
   if (teamOrName.name) arr.push(teamOrName.name.trim());
+  if (teamOrName.fullName) arr.push(String(teamOrName.fullName).trim());
+  // Aliases guardados en Sherlock (teams.aliases): fallback si el nombre actual no aparece en la casa
+  if (Array.isArray(teamOrName.aliases)) {
+    teamOrName.aliases.forEach((a) => a && arr.push(String(a).trim()));
+  }
   if (teamOrName.slug) {
     const slugName = String(teamOrName.slug).replace(/-/g, " ").trim();
     if (slugName) arr.push(slugName);

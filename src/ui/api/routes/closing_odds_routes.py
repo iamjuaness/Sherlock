@@ -112,12 +112,17 @@ async def submit_closing_odds(payload: dict, db: Session = Depends(get_db)) -> d
     if analysis_id:
         ah = db.query(AnalysisHistory).filter(AnalysisHistory.id == analysis_id).first()
     elif match_title:
+        from src.core.entity_resolver import find_team_id, split_title
+
+        _h, _a = split_title(match_title)
+        _hid, _aid = find_team_id(db, _h), find_team_id(db, _a)
+        if _hid and _aid:
+            _title_filter = and_(AnalysisHistory.home_team_id == _hid, AnalysisHistory.away_team_id == _aid)
+        else:
+            _title_filter = AnalysisHistory.match_title.ilike(f"%{match_title}%")
         ah = (
             db.query(AnalysisHistory)
-            .filter(
-                AnalysisHistory.match_title.ilike(f"%{match_title}%"),
-                AnalysisHistory.final_score_home.is_(None),
-            )
+            .filter(_title_filter, AnalysisHistory.final_score_home.is_(None))
             .first()
         )
 

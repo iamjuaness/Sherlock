@@ -105,8 +105,9 @@ def get_pending_picks_competitions(db: Session = Depends(get_db)):
     """
     from sqlalchemy.orm import load_only
 
-    records = (
-        db.query(AnalysisHistory)
+    # Nombre de liga desde la tabla competitions (competition_id), no solo la columna texto legacy.
+    rows = (
+        db.query(AnalysisHistory, Competition.name)
         .options(
             load_only(
                 AnalysisHistory.competition,
@@ -114,15 +115,15 @@ def get_pending_picks_competitions(db: Session = Depends(get_db)):
                 AnalysisHistory.final_score_home,
             )
         )
+        .outerjoin(Competition, AnalysisHistory.competition_id == Competition.id)
         .filter(AnalysisHistory.final_score_home.is_(None))
         .all()
     )
 
     pending_set = set()
     pending_event_ids = set()
-    for rec in records:
-        # Use pre-extracted competition column; fall back to payload only for event_id
-        comp_name = rec.competition
+    for rec, cat_name in rows:
+        comp_name = cat_name or rec.competition
         if comp_name:
             pending_set.add(comp_name)
         elif rec.payload:

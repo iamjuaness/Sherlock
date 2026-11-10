@@ -7,9 +7,27 @@
   },
   {
     "league": "Pro League",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Pro League",
     "market_family": "goals",
-    "market_side": "over",
+    "market_side": "under",
     "line": 3.5
+  },
+  {
+    "league": "Pro League",
+    "market_family": "result",
+    "market_side": "draw",
+    "line": null
+  },
+  {
+    "league": "Pro League",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 8.5
   },
   {
     "league": "Pro League",
@@ -21,6 +39,150 @@
     "league": "Pro League",
     "market_family": "cards",
     "market_side": "under",
-    "line": 3.5
+    "line": 2.5
+  },
+  {
+    "league": "Primera A",
+    "market_family": "corners",
+    "market_side": "over",
+    "line": 11.5
+  },
+  {
+    "league": "Primera A",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Primera A",
+    "market_family": "corners",
+    "market_side": "over",
+    "line": 10.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "result",
+    "market_side": "home",
+    "line": null
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 22.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "corners",
+    "market_side": "over",
+    "line": 11.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 5.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 7.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "result",
+    "market_side": "away",
+    "line": null
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "goals",
+    "market_side": "over",
+    "line": 2.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots",
+    "market_side": "over",
+    "line": 29.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots_target",
+    "market_side": "over",
+    "line": 7.5
+  },
+  {
+    "league": "Liga Profesional de Fútbol",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 19.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "result",
+    "market_side": "home",
+    "line": null
+  },
+  {
+    "league": "Premier League",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 23.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 6.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "result",
+    "market_side": "draw",
+    "line": null
+  },
+  {
+    "league": "Premier League",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 21.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 7.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "corners",
+    "market_side": "under",
+    "line": 8.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "shots_target",
+    "market_side": "under",
+    "line": 8.5
+  },
+  {
+    "league": "Premier League",
+    "market_family": "shots",
+    "market_side": "under",
+    "line": 25.5
   }
 ]

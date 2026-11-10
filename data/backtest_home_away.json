@@ -1,0 +1,62 @@
+{
+  "matches": 3289,
+  "failed": 2,
+  "covered_matches": 120,
+  "all": {
+    "base": {
+      "raw": {
+        "n": 838,
+        "brier": 0.20731,
+        "logloss": 0.59919
+      },
+      "final": {
+        "n": 838,
+        "brier": 0.20798,
+        "logloss": 0.60169
+      }
+    },
+    "split": {
+      "raw": {
+        "n": 838,
+        "brier": 0.21339,
+        "logloss": 0.61423
+      },
+      "final": {
+        "n": 838,
+        "brier": 0.21229,
+        "logloss": 0.61218
+      }
+    }
+  },
+  "covered_only": {
+    "base": {
+      "raw": {
+        "n": 838,
+        "brier": 0.20731,
+        "logloss": 0.59919
+      },
+      "final": {
+        "n": 838,
+        "brier": 0.20798,
+        "logloss": 0.60169
+      }
+    },
+    "split": {
+      "raw": {
+        "n": 838,
+        "brier": 0.21339,
+        "logloss": 0.61423
+      },
+      "final": {
+        "n": 838,
+        "brier": 0.21229,
+        "logloss": 0.61218
+      }
+    }
+  },
+  "market_novig_covered": {
+    "n": 838,
+    "brier": 0.20009,
+    "logloss": 0.58294
+  }
+}

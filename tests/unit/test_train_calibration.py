@@ -18,11 +18,16 @@ import pytest
 from src.domain.settlement import Outcome, outcome_from_legacy
 from src.core.train_calibration import (
     ExtractionStats,
+    compare_with_active,
     extract_samples,
     history_dir_for,
     train_calibrator,
 )
-from src.models.calibration import CalibrationSample, HierarchicalCalibrator
+from src.models.calibration import (
+    CalibrationSample,
+    HierarchicalCalibrator,
+    walk_forward_calibrate,
+)
 
 
 # ─────────────────── puente legacy -> Outcome ─────────────────────────────
@@ -356,10 +361,15 @@ def test_does_not_promote_if_active_comparison_fails(tmp_path, monkeypatch):
     art = tmp_path / "active.json"
     train_calibrator(_overconfident_samples(), artifact_path=art,
                      prior_strength=5.0, min_samples=40)
-    monkeypatch.setattr(
-        HierarchicalCalibrator, "apply",
-        lambda self, *a, **k: (_ for _ in ()).throw(RuntimeError("boom")),
-    )
+    # Solo el calibrador activo (cargado desde disco) falla; el walk-forward usa otros.
+    real_load = HierarchicalCalibrator.load
+
+    def _broken_load(path, *a, **k):
+        cal = real_load(path, *a, **k)
+        cal.apply = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("boom"))
+        return cal
+
+    monkeypatch.setattr(HierarchicalCalibrator, "load", staticmethod(_broken_load))
     report = train_calibrator(_overconfident_samples(seed=9), artifact_path=art,
                               prior_strength=5.0, min_samples=40)
     assert report.promoted is False

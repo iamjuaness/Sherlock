@@ -88,8 +88,8 @@ if __name__ == "__main__":
     #     db.close()
 
     # ---------Cambiar nombre de liga---------------
-    old_name = "Primera A"
-    new_name = "Liga Dimayor"
+    old_name = "Liga MX, Apertura"
+    new_name = "Liga MX"
 
     db = next(get_db())
     try:

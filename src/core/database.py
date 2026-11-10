@@ -31,6 +31,8 @@ if "sqlite" in settings.database_url:
         cursor.execute("PRAGMA synchronous=NORMAL")    # safe + faster than FULL
         cursor.execute("PRAGMA cache_size=-32000")     # ~32 MB page cache
         cursor.execute("PRAGMA temp_store=MEMORY")     # temp tables in RAM
+        cursor.execute("PRAGMA mmap_size=268435456")   # lecturas vía mmap (256 MB)
+        cursor.execute("PRAGMA journal_size_limit=67108864")  # el WAL no queda gigante tras checkpoint
         cursor.close()
 
 
@@ -209,6 +211,47 @@ def init_db() -> None:
                 except Exception as e:
                     print(f"DB migration warning for {col}: {e}")
 
+        # ── FKs normalizadas: competición y equipos ──
+        for col, ref in (("competition_id", "competitions"),
+                         ("home_team_id", "teams"),
+                         ("away_team_id", "teams")):
+            if not _column_exists(conn, "analysis_history", col):
+                try:
+                    conn.execute(text(
+                        f"ALTER TABLE analysis_history ADD COLUMN {col} VARCHAR(36) REFERENCES {ref}(id)"
+                    ))
+                except Exception as e:
+                    print(f"DB migration warning for {col}: {e}")
+        for col, dtype in (("full_name", "VARCHAR(200)"), ("slug", "VARCHAR(200)"),
+                           ("name_code", "VARCHAR(10)"), ("gender", "VARCHAR(5)"),
+                           ("team_colors", "TEXT"), ("aliases", "TEXT")):
+            if not _column_exists(conn, "teams", col):
+                try:
+                    conn.execute(text(f"ALTER TABLE teams ADD COLUMN {col} {dtype}"))
+                except Exception as e:
+                    print(f"DB migration warning for teams.{col}: {e}")
+        # ── Temporada desnormalizada: backfill único al crear las columnas ──
+        _season_new = False
+        for col in ("season_id", "season_year", "season_label"):
+            if not _column_exists(conn, "analysis_history", col):
+                conn.execute(text(f"ALTER TABLE analysis_history ADD COLUMN {col} VARCHAR(30)"))
+                _season_new = True
+        if _season_new:
+            conn.execute(text(
+                "UPDATE analysis_history SET "
+                "season_id = json_extract(payload, '$.season_id'), "
+                "season_year = json_extract(payload, '$.season_year'), "
+                "season_label = json_extract(payload, '$.season')"
+            ))
+            print("DB backfill: season_id/season_year/season_label desde payload.")
+        try:
+            from src.core.entity_resolver import backfill_entity_ids
+            n = backfill_entity_ids(conn)
+            if n:
+                print(f"DB backfill: {n} filas con competition_id/home_team_id/away_team_id.")
+        except Exception as e:
+            print(f"DB backfill warning for entity ids: {e}")
+
         # Idempotent backfill of has_odds for historical records
         try:
             conn.execute(text(
@@ -265,6 +308,16 @@ def create_indexes():
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_analysis_history_sport_title ON analysis_history(sport, match_title);"
         ))
+        for stmt in (
+            "CREATE INDEX IF NOT EXISTS idx_ah_competition_id ON analysis_history(competition_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ah_comp_season ON analysis_history(competition_id, season_year)",
+            "CREATE INDEX IF NOT EXISTS idx_ah_season_id ON analysis_history(season_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ah_home_team_id ON analysis_history(home_team_id)",
+            "CREATE INDEX IF NOT EXISTS idx_ah_away_team_id ON analysis_history(away_team_id)",
+            "CREATE INDEX IF NOT EXISTS idx_teams_sport_lname ON teams(sport, lower(trim(name)))",
+            "CREATE INDEX IF NOT EXISTS idx_competitions_sport_lname ON competitions(sport, lower(trim(name)))",
+        ):
+            conn.execute(text(stmt))
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_analysis_history_sport_date ON analysis_history(sport, match_date DESC);"
         ))
@@ -281,8 +334,18 @@ def create_indexes():
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_ah_stake_units ON analysis_history(stake_units);"
         ))
+        # Índices sin valor: bookmaker es 100% NULL; sport tiene un único valor y
+        # idx_analysis_history_sport_date ya cubre el prefijo (sport).
+        conn.execute(text("DROP INDEX IF EXISTS idx_ah_bookmaker"))
+        conn.execute(text("DROP INDEX IF EXISTS ix_analysis_history_sport"))
+        # Parciales: solo ~7% de las filas tiene picks/resultado -> índices diminutos.
         conn.execute(text(
-            "CREATE INDEX IF NOT EXISTS idx_ah_bookmaker ON analysis_history(bookmaker);"
+            "CREATE INDEX IF NOT EXISTS idx_ah_picks_by_comp ON analysis_history(competition_id, match_date) "
+            "WHERE picks_calculados IS NOT NULL;"
+        ))
+        conn.execute(text(
+            "CREATE INDEX IF NOT EXISTS idx_ah_results_by_comp ON analysis_history(competition_id, date DESC) "
+            "WHERE final_score_home IS NOT NULL;"
         ))
         # Índice compuesto y "covering" para pending-picks:
         # cubre WHERE final_score_home IS NULL AND competition IS NOT NULL
@@ -314,4 +377,4 @@ def create_indexes():
         conn.execute(text(
             "CREATE INDEX IF NOT EXISTS idx_audit_target ON admin_audit_log(target_table, record_id);"
         ))
-        conn.commit()
+        conn.commit()

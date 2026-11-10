@@ -23,8 +23,10 @@ from sqlalchemy import (
     Boolean,
     Text,
 )
+from sqlalchemy import event, inspect as _sa_inspect
 from sqlalchemy.orm import relationship
 
+from src.core.compressed_text import CompressedText
 from src.core.database import Base
 
 
@@ -91,6 +93,14 @@ class Team(Base):
     logo_url = Column(Text, nullable=True)
     external_id = Column(String(100), nullable=True)
     source = Column(String(50), nullable=True)
+    # Datos de SofaScore: `name` es la grafía usada en los títulos y puede variar;
+    # full_name + aliases (JSON list) permiten reconocer el mismo equipo con otro nombre.
+    full_name = Column(String(200), nullable=True)
+    slug = Column(String(200), nullable=True)
+    name_code = Column(String(10), nullable=True)
+    gender = Column(String(5), nullable=True)
+    team_colors = Column(Text, nullable=True)  # JSON {primary, secondary, text}
+    aliases = Column(Text, nullable=True)  # JSON list de nombres conocidos
 
     __table_args__ = (
         UniqueConstraint("sport", "name", name="uq_team_sport_name"),
@@ -262,11 +272,11 @@ class AnalysisHistory(Base):
     payload = Column(Text, nullable=False)  # JSON blob of the form data
 
     # Persistence & LLM
-    picks_calculados = Column(Text, nullable=True)  # JSON blob
+    picks_calculados = Column(CompressedText, nullable=True)  # JSON blob (zlib)
     user_context = Column(Text, nullable=True)
     llm_response = Column(Text, nullable=True)
     llm_timestamp = Column(DateTime, nullable=True)
-    compare_response_snapshot = Column(Text, nullable=True)
+    compare_response_snapshot = Column(CompressedText, nullable=True)  # zlib
     needs_reanalysis = Column(Boolean, default=False)
     has_odds = Column(Boolean, default=False, nullable=False, index=True, server_default="0")
     needs_recalc = Column(Boolean, default=True, nullable=False, index=True, server_default="1")
@@ -285,6 +295,15 @@ class AnalysisHistory(Base):
     stake_units = Column(Float, nullable=True, index=True)
     # Suma de stake_units de los picks publicables del partido
 
+    # FKs normalizadas (se rellenan solas en before_insert/before_update desde match_title y competition)
+    competition_id = Column(String(36), ForeignKey("competitions.id"), nullable=True)
+    home_team_id = Column(String(36), ForeignKey("teams.id"), nullable=True)
+    away_team_id = Column(String(36), ForeignKey("teams.id"), nullable=True)
+
+    # Temporada extraída de payload (season_id / season_year / season) para filtrar sin LIKE sobre el JSON.
+    season_id = Column(String(30), nullable=True)
+    season_year = Column(String(30), nullable=True)
+    season_label = Column(String(30), nullable=True)
 
     # Final Results
     final_score_home = Column(Integer, nullable=True)
@@ -418,4 +437,39 @@ class AdminAuditLog(Base):
     error_message = Column(Text, nullable=True)
 
     def __repr__(self) -> str:
-        return f"<AdminAuditLog {self.action} on {self.target_table}:{self.record_id} at {self.timestamp}>"
+        return f"<AdminAuditLog {self.action} on {self.target_table}:{self.record_id} at {self.timestamp}>"
+
+
+# ---------------------------------------------------------------------------
+# Mantiene los *_id de analysis_history sincronizados con match_title/competition
+# ---------------------------------------------------------------------------
+def _sync_entity_ids(mapper, connection, target):
+    from src.core.entity_resolver import resolve_entities
+
+    st = _sa_inspect(target)
+    needs = (
+        st.transient or st.pending
+        or None in (target.competition_id, target.home_team_id, target.away_team_id)
+        or st.attrs.match_title.history.has_changes()
+        or st.attrs.competition.history.has_changes()
+    )
+    if not needs:
+        return
+    sport = target.sport.name if isinstance(target.sport, Sport) else str(target.sport).upper()
+    target.competition_id, target.home_team_id, target.away_team_id = resolve_entities(
+        connection, sport, target.match_title, target.competition
+    )
+
+
+def _sync_season(mapper, connection, target):
+    from src.core.season_resolver import extract_season_columns
+
+    st = _sa_inspect(target)
+    if st.transient or st.pending or st.attrs.payload.history.has_changes():
+        target.season_id, target.season_year, target.season_label = extract_season_columns(target.payload)
+
+
+event.listen(AnalysisHistory, "before_insert", _sync_season)
+event.listen(AnalysisHistory, "before_update", _sync_season)
+event.listen(AnalysisHistory, "before_insert", _sync_entity_ids)
+event.listen(AnalysisHistory, "before_update", _sync_entity_ids)

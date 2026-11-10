@@ -36,6 +36,24 @@ def set_leagues_active_state(active: bool = Query(...)):
     return {"status": "ok", "in_leagues_window": _in_leagues_window}
 
 
+def _normalize_season_year(value):
+    """'26/27' -> '2026/2027'; otros formatos (p. ej. '2025') quedan igual."""
+    import re
+
+    m = re.fullmatch(r"\s*(\d{2}|\d{4})\s*[/-]\s*(\d{2}|\d{4})\s*", str(value or ""))
+    if not m:
+        return value
+    return "/".join(g if len(g) == 4 else f"20{g}" for g in m.groups())
+
+
+def _event_id_equals(event_id):
+    """event_id EXACTO del payload. `payload.contains(id)` daba falsos positivos
+    (ej. 16671672 dentro de start_timestamp 1667167200) y mezclaba datos entre partidos."""
+    from sqlalchemy import String, cast, func
+
+    return cast(func.json_extract(AnalysisHistory.payload, "$.event_id"), String) == str(event_id)
+
+
 @router.post("/api/v1/result", tags=["Results"])
 async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
     """
@@ -71,7 +89,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                     db.query(AnalysisHistory)
                     .filter(
                         AnalysisHistory.sport == sport_enum,
-                        AnalysisHistory.payload.contains(str(event_id)),
+                        _event_id_equals(event_id),
                     )
                     .first()
                 )
@@ -176,6 +194,28 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
             # ── Si encontramos el partido, actualizamos ──
             if matched:
                 h = matched
+
+                # Guardar la identidad SofaScore en el payload para que el diff lo reconozca
+                try:
+                    _p = json.loads(str(h.payload))
+                    _changed = False
+                    for _k in ("event_id", "season_id"):
+                        if payload.get(_k) and not _p.get(_k):
+                            _p[_k] = payload[_k]
+                            _changed = True
+                    _sy = _normalize_season_year(payload.get("season_year"))
+                    if _sy and not _p.get("season_year"):
+                        _p["season_year"] = _sy
+                        _changed = True
+                    if _changed:
+                        h.payload = json.dumps(_p)
+                except Exception as _e:
+                    print(f"No se pudo actualizar identidad en payload: {_e}")
+
+                # Histórico de Watson: alinear el nombre de competición, si no
+                # /history/matches (filtra por competition) no ve la fila y la da por faltante.
+                if is_historical and payload.get("competition"):
+                    h.competition = payload["competition"]
 
                 # Update fields
                 h.final_score_home = payload.get("final_score_home")
@@ -361,7 +401,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
             "home": {"name": home_name},
             "away": {"name": away_name},
             "competition": competition_name,
-            "season_year": payload.get("season_year"),
+            "season_year": _normalize_season_year(payload.get("season_year")),
             "season_id": payload.get("season_id"),
             "tournament_id": payload.get("tournament_id"),
             "round": payload.get("round"),
@@ -423,7 +463,7 @@ async def push_result(payload: dict, db: Session = Depends(get_db)) -> dict:
                     AnalysisHistory.sport == sport_enum,
                     AnalysisHistory.match_date == match_date_val,
                     or_(
-                        AnalysisHistory.payload.contains(event_id_str),
+                        _event_id_equals(event_id_str),
                         AnalysisHistory.match_title == match_title,
                     ),
                 )

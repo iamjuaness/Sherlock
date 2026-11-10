@@ -7,6 +7,7 @@ from __future__ import annotations
 
 from typing import Optional, Any
 from openai import AsyncOpenAI
+from src.core.entity_resolver import competition_filter
 from src.domain.eligibility import (
     BlockReason,
 )
@@ -504,7 +505,7 @@ async def compare_football(
             league_rows = (
                 db_session.query(*league_cols)
                 .filter(
-                    AnalysisHistory.competition == req.competition,
+                    competition_filter(db_session, req.competition),
                     AnalysisHistory.sport == Sport.FOOTBALL,
                     AnalysisHistory.picks_calculados.isnot(None),
                 )
@@ -631,6 +632,30 @@ async def compare_football(
 
     h = _sanitize_and_fill_team_stats(req.home)
     a = _sanitize_and_fill_team_stats(req.away)
+    if req.use_home_away_split:
+        from src.core.home_away_stats import apply_split, compute_team_split
+        from src.core.season_resolver import season_key
+
+        _tgt = season_key(req.season_id, req.season_year, getattr(req, "season", None))
+        _sess = db if db is not None else SessionLocal()
+        try:
+            _kick = req.match_date or req.date
+            _hs = compute_team_split(_sess, h.name, "home", _tgt, _kick)
+            _as = compute_team_split(_sess, a.name, "away", _tgt, _kick)
+        finally:
+            if db is None:
+                _sess.close()
+        # Cada lado se aplica por separado: si uno no tiene muestra suficiente conserva su stat general.
+        if _hs:
+            h = apply_split(h, _hs, "home")
+        if _as:
+            a = apply_split(a, _as, "away")
+        logger.info(
+            "home/away split season=%s home_n=%s away_n=%s",
+            _tgt,
+            _hs and _hs["n"],
+            _as and _as["n"],
+        )
     req = req.model_copy(update={"home": h, "away": a})
 
     h_matches = max(h.matches_played, 1)
@@ -892,7 +917,7 @@ async def compare_football(
                     AnalysisHistory.expected_goals_away,
                 )
                 .filter(
-                    AnalysisHistory.competition == req.competition,
+                    competition_filter(db, req.competition),
                     AnalysisHistory.final_score_home.isnot(None),
                     AnalysisHistory.final_score_away.isnot(None),
                 )

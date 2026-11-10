@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 import json
 import traceback
 from fastapi import Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, text
 from src.core.database import get_db
 from src.core.domain import Sport, AnalysisHistory
 from src.ui.api.schemas import (
@@ -388,6 +388,7 @@ def quick_save_match(payload: dict, db: Session = Depends(get_db)) -> AnalysisHi
         "competition": competition,
         "league_stats": payload.get("league_stats", {}),
         "odds": payload.get("odds", {}),
+        **{k: payload[k] for k in ("season_id", "season_year", "season") if payload.get(k) is not None},
     }
 
     from datetime import timedelta, datetime
@@ -503,33 +504,32 @@ def rename_competition_matches(old_name: str, new_name: str, db: Session = Depen
     """
     Cambia el nombre de una competición en el payload y en la columna desnormalizada 'competition' de todos los partidos asociados.
     """
-    history_list = db.query(AnalysisHistory).all()
+    from sqlalchemy import func as _func
+    from src.core.entity_resolver import purge_orphans
+
+    # Solo las filas de esa liga (antes se cargaban las 47k con todo su payload).
+    _cond = _func.lower(_func.trim(AnalysisHistory.competition)) == old_name.strip().lower()
+    if old_name.strip().lower() == "desconocida":
+        _cond = or_(_cond, AnalysisHistory.competition.is_(None))
+    history_list = db.query(AnalysisHistory).filter(_cond).all()
     updated_count = 0
 
     for h in history_list:
-        cname = h.competition
-        if not cname and h.payload:
+        h.competition = new_name
+        if h.payload:
             try:
                 pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                cname = pdata.get("competition") or pdata.get("tournament", {}).get("name")
-            except Exception:
-                pass
-        cname = cname or "Desconocida"
-
-        if cname.lower() == old_name.lower():
-            h.competition = new_name
-            if h.payload:
-                try:
-                    pdata = json.loads(h.payload) if isinstance(h.payload, str) else h.payload
-                    pdata["competition"] = new_name
-                    if "tournament" in pdata and isinstance(pdata["tournament"], dict):
-                        pdata["tournament"]["name"] = new_name
-                    h.payload = json.dumps(pdata)
-                except Exception as e:
-                    print(f"Error actualizando el payload de la competición (ID: {h.id}): {e}")
-            updated_count += 1
+                pdata["competition"] = new_name
+                if "tournament" in pdata and isinstance(pdata["tournament"], dict):
+                    pdata["tournament"]["name"] = new_name
+                h.payload = json.dumps(pdata)
+            except Exception as e:
+                print(f"Error actualizando el payload de la competición (ID: {h.id}): {e}")
+        updated_count += 1
 
     if updated_count > 0:
+        db.flush()
+        purge_orphans(db)
         db.commit()
         _invalidate_stats_cache()
 
@@ -554,9 +554,14 @@ def rename_team_matches(
     de todos los partidos históricos asociados. Opcionalmente filtrado por liga.
     """
     # Filtrar solo los partidos cuyo título contenga el nombre antiguo
-    history_list = (
-        db.query(AnalysisHistory).filter(AnalysisHistory.match_title.ilike(f"%{old_name}%")).all()
-    )
+    from src.core.entity_resolver import find_team_id, purge_orphans
+
+    _tid = find_team_id(db, old_name)
+    if _tid:
+        _team_cond = or_(AnalysisHistory.home_team_id == _tid, AnalysisHistory.away_team_id == _tid)
+    else:
+        _team_cond = AnalysisHistory.match_title.ilike(f"%{old_name}%")
+    history_list = db.query(AnalysisHistory).filter(_team_cond).all()
     updated_count = 0
 
     for h in history_list:
@@ -629,6 +634,8 @@ def rename_team_matches(
                 continue
 
     if updated_count > 0:
+        db.flush()
+        purge_orphans(db)
         db.commit()
         _invalidate_stats_cache()
 
@@ -764,6 +771,26 @@ def deduplicate_competition_matches(competition_name: str, db: Session = Depends
         "deleted_count": deleted_count,
         "message": f"Se eliminaron {deleted_count} registros duplicados (sin cuotas) en la competición '{competition_name}'.",
     }
+
+
+@router.post("/api/v1/teams/sync", tags=["Analysis History"])
+def sync_teams(payload: dict, db: Session = Depends(get_db)):
+    """Watson envía los objetos team de SofaScore; se completan los equipos que ya existen en DB."""
+    from src.core.entity_resolver import sync_sofascore_team
+
+    teams = payload.get("teams") or []
+    updated = sum(1 for t in teams if isinstance(t, dict) and sync_sofascore_team(db, t))
+    db.commit()
+    return {"status": "ok", "received": len(teams), "updated": updated, "unmatched": len(teams) - updated}
+
+
+@router.get("/api/v1/teams/aliases", tags=["Analysis History"])
+def team_aliases(ext_id: Optional[str] = None, name: Optional[str] = None, db: Session = Depends(get_db)):
+    """Nombres conocidos de un equipo (para buscar en Betano/BetPlay). found=false si no existe."""
+    from src.core.entity_resolver import get_team_names
+
+    r = get_team_names(db, ext_id, name)
+    return {"found": True, **r} if r else {"found": False}
 
 
 @router.get("/api/v1/analysis/teams/count", tags=["Analysis History"])
@@ -1185,40 +1212,77 @@ def get_history_matches(
         AnalysisHistory.match_date,
         AnalysisHistory.date,
         AnalysisHistory.payload,
+        AnalysisHistory.id,
+        AnalysisHistory.final_score_home,
+        AnalysisHistory.final_score_away,
+        AnalysisHistory.home_team_id,
+        AnalysisHistory.away_team_id,
     ).filter(
         AnalysisHistory.competition == competition,
         AnalysisHistory.sport == Sport.FOOTBALL,
+        # Sin resultado solo se listan partidos ya terminados (empezaron hace >= 4 h, UTC);
+        # los futuros o en juego no se listan, así Watson no los toca ni los borra.
+        or_(
+            AnalysisHistory.final_score_home.isnot(None),
+            and_(
+                AnalysisHistory.match_date.isnot(None),
+                AnalysisHistory.match_date <= datetime.utcnow() - timedelta(hours=4),
+            ),
+        ),
     )
 
     # Filtrar por temporada si se especifica
     if season:
+        # "2026/2027" abarca ambos años (la temporada empieza en el primero);
+        # también se aceptan filas antiguas con "26/27". Watson afina por season_id.
         years = _re.findall(r"\d{4}", season)
+        short = _re.fullmatch(r"\s*(\d{2})\s*/\s*(\d{2})\s*", season)
+        if short:
+            years = [f"20{short.group(1)}", f"20{short.group(2)}"]
         if years:
-            target_year = years[-1]
-            q = q.filter(
-                or_(
-                    AnalysisHistory.date.like(f"{target_year}%"),
-                    AnalysisHistory.match_date.like(f"{target_year}%"),
-                    AnalysisHistory.payload.like(f'%"season_year": "{target_year}%'),
-                    AnalysisHistory.payload.like(f'%"season_year":"{target_year}%'),
-                    AnalysisHistory.payload.like(f'%"season": "{target_year}%'),
-                )
-            )
+            conds = []
+            for y in years:
+                conds += [
+                    AnalysisHistory.date.like(f"{y}%"),
+                    AnalysisHistory.match_date.like(f"{y}%"),
+                    AnalysisHistory.season_year.like(f"{y}%"),
+                    AnalysisHistory.season_label.like(f"{y}%"),
+                ]
+            if len(years) == 2:
+                s_short = f"{years[0][2:]}/{years[1][2:]}"
+                conds.append(AnalysisHistory.season_year == s_short)
+            q = q.filter(or_(*conds))
 
     rows = q.all()
+    # external_id (SofaScore) de los equipos: Watson empareja por id, no por nombre
+    _tids = {i for r in rows for i in (r[7], r[8]) if i}
+    team_ext = {}
+    if _tids:
+        for tid, ext in db.execute(
+            text(
+                "SELECT id, external_id FROM teams WHERE source='sofascore' AND external_id IS NOT NULL "
+                f"AND id IN ({','.join(repr(str(i)) for i in _tids)})"
+            )
+        ):
+            team_ext[tid] = ext
     matches = []
     for row in rows:
         match_title = row[0] or ""
         rec_date = row[1] or row[2]
         payload_str = row[3]
         event_id = None
+        season_id = None
+        season_year = None
         home = ""
         away = ""
+        p: dict = {}
 
         # Parse payload for event_id and team names
         if payload_str:
             try:
                 p = json.loads(str(payload_str))
+                season_id = p.get("season_id")
+                season_year = p.get("season_year") or p.get("season")
                 event_id = (
                     p.get("event_id") or p.get("eventId") or p.get("match", {}).get("external_id")
                 )
@@ -1246,17 +1310,60 @@ def get_history_matches(
         # Normalized key for deduplication
         key = f"{date_str}|{_norm(home)}|{_norm(away)}"
 
+        # Inicio en epoch UTC: el start_timestamp de SofaScore guardado, o match_date (UTC naive)
+        start_ts = None
+        try:
+            start_ts = int(p["start_timestamp"]) if p.get("start_timestamp") else None
+        except Exception:
+            start_ts = None
+        if start_ts is None and row[1] is not None and not isinstance(row[1], str):
+            start_ts = int(row[1].replace(tzinfo=timezone.utc).timestamp())
+
         matches.append(
             {
+                "id": row[4],
+                "start_timestamp": start_ts,
+                "has_result": row[5] is not None and row[6] is not None,
+                "season_id": str(season_id) if season_id else None,
+                "season_year": str(season_year) if season_year else None,
                 "event_id": str(event_id) if event_id else None,
                 "match_date": date_str,
                 "home": home,
                 "away": away,
+                "home_ext": team_ext.get(row[7]),
+                "away_ext": team_ext.get(row[8]),
                 "key": key,
             }
         )
 
     return {"competition": competition, "season": season, "count": len(matches), "matches": matches}
+
+
+@router.post("/api/v1/history/backfill-season", tags=["Analysis History"])
+def backfill_history_season(items: list[dict], db: Session = Depends(get_db)):
+    """
+    Completa event_id / season_id / season_year en el payload de filas antiguas.
+    items: [{id, event_id, season_id, season_year}]. Solo rellena campos vacíos.
+    """
+    updated = 0
+    for it in items:
+        h = db.query(AnalysisHistory).filter(AnalysisHistory.id == it.get("id")).first()
+        if not h:
+            continue
+        try:
+            p = json.loads(str(h.payload))
+        except Exception:
+            continue
+        changed = False
+        for k in ("event_id", "season_id", "season_year"):
+            if it.get(k) and not p.get(k):
+                p[k] = it[k]
+                changed = True
+        if changed:
+            h.payload = json.dumps(p)
+            updated += 1
+    db.commit()
+    return {"updated": updated}
 
 
 @router.post("/api/v1/analysis/{analysis_id}/profitability", tags=["Analysis History"])
@@ -1464,6 +1571,7 @@ async def recalculate_all_accuracy(
     updated_accuracy_count = 0
 
     from sqlalchemy import text as _sql_text
+    from src.core.compressed_text import unpack as _unpack_text
 
     _q_hist_batch = _sql_text("""
         SELECT id, match_title, match_date, competition,
@@ -1517,7 +1625,7 @@ async def recalculate_all_accuracy(
             )
             res_d = dict(l_row) if has_res else None
 
-            p_raw = l_row.get("picks_calculados")
+            p_raw = _unpack_text(l_row.get("picks_calculados"))
             if p_raw:
                 try:
                     p_list = json.loads(p_raw) if isinstance(p_raw, str) else p_raw

@@ -50,3 +50,7 @@ htmlcov/
 planning.txt
 backup/*
 scratch/
+*.db
+*.db-shm
+*.db-wal
+*.db.bak

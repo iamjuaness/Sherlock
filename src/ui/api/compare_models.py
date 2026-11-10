@@ -438,6 +438,12 @@ class FootballCompareRequest(BaseModel):
         default=False,
         description="Si es True, se usan stats generales. Si es False, se usan stats segmentadas por localía.",
     )
+    use_home_away_split: bool = Field(
+        default=False,
+        description="Si es True, recalcula las stats de cada equipo (local/visitante) desde la BD, solo con partidos de la misma temporada anteriores a match_date.",
+    )
+    season_id: Optional[Any] = Field(default=None, description="ID de temporada SofaScore del partido")
+    season_year: Optional[str] = Field(default=None, description="Temporada, p. ej. '2025/2026'")
 
 
 # ───────────────────────────────────────────────────────────────

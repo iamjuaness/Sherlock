@@ -7,12 +7,14 @@ import sqlite3
 import sys
 from collections import defaultdict
 
+from src.core.compressed_text import unpack
+
 db = sys.argv[1] if len(sys.argv) > 1 else "data/sherlock.db"
 con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
 agg = defaultdict(list)
 for (pc,) in con.execute("select picks_calculados from analysis_history where picks_calculados is not null"):
     try:
-        ps = json.loads(pc)
+        ps = json.loads(unpack(pc))
     except ValueError:
         continue
     for p in ps if isinstance(ps, list) else ps.get("picks", []):
